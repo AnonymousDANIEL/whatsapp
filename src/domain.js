@@ -54,6 +54,11 @@ function inWindow(job, instant = new Date()) {
   const day = time < end ? dt.minus({ days: 1 }).weekday : dt.weekday;
   return job.weekdays.includes(day) && (time >= start || time < end);
 }
+function canDispatch(job, instant = new Date()) {
+  if (!job.enabled || job.cancelled) return false;
+  // Manual immediate runs keep the saved schedule and only bypass its time gates.
+  return job.send_now === true || inWindow(job, instant);
+}
 function ackStatus(ack) {
   if (ack === -1) return 'failed';
   if (ack >= 3) return 'read';
@@ -67,4 +72,4 @@ function manageUser(actor, target) {
 }
 function csvCell(value) { return '"' + String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""') + '"'; }
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
-module.exports = { PERMISSIONS, assert, parseRecipients, validateSchedule, inWindow, ackStatus, permission, manageUser, csvCell, hash };
+module.exports = { PERMISSIONS, assert, parseRecipients, validateSchedule, inWindow, canDispatch, ackStatus, permission, manageUser, csvCell, hash };

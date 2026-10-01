@@ -25,7 +25,7 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
  assert.equal((await request('/users','POST',{username:'escalate',password:'staff-password-123',role:'manager',grants:[],permissions:[]},mgr)).status,403);
  assert.equal((await request('/users','POST',{username:'wrongteam',password:'staff-password-123',role:'staff',grants:[{account_id:a2,operate:true}],permissions:perms},mgr)).status,403);
  const staffId=(await request('/users','POST',{username:'staff1',password:'staff-password-123',role:'staff',grants:[{account_id:a1,operate:true}],permissions:perms},mgr)).data.id;
- const staff=await login('staff1','staff-password-123');
+ let staff=await login('staff1','staff-password-123');
  async function screenStatus(id,s,origin='http://localhost:3000'){
    const {WebSocket}=require('ws');
    return new Promise((resolve,reject)=>{
@@ -49,6 +49,59 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
  const report=await request('/campaigns/'+id+'/results','GET',null,staff);assert.equal(report.data.rows[1].error_code,'INVALID_FORMAT');
  await pool.query("UPDATE recipients SET status='unknown',error_code='WORKER_RESTART_REVIEW_REQUIRED' WHERE campaign_id=$1 AND status='pending'",[id]);
  assert.equal((await request('/campaigns','GET',null,staff)).data[0].counts.unknown,1);
+ const {inWindow,canDispatch}=require('../src/domain');
+ const scheduleKeys=['timezone','window_start','window_end','weekdays','scheduled_at','expires_at','interval_ms'];
+ const savedSchedule=c=>Object.fromEntries(scheduleKeys.map(k=>[k,c[k]]));
+ const campaignRow=async taskId=>(await pool.query('SELECT * FROM campaigns WHERE id=$1',[taskId])).rows[0];
+ const futureSchedule={timezone:'Asia/Kuala_Lumpur',window_start:'09:15',window_end:'17:45',weekdays:[1],scheduled_at:new Date(Date.now()+30*86400000).toISOString(),expires_at:new Date(Date.now()+31*86400000).toISOString(),interval_ms:25000};
+ await t.test('existing databases gain immediate mode without changing stored tasks or schedules',async()=>{
+  const old=await campaignRow(id);
+  await pool.query('ALTER TABLE campaigns DROP COLUMN send_now');
+  await db.migrate();
+  const migrated=await campaignRow(id);
+  assert.equal(migrated.send_now,false);assert.deepEqual(savedSchedule(migrated),savedSchedule(old));
+  assert.equal((await request('/campaigns/'+id+'/send-now','POST',{},staff)).status,400); // Unknown outcomes are not retried.
+ });
+ await t.test('immediate API preserves all times and terminal recipients, stays idempotent and enforces scopes',async()=>{
+  assert.equal((await request('/campaigns','POST',{...job,send_now:'true'},staff)).status,400);
+  const made=await request('/campaigns','POST',{...job,...futureSchedule,send_now:true,title:'Immediate creation'},staff);
+  assert.equal(made.status,201);
+  const immediate=await campaignRow(made.data.id);
+  assert.equal(immediate.send_now,true);assert.equal(inWindow(immediate),false);assert.equal(canDispatch(immediate),true);
+  assert.deepEqual(immediate.weekdays,[1]);assert.equal(immediate.interval_ms,25000);
+  assert.equal(immediate.scheduled_at.toISOString(),futureSchedule.scheduled_at);assert.equal(immediate.expires_at.toISOString(),futureSchedule.expires_at);
+  const own=(await request('/campaigns','POST',{...job,...futureSchedule,title:'Existing saved schedule',recipients:['+12025550101','+12025550102','+12025550103','+12025550104','+12025550105','wrong'].join('\n')},staff)).data.id;
+  const before=await campaignRow(own);assert.equal(before.send_now,false);assert.equal(canDispatch(before),false);
+  const ids=(await pool.query('SELECT id FROM recipients WHERE campaign_id=$1 ORDER BY id',[own])).rows.map(r=>r.id);
+  for(const [index,status] of ['submitted','unknown','failed','delivered'].entries())await pool.query('UPDATE recipients SET status=$1 WHERE id=$2',[status,ids[index]]);
+  const rows=async()=> (await pool.query('SELECT id,status,message_id FROM recipients WHERE campaign_id=$1 ORDER BY id',[own])).rows;
+  const beforeRecipients=await rows();
+  assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},{cookie:staff.cookie,csrf:'bad'})).status,403);
+  for(let click=0;click<2;click++) {
+   const activated=await request('/campaigns/'+own+'/send-now','POST',{},staff);
+   assert.equal(activated.status,200);assert.equal(activated.data.pending,1);
+   assert.deepEqual(savedSchedule(await campaignRow(own)),savedSchedule(before));assert.deepEqual(await rows(),beforeRecipients);
+  }
+  assert.equal(canDispatch(await campaignRow(own)),true);
+  const someoneElse=(await request('/campaigns','POST',job,owner)).data.id;
+  assert.equal((await request('/campaigns/'+someoneElse+'/send-now','POST',{},staff)).status,403);
+  const anotherTeam=(await request('/campaigns','POST',{...job,account_id:a2},owner)).data.id;
+  assert.equal((await request('/campaigns/'+anotherTeam+'/send-now','POST',{},mgr)).status,403);
+  await request('/users/'+staffId,'PATCH',{active:true,permissions:[],grants:[{account_id:a1,operate:true}]},mgr);
+  staff=await login('staff1','staff-password-123');
+  assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},staff)).status,403);
+  await request('/users/'+staffId,'PATCH',{active:true,permissions:perms,grants:[{account_id:a1,operate:false}]},mgr);
+  staff=await login('staff1','staff-password-123');
+  assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},staff)).status,403);
+  await request('/users/'+staffId,'PATCH',{active:true,permissions:perms,grants:[{account_id:a1,operate:true}]},mgr);
+  staff=await login('staff1','staff-password-123');
+  await request('/campaigns/'+own,'PATCH',{enabled:false},staff);assert.equal(canDispatch(await campaignRow(own)),false);
+  assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},staff)).status,200);
+  await request('/campaigns/'+own+'/cancel','POST',{},staff);
+  assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},staff)).status,400);
+  assert.deepEqual((await rows()).map(r=>r.status),['submitted','unknown','failed','delivered','cancelled','invalid']);
+  assert.ok((await request('/audit','GET',null,owner)).data.some(r=>r.action==='campaign.send_now'&&r.entity_id===own));
+ });
  const foreignStaff=(await request('/users','POST',{username:'staff2',password:'staff-password-456',role:'staff',manager_id:m2,permissions:perms,grants:[{account_id:a2,operate:true}]},owner)).data.id;
  assert.equal((await request('/users/'+foreignStaff,'PATCH',{active:false,permissions:[],grants:[]},mgr)).status,403);
  await request('/users/'+staffId,'PATCH',{active:false,permissions:perms,grants:[{account_id:a1,operate:true}]},mgr);
@@ -60,6 +113,33 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
  const logs=(await request('/audit','GET',null,owner)).data;assert.ok(logs.some(r=>r.action==='user.update'));
  // Exercise actual sender branches with a fake client; no live WhatsApp connection or messages.
  const sender=require('../src/worker');
+ await t.test('worker prioritizes immediate jobs outside schedule, retains cooldown and rechecks pause before sending',async()=>{
+  const accountId=(await request('/accounts','POST',{label:'Fake sender only',worker_group:'group-a'},owner)).data.id;
+  const account=(await pool.query('SELECT * FROM accounts WHERE id=$1',[accountId])).rows[0];
+  const older=(await request('/campaigns','POST',{...job,account_id:accountId,title:'Scheduled queue',body:'Scheduled queue',recipients:'+12025550106'},owner)).data.id;
+  const task=(await request('/campaigns','POST',{...job,...futureSchedule,account_id:accountId,title:'Immediate queue',body:'Immediate queue',recipients:'+12025550107\n+12025550108',send_now:true},owner)).data.id;
+  const schedule=savedSchedule(await campaignRow(task)),sent=[];
+  const entry={id:accountId,ready:true,client:{getNumberId:async()=>({_serialized:'fake@c.us'}),sendMessage:async(wid,body)=>{sent.push(body);return {ack:1,id:{_serialized:'fake-immediate-'+sent.length}};}}};
+  await sender.dispatch(account,entry);
+  assert.deepEqual(sent,['Immediate queue']);
+  assert.equal((await pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[older])).rows[0].status,'pending');
+  const next=(await pool.query('SELECT next_send_at FROM accounts WHERE id=$1',[accountId])).rows[0].next_send_at;
+  assert.ok(+next-Date.now()>20000);
+  await sender.dispatch(account,entry);assert.equal(sent.length,1); // Immediate still observes the account's interval.
+  const remaining=(await pool.query("SELECT * FROM recipients WHERE campaign_id=$1 AND status='pending'",[task])).rows[0];
+  const paused=await sender.send({...entry,client:{...entry.client,getNumberId:async()=>{await request('/campaigns/'+task,'PATCH',{enabled:false},owner);return {_serialized:'fake@c.us'};}}},remaining,await campaignRow(task));
+  assert.equal(paused.status,'pending');assert.equal(sent.length,1);
+  await sender.dispatch(account,entry);assert.equal(sent.length,1);
+  await request('/accounts/'+accountId,'PATCH',{enabled:false},owner);
+  assert.equal((await request('/campaigns/'+task+'/send-now','POST',{},owner)).status,400);
+  await request('/accounts/'+accountId,'PATCH',{enabled:true},owner);
+  await request('/campaigns/'+task+'/send-now','POST',{},owner);
+  await pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[accountId]);
+  await sender.dispatch(account,entry);assert.deepEqual(sent,['Immediate queue','Immediate queue']);
+  assert.deepEqual(savedSchedule(await campaignRow(task)),schedule);
+  assert.equal((await request('/campaigns/'+task+'/send-now','POST',{},owner)).status,400);
+  await sender.dispatch(account,entry);assert.equal(sent.length,2);
+ });
  const ownerJob=(await request('/campaigns','POST',{...job,title:'Sender verification'},owner)).data.id;
  const campaign=(await pool.query('SELECT * FROM campaigns WHERE id=$1',[ownerJob])).rows[0];
  const recipient=(await pool.query("SELECT * FROM recipients WHERE campaign_id=$1 AND status='pending'",[ownerJob])).rows[0];

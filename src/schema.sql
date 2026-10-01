@@ -21,10 +21,12 @@ CREATE TABLE IF NOT EXISTS account_grants (
 CREATE TABLE IF NOT EXISTS campaigns (
  id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES accounts(id), created_by uuid NOT NULL REFERENCES users(id),
  title text NOT NULL, body text NOT NULL, enabled boolean NOT NULL DEFAULT true, cancelled boolean NOT NULL DEFAULT false,
+ send_now boolean NOT NULL DEFAULT false,
  timezone text NOT NULL, window_start text NOT NULL, window_end text NOT NULL, weekdays integer[] NOT NULL,
  scheduled_at timestamptz NOT NULL, expires_at timestamptz, interval_ms integer NOT NULL CHECK(interval_ms>=5000),
  opt_in_confirmed boolean NOT NULL, duplicate_count integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_now boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS recipients (
  id bigserial PRIMARY KEY, campaign_id uuid NOT NULL REFERENCES campaigns(id), raw_phone text NOT NULL, phone text,
  status text NOT NULL CHECK(status IN ('pending','sending','awaiting_ack','submitted','delivered','read','failed','invalid','unknown','cancelled')),

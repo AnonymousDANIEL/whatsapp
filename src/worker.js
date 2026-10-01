@@ -11,7 +11,7 @@ const execute = promisify(execFile);
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit } = require('./db');
-const { assert, inWindow, ackStatus } = require('./domain');
+const { assert, canDispatch, ackStatus } = require('./domain');
 const group = process.env.WORKER_GROUP;
 const maxAccounts = Number(process.env.MAX_ACCOUNTS_PER_WORKER || 5);
 const dataPath = path.resolve(process.env.DATA_DIR || '/data');
@@ -144,11 +144,11 @@ async function dispatch(account, entry) {
   let recipient;
   try {
     const candidates = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
-      WHERE c.account_id=$1 AND c.enabled AND NOT c.cancelled AND c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
+      WHERE c.account_id=$1 AND c.enabled AND NOT c.cancelled AND (c.send_now OR (c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()))) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())
       AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending')
-      ORDER BY c.created_at`, [account.id])).rows;
-    const campaign = candidates.find(c => inWindow(c)); if (!campaign) return;
+      ORDER BY c.send_now DESC,c.created_at`, [account.id])).rows;
+    const campaign = candidates.find(c => canDispatch(c)); if (!campaign) return;
     recipient = (await pool.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
       WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING *`, [campaign.id])).rows[0];
@@ -157,7 +157,7 @@ async function dispatch(account, entry) {
     const stillAllowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
       WHERE c.id=$1 AND c.enabled AND NOT c.cancelled AND a.enabled AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
-    if (!stillAllowed || !inWindow(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); return; }
+    if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); return; }
     const result = await send(entry, recipient, campaign);
     await pool.query('UPDATE recipients SET status=$1,error_code=$2,message_id=$3,ack=$4,updated_at=now() WHERE id=$5', [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
     if (result.messageId) {
@@ -182,7 +182,7 @@ async function send(entry, recipient, campaign) {
       const allowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
         WHERE c.id=$1 AND c.enabled AND NOT c.cancelled AND a.enabled AND ${eligible}
         AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
-      if (!allowed || !inWindow(allowed)) return { status: 'pending', error: null };
+      if (!allowed || !canDispatch(allowed)) return { status: 'pending', error: null };
       startedSend = true;
       const message = await entry.client.sendMessage(wid._serialized, campaign.body, { waitUntilMsgSent: true });
       return { status: ackStatus(message.ack ?? 0), error: null, messageId: message.id._serialized, ack: message.ack ?? 0 };
@@ -277,4 +277,4 @@ async function start() {
   });
   return server;
 }
-module.exports = { start, send, receiveAck, eligible };
+module.exports = { start, send, receiveAck, eligible, dispatch };

@@ -196,16 +196,33 @@ async function start() {
     assert(typeof b.title === 'string' && b.title.trim().length && b.title.length <= 120, '请输入任务名称');
     assert(typeof b.body === 'string' && b.body.trim().length && b.body.length <= 4000, '消息需要 1–4000 个字符');
     assert(b.opt_in_confirmed === true, '请确认这些联系人同意接收消息');
+    assert(b.send_now === undefined || typeof b.send_now === 'boolean', 'send_now 无效');
     const schedule = validateSchedule(b), parsed = parseRecipients(b.recipients);
     const id = crypto.randomUUID();
     await transaction(async c => {
-      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates]);
+      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, b.send_now === true]);
       await c.query(`INSERT INTO recipients(campaign_id,raw_phone,phone,status,error_code)
         SELECT $1,r.raw,r.phone,r.status,r.error FROM jsonb_to_recordset($2::jsonb) AS r(raw text,phone text,status text,error text)`, [id, JSON.stringify(parsed.recipients)]);
     });
-    await audit(req.user.id, 'campaign.create', id, { recipients: parsed.recipients.length, duplicates: parsed.duplicates });
+    await audit(req.user.id, 'campaign.create', id, { recipients: parsed.recipients.length, duplicates: parsed.duplicates, send_now: b.send_now === true });
     res.status(201).json({ id, count: parsed.recipients.length, duplicates: parsed.duplicates });
+  }));
+  app.post('/api/campaigns/:id/send-now', route(async (req, res) => {
+    assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
+    const c = await campaignAccess(req.user, req.params.id, true);
+    const a = await access(req.user, c.account_id, true); assert(a.enabled, '账号已停用');
+    const pending = await transaction(async db => {
+      const current = (await db.query('SELECT cancelled FROM campaigns WHERE id=$1 FOR UPDATE', [c.id])).rows[0];
+      assert(!current.cancelled, '任务已取消');
+      const count = (await db.query("SELECT count(*)::integer n FROM recipients WHERE campaign_id=$1 AND status='pending'", [c.id])).rows[0].n;
+      assert(count > 0, '任务没有待发送的号码');
+      // Never reset recipients: submitted, unknown and other finished results stay intact.
+      await db.query('UPDATE campaigns SET enabled=true,send_now=true WHERE id=$1', [c.id]);
+      await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)', [req.user.id, 'campaign.send_now', c.id, { pending: count }]);
+      return count;
+    });
+    res.json({ ok: true, pending });
   }));
   app.patch('/api/campaigns/:id', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
