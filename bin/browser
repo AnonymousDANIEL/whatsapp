@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+# Each WhatsApp browser uses a distinct Unix UID and private profile directory.
+# Only this clean browser environment is passed; database and service secrets stay in Node.
+exec setpriv --reuid="$WA_BROWSER_UID" --regid="$WA_BROWSER_UID" --clear-groups -- /usr/bin/chromium "$@"

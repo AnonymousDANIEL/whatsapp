@@ -1,0 +1,13 @@
+import RFB from '/novnc/core/rfb.js';
+const query = new URLSearchParams(location.search), id = query.get('id'), mode = query.get('mode') === 'operate' ? 'operate' : 'view';
+const status = document.getElementById('status'), screen = document.getElementById('screen');
+document.getElementById('label').textContent = mode === 'operate' ? '原版 WhatsApp Web · 可操作' : '原版 WhatsApp Web · 只看';
+const rfb = new RFB(screen, `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/screen/${id}?mode=${mode}`);
+rfb.scaleViewport = true; rfb.resizeSession = false; rfb.viewOnly = mode !== 'operate'; rfb.showDotCursor = true;
+rfb.addEventListener('connect', () => { status.textContent = '已连接'; });
+rfb.addEventListener('disconnect', () => { status.textContent = '连接关闭：请返回后台检查账号状态、权限或其他操作窗口，然后重新打开。'; });
+rfb.addEventListener('securityfailure', () => { status.textContent = '验证失败'; });
+document.getElementById('clipboard').hidden = mode !== 'operate';
+document.getElementById('clipboard').onclick = () => { const value = prompt('粘贴文字到远程剪贴板，再在聊天框按 Ctrl+V：'); if (value !== null) rfb.clipboardPasteFrom(value); };
+document.getElementById('fullscreen').onclick = () => screen.requestFullscreen();
+window.addEventListener('pagehide', () => rfb.disconnect());

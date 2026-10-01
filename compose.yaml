@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: whatsapp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d whatsapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      SERVICE_ROLE: api
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/whatsapp
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?Set INTERNAL_SECRET}
+      PUBLIC_URL: http://localhost:3000
+      BOOTSTRAP_USERNAME: ${BOOTSTRAP_USERNAME:-owner}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?Set BOOTSTRAP_PASSWORD}
+      WORKER_ROUTES_JSON: '{"group-a":"http://worker-a:8080"}'
+    depends_on:
+      postgres: {condition: service_healthy}
+  worker-a:
+    build: {context: ., dockerfile: Dockerfile.worker}
+    environment:
+      SERVICE_ROLE: worker
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/whatsapp
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      WORKER_GROUP: group-a
+      DATA_DIR: /data
+      MAX_ACCOUNTS_PER_WORKER: 5
+    volumes: [browser-a:/data]
+    shm_size: 1gb
+    stop_grace_period: 90s
+    depends_on:
+      postgres: {condition: service_healthy}
+volumes:
+  database:
+  browser-a:
