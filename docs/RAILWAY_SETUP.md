@@ -2,6 +2,27 @@
 
 本文件不包含任何真实密码或 Token。部署前完成真实环境验收，不能仅凭健康检查绿灯判断 WhatsApp 可用。
 
+## 已添加号码但未扫码：先启动浏览器服务
+
+号码或账号名称只是备注，不能代替 WhatsApp 登录。API 显示部署成功也不能代替运行浏览器的 worker。
+
+只使用 group-a 时可以先部署一个 worker，无需一次启动四组：
+
+1. 在相同 Railway 项目和环境，从同一 GitHub 仓库添加服务 `worker-a`，配置文件路径设为 `/railway.worker.json`，挂载持久卷到 `/data`。
+2. 设置 `SERVICE_ROLE=worker`、`WORKER_GROUP=group-a`、`PORT=8080`、`DATA_DIR=/data`、`MAX_ACCOUNTS_PER_WORKER=5`、`RAILWAY_RUN_UID=0`。`DATABASE_URL` 引用同一个 PostgreSQL；`INTERNAL_SECRET` 必须与 API 完全相同，不要另生成一个。
+3. 在 API 的 `WORKER_ROUTES_JSON` 中把 group-a 指向 worker-a 的实际 Private Networking 域名和 8080 端口。例如服务确实叫 worker-a 时可使用 `{"group-a":"http://${{worker-a.RAILWAY_PRIVATE_DOMAIN}}:8080"}`。已有其他分组时保留其映射。
+4. 部署 API 和 worker 的最新版本。后台“系统状态”确认 group-a 在线，再到“账号”点“检查连接”。
+5. 点“启动/重连”并“打开操作扫码”，用手机 WhatsApp → 已关联设备 → 关联设备扫描画面中的二维码。后台显示“已连接”后关闭操作窗口，约 30 秒释放控制占用，再发送任务。
+
+| 检查连接结果 | 处理 |
+|---|---|
+| 尚未配置 / 地址无效 | 修正 API 的 WORKER_ROUTES_JSON |
+| 无法连接扫码服务 | 检查 worker 是否运行、私有域名、端口和同一环境 |
+| 验证失败 | 确认 API 与 worker 的 INTERNAL_SECRET 相同 |
+| 其他分组 / 版本不一致 | 核对 WORKER_GROUP、映射及两服务的最新部署 |
+| 浏览器没有启动成功 | 查看 worker 的 Deploy Logs 和容量 |
+| 画面已连接但仍待扫码 | 必须用手机扫码；输入号码不会自动登录 |
+
 ## 首次部署崩溃：先检查数据库与变量
 
 只有一个 GitHub 应用服务不能代替 PostgreSQL。若数据库尚未创建，在当前项目和环境添加 PostgreSQL；等数据库服务运行后，在 `whatsapp`（API）服务的 Variables 添加 `DATABASE_URL` 引用。数据库服务实际命名为 `Postgres` 时，引用写法为 `${{Postgres.DATABASE_URL}}`；名称不同应从 Add Reference Variable 选择实际服务，不要照抄名称。

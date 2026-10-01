@@ -16,7 +16,9 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
  const owner=await login('owner','test-owner-password-123');
  assert.equal((await request('/accounts')).status,401);
  assert.equal((await request('/accounts','POST',{label:'X',worker_group:'group-a'},{cookie:owner.cookie,csrf:'bad'})).status,403);
- const a1=(await request('/accounts','POST',{label:'Team A',worker_group:'group-a'},owner)).data.id;
+ const firstAccount=await request('/accounts','POST',{label:'Team A',worker_group:'group-a'},owner);
+ assert.equal(firstAccount.status,201);assert.equal(firstAccount.data.started,false);assert.equal(firstAccount.data.connection.code,'WORKER_UNREACHABLE');
+ const a1=firstAccount.data.id;
  const a2=(await request('/accounts','POST',{label:'Team B',worker_group:'group-a'},owner)).data.id;
  const perms=['tasks.create','reports.export'];
  const m1=(await request('/users','POST',{username:'manager1',password:'manager-password-123',role:'manager',permissions:perms,grants:[{account_id:a1,operate:true}]},owner)).data.id;
@@ -38,6 +40,17 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
  assert.equal(await screenStatus(a1,null),401);
  assert.equal(await screenStatus(a1,owner,'https://untrusted.example'),403);
  assert.equal(await screenStatus(a2,staff),403);
+ await t.test('connection checks preserve access scopes, expose safe startup errors and flag absent workers',async()=>{
+  assert.equal((await request('/accounts/'+a1+'/connection?mode=operate')).status,401);
+  assert.equal((await request('/accounts/'+a2+'/connection?mode=operate','GET',null,staff)).status,403);
+  const connection=await request('/accounts/'+a1+'/connection?mode=operate','GET',null,owner);
+  assert.equal(connection.status,200);assert.equal(connection.data.ok,false);assert.equal(connection.data.code,'WORKER_UNREACHABLE');assert.equal(connection.data.can_start,false);
+  const startError=await request('/accounts/'+a1+'/start','POST',{},owner);
+  assert.equal(startError.status,503);assert.equal(startError.data.code,'WORKER_UNREACHABLE');assert.ok(startError.data.error.includes('扫码服务'));assert.ok(!startError.data.error.includes(process.env.INTERNAL_SECRET));
+  const visible=(await request('/accounts','GET',null,owner)).data.find(a=>a.id===a1);
+  assert.equal(visible.status,'worker_offline');assert.equal(visible.phone,null);
+  const v6=await new Promise((resolve,reject)=>require('node:http').get({hostname:'::1',port:server.address().port,path:'/healthz'},r=>{r.resume();resolve(r.statusCode);}).on('error',reject));assert.equal(v6,200);
+ });
  assert.equal((await request('/accounts','GET',null,staff)).data.length,1);
  assert.equal((await request('/users','GET',null,staff)).status,403);
  assert.equal((await request('/users/'+m2,'PATCH',{active:false,grants:[],permissions:[]},mgr)).status,403);
@@ -93,6 +106,8 @@ test('PostgreSQL integration: sessions, scoped grants, staff isolation, queue pe
   await request('/users/'+staffId,'PATCH',{active:true,permissions:perms,grants:[{account_id:a1,operate:false}]},mgr);
   staff=await login('staff1','staff-password-123');
   assert.equal((await request('/campaigns/'+own+'/send-now','POST',{},staff)).status,403);
+  assert.equal((await request('/accounts/'+a1+'/connection?mode=operate','GET',null,staff)).status,403);
+  assert.equal((await request('/accounts/'+a1+'/connection?mode=view','GET',null,staff)).status,200);
   await request('/users/'+staffId,'PATCH',{active:true,permissions:perms,grants:[{account_id:a1,operate:true}]},mgr);
   staff=await login('staff1','staff-password-123');
   await request('/campaigns/'+own,'PATCH',{enabled:false},staff);assert.equal(canDispatch(await campaignRow(own)),false);

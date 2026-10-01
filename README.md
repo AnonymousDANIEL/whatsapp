@@ -91,3 +91,5 @@ TEST_DATABASE_URL=postgresql://postgres:PASSWORD@localhost:5432/postgres npm tes
 - noVNC：https://github.com/novnc/noVNC （上游许可适用，其 LICENSE 文件由 npm 包保留）
 
 本项目与 WhatsApp / Meta 无隶属关系，不是官网或官方产品。
+
+账号名称/号码仅作备注，登录必须用手机扫码。账号页提供“检查连接”，扫码窗口会说明服务离线、配置或权限问题。首次浏览器服务配置见 [部署步骤](docs/RAILWAY_SETUP.md#已添加号码但未扫码先启动浏览器服务)。

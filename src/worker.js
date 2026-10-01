@@ -105,6 +105,7 @@ async function startAccount(account) {
       await waitPort(port);
     }
     assert(!e.closing, 'DESKTOP_CLOSED');
+    e.desktopReady = true;
     e.client = new Client({
       authStrategy: new IsolatedAuth({ clientId: account.id, dataPath: identity.auth }, e.uid),
       // Load the official page freshly. Do not pin or rewrite the WhatsApp Web UI.
@@ -238,13 +239,24 @@ async function start() {
   const app = express();
   app.get('/healthz', async (_, res) => { try { await lock.query('SELECT 1'); res.json({ ok: true, role: 'worker', group }); } catch { res.sendStatus(503); } });
   app.use((req, res, next) => authorized(req) ? next() : res.sendStatus(401));
+  app.get('/accounts/:id/status', async (req, res) => {
+    try {
+      const a = (await pool.query('SELECT status,enabled FROM accounts WHERE id=$1 AND worker_group=$2', [req.params.id, group])).rows[0];
+      if (!a) return res.status(404).json({ error: 'Account unavailable' });
+      const e = entries.get(req.params.id);
+      res.json({ role: 'worker', group, status: a.status, screen_ready: Boolean(a.enabled && e?.desktopReady && !e.closing), connected: Boolean(a.enabled && e?.ready && !e.closing) });
+    } catch { res.status(500).json({ error: 'Worker status unavailable' }); }
+  });
   app.post('/accounts/:id/:command', async (req, res) => {
     try {
       assert(['start', 'restart'].includes(req.params.command), 'Unknown command');
       const a = (await pool.query('SELECT * FROM accounts WHERE id=$1 AND worker_group=$2 AND enabled', [req.params.id, group])).rows[0]; assert(a, 'Account unavailable', 404);
       assert(!busy.has(a.id), '账号正在发送，请稍后重启', 409);
+      assert(entries.has(a.id) || entries.size < maxAccounts, '浏览器分组已满', 409);
       if (req.params.command === 'restart') await stopAccount(a.id);
-      retryAt.delete(a.id); await startAccount(a); await audit(null, 'worker.start', a.id); res.json({ ok: true });
+      retryAt.delete(a.id); await startAccount(a);
+      const e = entries.get(a.id); assert(e?.desktopReady && !e.closing, '浏览器启动失败，请查看分组日志', 503);
+      await audit(null, 'worker.start', a.id); res.json({ ok: true });
     } catch (err) { res.status(err.status || 500).json({ error: err.status ? err.message : 'Worker command failed' }); }
   });
   const server = http.createServer(app), wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
@@ -266,7 +278,7 @@ async function start() {
   });
   const interval = setInterval(() => tick().catch(e => console.error('worker tick:', e.code || e.name)), 5000);
   tick().catch(e => console.error('worker startup:', e.code || e.name));
-  await new Promise(resolve => server.listen(Number(process.env.PORT || 8080), '0.0.0.0', resolve));
+  await new Promise(resolve => server.listen(Number(process.env.PORT || 8080), '::', resolve));
   console.log('Browser worker ready:', group);
   process.on('SIGTERM', async () => {
     shuttingDown = true; clearInterval(interval); server.close();

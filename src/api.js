@@ -9,9 +9,11 @@ const { rateLimit } = require('express-rate-limit');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, permission, manageUser, csvCell } = require('./domain');
+const { createWorkerConnection } = require('./connection');
 
 const SESSION_HOURS = 12;
 const routes = JSON.parse(process.env.WORKER_ROUTES_JSON || '{}');
+const browser = createWorkerConnection(routes, process.env.INTERNAL_SECRET);
 const COOKIE = 'wa_session';
 const publicURL = new URL(process.env.PUBLIC_URL || 'http://localhost:3000');
 const secure = publicURL.protocol === 'https:';
@@ -47,11 +49,12 @@ async function access(user, id, operate = false) {
   return rows[0];
 }
 async function visibleAccounts(user) {
-  const { rows } = await pool.query(`SELECT a.*,CASE WHEN $2='owner' THEN true ELSE g.operate END AS operate
+  const { rows } = await pool.query(`SELECT a.*,h.heartbeat_at AS worker_heartbeat_at,CASE WHEN $2='owner' THEN true ELSE g.operate END AS operate
     FROM accounts a LEFT JOIN account_grants g ON g.account_id=a.id AND g.user_id=$1
+    LEFT JOIN worker_health h ON h.worker_group=a.worker_group
     WHERE $2='owner' OR (g.user_id IS NOT NULL AND ($2<>'staff' OR EXISTS (
       SELECT 1 FROM account_grants mg WHERE mg.user_id=$3 AND mg.account_id=a.id AND (NOT g.operate OR mg.operate)))) ORDER BY a.created_at`, [user.id, user.role, user.manager_id]);
-  return rows.map(a => ({ ...a, status: a.heartbeat_at && Date.now() - +new Date(a.heartbeat_at) > 45000 && a.enabled ? 'worker_offline' : a.status }));
+  return rows.map(a => ({ ...a, status: a.enabled && (!a.worker_heartbeat_at || Date.now() - +new Date(a.worker_heartbeat_at) > 45000 || (a.heartbeat_at && Date.now() - +new Date(a.heartbeat_at) > 45000)) ? 'worker_offline' : a.status }));
 }
 async function campaignAccess(user, id, modify = false) {
   uuid(id);
@@ -71,14 +74,7 @@ function permissionsFor(actor, values) {
   return [...new Set(values)];
 }
 async function workerCommand(account, command) {
-  const base = routes[account.worker_group];
-  assert(base, '该分组尚未配置浏览器服务', 503);
-  let response;
-  try { response = await fetch(new URL('/accounts/' + account.id + '/' + command, base), { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.INTERNAL_SECRET }, signal: AbortSignal.timeout(10000) }); }
-  catch { throw Object.assign(new Error('浏览器服务不可达；检查 Railway 私有域名和分组设置'), { status: 503 }); }
-  const result = await response.json();
-  assert(response.ok, result.error || '浏览器服务失败', response.status);
-  return result;
+  return browser.request(account, '/accounts/' + account.id + '/' + command, 'POST');
 }
 async function start() {
   const app = express();
@@ -124,7 +120,29 @@ async function start() {
     assert(Object.hasOwn(routes, req.body.worker_group), '请选择已配置的浏览器分组');
     const id = crypto.randomUUID();
     await pool.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)', [id, req.body.label.trim(), req.body.worker_group]);
-    await audit(req.user.id, 'account.create', id); res.status(201).json({ id });
+    await audit(req.user.id, 'account.create', id);
+    try {
+      await workerCommand({ id, worker_group: req.body.worker_group }, 'start');
+      res.status(201).json({ id, started: true });
+    } catch (error) {
+      if (!error.publicMessage) throw error;
+      res.status(201).json({ id, started: false, connection: { code: error.code, message: error.message } });
+    }
+  }));
+  app.get('/api/accounts/:id/connection', route(async (req, res) => {
+    const operate = req.query.mode === 'operate', a = await access(req.user, req.params.id, operate);
+    const canStart = operate && req.user.role !== 'staff' && (req.user.role === 'owner' || a.operate);
+    if (!a.enabled) return res.json({ ok: false, code: 'ACCOUNT_DISABLED', message: '此账号已停用，请管理员启用后再连接。', can_start: false });
+    if (operate && (await pool.query('SELECT 1 FROM control_leases WHERE account_id=$1 AND expires_at>now() AND session_hash<>$2', [a.id, req.user.token_hash])).rowCount) {
+      return res.json({ ok: false, code: 'ACCOUNT_IN_USE', message: '此账号正被其他操作窗口使用，请关闭该窗口后再连接。', can_start: false });
+    }
+    try {
+      const connection = await browser.status(a);
+      res.json({ ok: connection.screen_ready, code: connection.screen_ready ? 'SCREEN_READY' : 'BROWSER_NOT_READY', message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart });
+    } catch (error) {
+      if (!error.publicMessage) throw error;
+      res.json({ ok: false, code: error.code, message: error.message, can_start: false });
+    }
   }));
   app.patch('/api/accounts/:id', route(async (req, res) => {
     assert(req.user.role === 'owner', '只有 Owner 可以启用/停用 WhatsApp 账号', 403);
@@ -268,7 +286,7 @@ async function start() {
     if (res.headersSent) return next(err);
     const status = err.status || (err.code === '23505' ? 409 : 500);
     if (status >= 500) console.error('request failed:', err.code || err.name);
-    res.status(status).json({ error: err.code === '23505' ? '账号 ID 已存在' : status >= 500 ? '服务暂时不可用，请查看服务状态' : err.message });
+    res.status(status).json({ error: err.code === '23505' ? '账号 ID 已存在' : status >= 500 && !err.publicMessage ? '服务暂时不可用，请查看服务状态' : err.message, ...(err.publicMessage ? { code: err.code } : {}) });
   });
   const server = http.createServer(app), wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
   server.on('upgrade', async (req, socket, head) => {
@@ -309,7 +327,7 @@ async function start() {
     } catch (e) { socket.write('HTTP/1.1 ' + (e.status || 403) + ' Rejected\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
-  await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '0.0.0.0', resolve));
+  await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '::', resolve));
   console.log('Management service ready');
   process.on('SIGTERM', () => { for (const ws of wss.clients) ws.close(); server.close(() => pool.end().then(() => process.exit(0))); setTimeout(() => process.exit(0), 10000).unref(); });
   return server;
