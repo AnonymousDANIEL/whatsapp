@@ -2,6 +2,25 @@
 
 本文件不包含任何真实密码或 Token。部署前完成真实环境验收，不能仅凭健康检查绿灯判断 WhatsApp 可用。
 
+## 首次部署崩溃：先检查数据库与变量
+
+只有一个 GitHub 应用服务不能代替 PostgreSQL。若数据库尚未创建，在当前项目和环境添加 PostgreSQL；等数据库服务运行后，在 `whatsapp`（API）服务的 Variables 添加 `DATABASE_URL` 引用。数据库服务实际命名为 `Postgres` 时，引用写法为 `${{Postgres.DATABASE_URL}}`；名称不同应从 Add Reference Variable 选择实际服务，不要照抄名称。
+
+Railway 中不要使用 `.env.example` 的 localhost 示例连接，也不要只在 PostgreSQL 服务内添加应用变量。API 服务还需要 `SERVICE_ROLE=api`、至少 32 位的 `INTERNAL_SECRET`、首次 Owner 的 `BOOTSTRAP_USERNAME` 和至少 12 位的 `BOOTSTRAP_PASSWORD`、实际 HTTPS 地址的 `PUBLIC_URL`。完整变量和浏览器分组配置见下面各节。
+
+`dotenv` 的 `injected env (0) from .env` 只表示该次没有从 `.env` 文件注入变量，不能据此判断 Railway Variables 是否为空。新版已关闭这条提示。真正的启动失败会输出一条完整诊断，包含 `stage`、`codes`、`reason`、`hint`，并隐藏连接字符串、密码和密钥。
+
+| 启动诊断 | 检查 |
+|---|---|
+| STARTUP_CONFIG_INVALID | 按 reason 补齐或修正 API 服务的变量；不是在 GitHub 添加 .env |
+| ECONNREFUSED | 数据库是否已运行，DATABASE_URL 是否引用正确；应用容器的 localhost 不是独立数据库 |
+| ENOTFOUND / EAI_AGAIN | 数据库域名和引用是否正确、服务是否在对应私有网络的同一环境 |
+| 28P01 / 28000 | 数据库登录凭据是否已变更；重新引用数据库服务的 DATABASE_URL |
+| 3D000 | URL 中的数据库名是否存在 |
+| BOOTSTRAP_USERNAME / BOOTSTRAP_PASSWORD | 首次初始化 Owner 的 ID 和密码是否已填写 |
+
+保存变量后应用待部署的更改。若仍崩溃，查看**最新部署**的 Deploy Logs 第一条 `Startup failed:`，按其具体代码处理。修正错误日志能显示原因，不能自动创建数据库或改变 Railway 的变量。
+
 ## 1. GitHub
 
 本项目的仓库已确定为 https://github.com/AnonymousDANIEL/whatsapp 。直接从该仓库部署，根目录应有 package.json、Dockerfile、Dockerfile.worker、railway.json。不要上传 node_modules、.env 或 data。
