@@ -38,12 +38,12 @@ async function access(user, id, operate = false) {
   uuid(id);
   const a = (await pool.query(`SELECT a.*,true AS operate FROM accounts a
     WHERE a.id=$1 AND ($2='owner' OR EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$3))`, [id,user.role,user.id])).rows[0];
-  assert(a, '无权操作此 WhatsApp 账号',403); return a;
+  assert(a && (!a.deleted_at || (user.role==='owner'&&!operate)), '无权操作此 WhatsApp 账号',403); return a;
 }
 async function visibleAccounts(user) {
   const {rows}=await pool.query(`SELECT a.*,true AS operate,h.heartbeat_at AS worker_heartbeat_at
     FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
-    WHERE $1='owner' OR EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2)
+    WHERE $1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2))
     ORDER BY a.created_at`,[user.role,user.id]);
   return rows.map(a=>({...a,status:a.enabled&&(!a.worker_heartbeat_at||Date.now()-+new Date(a.worker_heartbeat_at)>90000)?'worker_offline':a.status}));
 }
@@ -149,6 +149,17 @@ async function start() {
       await audit(req.user.id,'account.enabled',a.id,{enabled:req.body.enabled});
     }
     res.json({ok:true});
+  }));
+  app.delete('/api/accounts/:id',route(async(req,res)=>{
+    const a=await access(req.user,req.params.id);
+    await transaction(async db=>{
+      await db.query('SELECT id FROM accounts WHERE id=$1 FOR UPDATE',[a.id]);
+      await db.query('UPDATE accounts SET enabled=false,deleted_at=COALESCE(deleted_at,now()),deleted_by=COALESCE(deleted_by,$2),purge_requested=purge_requested OR $3 WHERE id=$1',[a.id,req.user.id,req.user.role==='owner']);
+      await db.query('UPDATE campaigns SET enabled=false WHERE account_id=$1',[a.id]);
+      await db.query('DELETE FROM control_leases WHERE account_id=$1',[a.id]);
+      if(req.user.role!=='owner')await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)',[req.user.id,'account.delete',a.id,{label:a.label}]);
+    });
+    res.status(202).json({ok:true,pending:req.user.role==='owner'});
   }));
   app.post('/api/accounts/:id/:command', route(async (req, res) => {
 

@@ -89,6 +89,24 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const old=(await db.pool.query('SELECT * FROM users WHERE id=$1',[s])).rows[0];assert.equal(old.role,'user');assert.equal(old.manager_id,null);assert.equal(old.active,false);assert.equal(old.password_hash,hash);
   assert.equal((await db.pool.query('SELECT operate FROM account_grants WHERE user_id=$1',[s])).rows[0].operate,true);
  });
+ await t.test('USER creation dates and scoped account deletion retain records until Owner purge',async()=>{
+  const listed=(await request('/users','GET',null,owner)).data.find(u=>u.id===uid);assert.ok(Number.isFinite(Date.parse(listed.created_at)));
+  const c=(await request('/accounts','POST',{label:'Delete test',worker_group:'group-a'},user)).data.id;
+  assert.equal((await request('/accounts/'+c,'DELETE',null,user2)).status,403);
+  assert.equal((await request('/accounts/'+c,'DELETE',null,{...user,csrf:'bad'})).status,403);
+  const taskId=(await request('/campaigns','POST',{...template,account_id:c},user)).data.id;
+  assert.equal((await request('/accounts/'+c,'DELETE',null,user)).status,202);
+  assert.ok(!(await request('/accounts','GET',null,user)).data.some(a=>a.id===c));
+  assert.ok((await request('/accounts','GET',null,owner)).data.find(a=>a.id===c).deleted_at);
+  assert.equal((await request('/accounts/'+c,'PATCH',{enabled:true},owner)).status,403);
+  assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[taskId])).rows[0].enabled,false);
+  assert.ok((await request('/audit','GET',null,owner)).data.some(a=>a.action==='account.delete'&&a.entity_id===c));
+  const {purgeAccountData}=require('../src/account-deletion');assert.equal(await purgeAccountData(c),false);
+  assert.equal((await request('/accounts/'+c,'DELETE',null,owner)).status,202);
+  assert.equal(await purgeAccountData(c),true);
+  for(const table of ['accounts','campaigns','audit'])assert.equal((await db.pool.query('SELECT 1 FROM '+table+' WHERE '+(table==='audit'?'entity_id':'id')+'=$1',[c])).rowCount,0);
+  assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE id=$1',[taskId])).rowCount,0);
+ });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);
   assert.equal((await request('/data/purge','POST',{confirm:'wrong'},owner)).status,400);

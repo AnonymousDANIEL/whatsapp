@@ -74,3 +74,7 @@ CREATE TABLE IF NOT EXISTS history_exclusions (
  account_id uuid NOT NULL REFERENCES accounts(id),message_hash text NOT NULL,
  PRIMARY KEY(account_id,message_hash)
 );
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS deleted_by uuid REFERENCES users(id);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS purge_requested boolean NOT NULL DEFAULT false;

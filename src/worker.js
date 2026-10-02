@@ -11,6 +11,7 @@ const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
 const {readSnapshot}=require('./history-sync');
+const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
@@ -271,7 +272,14 @@ async function tick() {
   try {
     const accounts = (await pool.query('SELECT * FROM accounts WHERE worker_group=$1 ORDER BY created_at', [group])).rows;
     for (const a of accounts) {
-      if (!a.enabled) {
+      if(a.purge_requested){
+        const current=entries.get(a.id);
+        if(busy.has(a.id)||current?.syncing)continue;
+        await stopAccount(a.id);
+        for(const folder of ['profiles','homes'])await fs.rm(path.join(dataPath,folder,a.id),{recursive:true,force:true});
+        await purgeAccountData(a.id);retryAt.delete(a.id);failures.delete(a.id);continue;
+      }
+      if (!a.enabled || a.deleted_at) {
         if (busy.has(a.id)) continue; // in-flight sends can finish; no further sends are dispatched
         await stopAccount(a.id); await state(a.id, 'disabled'); continue;
       }
