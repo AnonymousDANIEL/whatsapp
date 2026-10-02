@@ -270,11 +270,11 @@ async function start() {
   }));
   app.get('/api/audit',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以查看全部操作记录',403);
-    res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 1000`)).rows);
+    res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 1000 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*1000])).rows);
   }));
   app.get('/api/messages',route(async(req,res)=>{
     const ids=(await visibleAccounts(req.user)).map(a=>a.id);
-    res.json((await pool.query(`SELECT m.*,a.label AS account_label,u.username AS actor FROM message_history m JOIN accounts a ON a.id=m.account_id LEFT JOIN users u ON u.id=m.actor_id WHERE m.account_id=ANY($1::uuid[]) AND (m.deleted_at IS NULL OR $2='owner') ORDER BY m.sent_at DESC LIMIT 500`,[ids,req.user.role])).rows);
+    res.json((await pool.query(`SELECT m.*,a.label AS account_label,u.username AS actor FROM message_history m JOIN accounts a ON a.id=m.account_id LEFT JOIN users u ON u.id=m.actor_id WHERE m.account_id=ANY($1::uuid[]) AND (m.deleted_at IS NULL OR $2='owner') ORDER BY m.sent_at DESC,m.message_id DESC LIMIT 500 OFFSET $3`,[ids,req.user.role,(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*500])).rows);
   }));
   app.delete('/api/messages/:accountId/:messageId',route(async(req,res)=>{
     await access(req.user,req.params.accountId,true);
