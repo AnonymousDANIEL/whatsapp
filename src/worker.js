@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
+const { describeStartupError } = require('./startup');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit } = require('./db');
@@ -26,10 +27,12 @@ async function state(id, status, error = null, phone = null) {
   await pool.query('UPDATE accounts SET status=$1,last_error=$2,phone=COALESCE($3,phone),heartbeat_at=now() WHERE id=$4 AND worker_group=$5', [status, error, phone, id, group]);
 }
 function processChild(entry, executable, args, env) {
-  const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'ignore'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
+  const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
   entry.children.push(child);
-  child.on('error', () => fail(entry.id, 'DESKTOP_START_FAILED').catch(() => {}));
-  child.on('exit', () => { if (!entry.closing && !shuttingDown) fail(entry.id, 'DESKTOP_EXITED').catch(() => {}); });
+  let stderr = '';
+  child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-4000); });
+  child.on('error', error => { console.error(describeStartupError(error, 'desktop-' + executable)); fail(entry.id, 'DESKTOP_START_FAILED').catch(() => {}); });
+  child.on('exit', (code, signal) => { if (!entry.closing && !shuttingDown) { console.error(describeStartupError(new Error(executable + ' exit=' + code + ' signal=' + signal + ' ' + stderr), 'desktop')); fail(entry.id, 'DESKTOP_EXITED').catch(() => {}); } });
   return child;
 }
 async function waitPort(port) {
@@ -72,6 +75,7 @@ class IsolatedAuth extends LocalAuth {
 }
 async function fail(id, reason) {
   const entry = entries.get(id); if (!entry || entry.closing) return;
+  console.error(describeStartupError(new Error(reason), 'account-browser'));
   await stopAccount(id);
   const n = (failures.get(id) || 0) + 1; failures.set(id, n);
   retryAt.set(id, Date.now() + Math.min(300000, 10000 * 2 ** Math.min(n, 5)));
@@ -131,7 +135,7 @@ async function startAccount(account) {
         e.client.pupPage?.bringToFront().catch(() => {});
         e.client.pupBrowser?.on('disconnected', () => { fail(account.id, 'BROWSER_EXITED').catch(() => {}); });
       }
-    }).catch(() => fail(account.id, 'WHATSAPP_INITIALIZATION_FAILED').catch(() => {}));
+    }).catch(error => { console.error(describeStartupError(error, 'chromium-initialize')); fail(account.id, 'WHATSAPP_INITIALIZATION_FAILED').catch(() => {}); });
   } catch (err) { await fail(account.id, err.message || 'START_FAILED'); }
 }
 // Staff must still have an active parent manager, inherited permissions and account grant.
