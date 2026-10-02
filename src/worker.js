@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
+const {readSnapshot}=require('./history-sync');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
@@ -131,7 +132,7 @@ async function startAccount(account) {
       e.ready = true; failures.delete(account.id); retryAt.delete(account.id);
       state(account.id, 'ready', null, e.client.info?.wid?.user || null).catch(() => {});
       e.client.pupPage.bringToFront().catch(() => {});
-      reconcileUnknown(account.id,e.client).catch(err=>console.error('reconcile:',err.code||err.name));
+      syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
     });
     e.client.on('message_ack', (message, ack) => { receiveAck(account.id, messageId(message), ack).catch(err => console.error('receipt persistence:', err.code || err.name)); });
     e.client.on('message_create', message => { recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name)); });
@@ -143,32 +144,50 @@ async function startAccount(account) {
     }).catch(error => { console.error(describeStartupError(error, 'chromium-initialize')); fail(account.id, 'WHATSAPP_INITIALIZATION_FAILED').catch(() => {}); });
   } catch (err) { await fail(account.id, err.message || 'START_FAILED'); }
 }
-async function recordMessage(accountId,message,actorId=null) {
+async function recordMessage(accountId,message,actorId=null,live=true) {
   const mid=messageId(message);if(!mid||!message.fromMe)return;
   const ack=messageAck(message),sentAt=Number.isFinite(message.timestamp)?new Date(message.timestamp*1000):new Date();
-  if(!actorId) actorId=(await pool.query(`SELECT s.user_id FROM control_leases l JOIN sessions s ON s.token_hash=l.session_hash WHERE l.account_id=$1 AND l.expires_at>now()`,[accountId])).rows[0]?.user_id||null;
+  if((await pool.query('SELECT 1 FROM history_exclusions WHERE account_id=$1 AND message_hash=$2',[accountId,crypto.createHash('sha256').update(mid).digest('hex')])).rowCount)return;
+  if(live&&!actorId) actorId=(await pool.query(`SELECT s.user_id FROM control_leases l JOIN sessions s ON s.token_hash=l.session_hash WHERE l.account_id=$1 AND l.expires_at>now()`,[accountId])).rows[0]?.user_id||null;
   await pool.query(`INSERT INTO message_history(account_id,message_id,actor_id,recipient,body,status,ack,sent_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
     ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id)`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt]);
   await receiveAck(accountId,mid,ack);
 }
-async function reconcileUnknown(accountId,client) {
+async function reconcileUnknown(accountId,client,snapshot=null) {
   const rows=(await pool.query(`SELECT r.*,c.body,c.created_by FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
   const chats=new Map();
   for(const row of rows){
     try{
       const chatId=row.phone?.replace(/^\+/,'')+'@c.us';
-      if(!chats.has(chatId))chats.set(chatId,await (await client.getChatById(chatId)).fetchMessages({limit:100}));
+      if(!chats.has(chatId))chats.set(chatId,snapshot?snapshot.filter(m=>m.chatId===chatId||m.to===chatId):await (await client.getChatById(chatId)).fetchMessages({limit:100}));
       const matches=chats.get(chatId).filter(m=>m.fromMe&&messageId(m)&&m.body===row.body&&Math.abs(m.timestamp*1000-+new Date(row.started_at))<=90000);
       if(matches.length!==1)continue;
       const message=matches[0],mid=messageId(message);
       // Ambiguous repeated identical sends remain unknown for human review.
       if(rows.filter(other=>other.phone===row.phone&&other.body===row.body&&Math.abs(message.timestamp*1000-+new Date(other.started_at))<=90000).length!==1)continue;
-      if((await pool.query('SELECT 1 FROM recipients WHERE message_id=$1',[mid])).rowCount)continue;
+      if((await pool.query('SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE r.message_id=$1 AND c.account_id=$2',[mid,accountId])).rowCount)continue;
       await pool.query("UPDATE recipients SET status=$1,message_id=$2,ack=$3,error_code=NULL,updated_at=now() WHERE id=$4 AND status='unknown'",[ackStatus(messageAck(message)),mid,messageAck(message),row.id]);
-      await recordMessage(accountId,message,row.created_by);
+      await recordMessage(accountId,message,row.created_by,false);
       await audit(row.created_by,'message.reconciled',row.campaign_id,{recipient_id:row.id,message_id:mid});
+      console.log('History reconciliation: recovered one uncertain result');
     }catch(err){console.error('reconcile item:',err.code||err.name);}
   }
+}
+async function syncHistory(accountId,entry) {
+  if(entry.syncing||entry.closing)return;
+  entry.syncing=true;entry.nextSync=Date.now()+15000;
+  try{
+    const targets=(await pool.query(`SELECT DISTINCT r.phone FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status IN('unknown','awaiting_ack','submitted','delivered') AND r.started_at>now()-interval '7 days' LIMIT 50`,[accountId])).rows;
+    const snapshot=await readSnapshot(entry.client,targets.map(r=>r.phone.replace(/^\+/, '')+'@c.us'),Math.floor(Date.now()/1000)-7*86400);
+    for(const message of snapshot.messages)await recordMessage(accountId,message,null,false);
+    await reconcileUnknown(accountId,entry.client,snapshot.messages);
+    await pool.query('UPDATE accounts SET history_synced_at=now(),history_sync_error=$2 WHERE id=$1',[accountId,snapshot.chatErrors?'PARTIAL_CHAT_HISTORY':null]);
+    if(!entry.syncReported){console.log('History sync ready:',JSON.stringify({messages:snapshot.messages.length,chatErrors:snapshot.chatErrors}));entry.syncReported=true;}
+  }catch(err){
+    entry.syncReported=false;
+    await pool.query("UPDATE accounts SET history_sync_error='HISTORY_SYNC_FAILED' WHERE id=$1",[accountId]).catch(()=>{});
+    console.error('history sync:',err.code||err.name);
+  }finally{entry.syncing=false;}
 }
 const eligible = `u.active AND (u.role='owner' OR (u.role='user' AND EXISTS
   (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id)))`;
@@ -261,6 +280,7 @@ async function tick() {
       if (e) {
         await pool.query('UPDATE accounts SET heartbeat_at=now() WHERE id=$1', [a.id]);
         if (e.client?.pupPage && !e.ready) e.client.pupPage.bringToFront().catch(() => {});
+        if(e.ready && Date.now()>=(e.nextSync||0))syncHistory(a.id,e).catch(()=>{});
         if (e.ready) dispatch(a, e).catch(() => {});
       } else if (entries.size >= maxAccounts) await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
     }
@@ -331,4 +351,4 @@ async function start() {
   });
   return server;
 }
-module.exports = { start, send, receiveAck, recordMessage, reconcileUnknown, eligible, dispatch };
+module.exports = { start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };

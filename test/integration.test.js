@@ -61,6 +61,14 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await worker.reconcileUnknown(a,{getChatById:async()=>({fetchMessages:async()=>[{id:'recovered-id',fromMe:true,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(+new Date(rr.started_at)/1000),ack:2}]})});
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[rr.id])).rows[0].status,'delivered');assert.equal(calls,1);
  });
+ await t.test('periodic snapshots recover missed outgoing events and ACKs without sending',async()=>{
+  const entry={client:{pupPage:{evaluate:async()=>({messages:[{id:'polled',fromMe:true,to:'60123456789@c.us',body:'missed event',timestamp:Math.floor(Date.now()/1000),ack:2}],chatErrors:0})}}};
+  await worker.syncHistory(a,entry);await worker.syncHistory(a,entry);
+  const rows=(await db.pool.query("SELECT * FROM message_history WHERE message_id='polled'")).rows;assert.equal(rows.length,1);assert.equal(rows[0].status,'delivered');assert.equal(rows[0].actor_id,null);
+  assert.ok((await db.pool.query('SELECT history_synced_at FROM accounts WHERE id=$1',[a])).rows[0].history_synced_at);
+  assert.equal((await request('/messages/'+a+'/polled','DELETE',null,owner)).status,200);
+  await worker.syncHistory(a,entry);assert.equal((await db.pool.query("SELECT 1 FROM message_history WHERE message_id='polled'")).rowCount,0);
+ });
  await t.test('USER deletion is retained for Owner; Owner permanent deletion removes app records',async()=>{
   assert.equal((await request('/messages/'+a+'/message-1','DELETE',null,user)).status,200);
   assert.ok(!(await request('/messages','GET',null,user)).data.some(m=>m.message_id==='message-1'));

@@ -66,3 +66,11 @@ CREATE TABLE IF NOT EXISTS message_history (
  updated_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz,
  PRIMARY KEY(account_id,message_id)
 );
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS history_synced_at timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS history_sync_error text;
+-- Non-content suppression keys prevent polling from recreating Owner-deleted records.
+CREATE TABLE IF NOT EXISTS history_exclusions (
+ account_id uuid NOT NULL REFERENCES accounts(id),message_hash text NOT NULL,
+ PRIMARY KEY(account_id,message_hash)
+);

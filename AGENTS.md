@@ -18,7 +18,7 @@ Code and CI cannot replace the first-time Railway service and variable setup.
 
 ## Application boundaries
 
-- Keep separate account, task, report and employee pages, with the simple dark
+- Keep separate account, task, message history and employee pages, with the simple dark
   blue visual style.
 - Use Owner / USER ID roles. Only Owner manages IDs; users share the same capabilities within their assigned WhatsApp accounts. User deletions retain audit history; Owner can explicitly purge application records.
 - The original WhatsApp screen has only server-enforced view / operate access;

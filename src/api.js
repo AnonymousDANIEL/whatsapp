@@ -279,7 +279,7 @@ async function start() {
   app.delete('/api/messages/:accountId/:messageId',route(async(req,res)=>{
     await access(req.user,req.params.accountId,true);
     if(req.user.role==='owner'){
-      await transaction(async db=>{await db.query('DELETE FROM message_history WHERE account_id=$1 AND message_id=$2',[req.params.accountId,req.params.messageId]);await db.query('DELETE FROM audit WHERE entity_id=$1',[req.params.messageId]);});
+      await transaction(async db=>{await db.query('INSERT INTO history_exclusions(account_id,message_hash) VALUES($1,$2) ON CONFLICT DO NOTHING',[req.params.accountId,hash(req.params.messageId)]);await db.query('DELETE FROM message_history WHERE account_id=$1 AND message_id=$2',[req.params.accountId,req.params.messageId]);await db.query('DELETE FROM audit WHERE entity_id=$1',[req.params.messageId]);});
     }else{
       await transaction(async db=>{await db.query('UPDATE message_history SET deleted_at=now() WHERE account_id=$1 AND message_id=$2',[req.params.accountId,req.params.messageId]);await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)',[req.user.id,'message.delete',req.params.messageId,{account_id:req.params.accountId}]);});
     }res.json({ok:true});
@@ -290,6 +290,7 @@ async function start() {
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE',[c.id]);
       assert(!(await db.query("SELECT 1 FROM recipients WHERE campaign_id=$1 AND status='sending'",[c.id])).rowCount,'任务正在发送，请暂停后再删除',409);
       if(req.user.role==='owner'){
+        for(const r of (await db.query('SELECT message_id FROM recipients WHERE campaign_id=$1 AND message_id IS NOT NULL',[c.id])).rows)await db.query('INSERT INTO history_exclusions VALUES($1,$2) ON CONFLICT DO NOTHING',[c.account_id,hash(r.message_id)]);
         await db.query('DELETE FROM message_history WHERE account_id=$1 AND message_id IN(SELECT message_id FROM recipients WHERE campaign_id=$2)',[c.account_id,c.id]);
         await db.query('DELETE FROM receipts WHERE account_id=$1 AND message_id IN(SELECT message_id FROM recipients WHERE campaign_id=$2)',[c.account_id,c.id]);
         await db.query('DELETE FROM audit WHERE entity_id IN(SELECT message_id FROM recipients WHERE campaign_id=$1)',[c.id]);
@@ -307,6 +308,7 @@ async function start() {
     await transaction(async db=>{
       await db.query('LOCK TABLE campaigns IN ACCESS EXCLUSIVE MODE');
       assert(!(await db.query("SELECT 1 FROM recipients WHERE status='sending'")).rowCount,'任务正在发送，请暂停后再删除',409);
+      for(const r of (await db.query('SELECT account_id,message_id FROM message_history')).rows)await db.query('INSERT INTO history_exclusions VALUES($1,$2) ON CONFLICT DO NOTHING',[r.account_id,hash(r.message_id)]);
       await db.query('DELETE FROM recipients');await db.query('DELETE FROM campaigns');await db.query('DELETE FROM message_history');await db.query('DELETE FROM receipts');await db.query('DELETE FROM audit');
     });res.json({ok:true});
   }));
