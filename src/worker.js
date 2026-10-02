@@ -11,6 +11,7 @@ const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
 const {readSnapshot}=require('./history-sync');
+const {clearStaleProfileLock}=require('./profile-lock');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
@@ -73,7 +74,7 @@ async function desktopIdentity(id) {
 }
 class IsolatedAuth extends LocalAuth {
   constructor(options, uid) { super(options); this.uid = uid; }
-  async beforeBrowserInitialized() { await super.beforeBrowserInitialized(); await execute('chown', ['-R', this.uid + ':' + this.uid, this.userDataDir]); await fs.chmod(this.userDataDir, 0o700); }
+  async beforeBrowserInitialized() { await super.beforeBrowserInitialized(); if(await clearStaleProfileLock(this.userDataDir))console.log('Removed stale Chromium lock from prior container'); await execute('chown', ['-R', this.uid + ':' + this.uid, this.userDataDir]); await fs.chmod(this.userDataDir, 0o700); }
 }
 async function fail(id, reason) {
   const entry = entries.get(id); if (!entry || entry.closing) return;

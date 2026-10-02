@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/main.js && node --check src/startup.js && node --check src/connection.js && node --check src/api.js && node --check src/worker.js && node --check public/app.js && node --input-type=module --check < public/viewer.js && node --check src/messages.js && node --check public/i18n.js && node --check src/history-sync.js"
+    "check": "node --check src/main.js && node --check src/startup.js && node --check src/connection.js && node --check src/api.js && node --check src/worker.js && node --check public/app.js && node --input-type=module --check < public/viewer.js && node --check src/messages.js && node --check public/i18n.js && node --check src/history-sync.js && node --check src/profile-lock.js"
   },
   "dependencies": {
     "@novnc/novnc": "1.7.0",
