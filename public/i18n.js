@@ -5,6 +5,7 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+ '每批需要 1–100 条消息':'Each batch requires 1–100 messages.',
  '请输入消息或上传照片':'Enter a message or upload a photo.',
  '只有 Owner 可以管理 USER ID':'Only the Owner can manage USER IDs.',
  '只有 Owner 可以查看全部操作记录':'Only the Owner can view all activity records.',

@@ -107,7 +107,7 @@ async function startAccount(account) {
     const identity = await desktopIdentity(account.id); e.uid = identity.uid;
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
-    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'UTC', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
+    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
     processChild(e, 'Xvfb', [display, '-screen', '0', '1366x900x24', '-nolisten', 'tcp', '-auth', identity.xauth]);
     await pause(500);
     for (const [port, viewOnly] of [[e.controlPort, false], [e.viewPort, true]]) {
@@ -223,7 +223,10 @@ async function dispatch(account, entry) {
       const receipt = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [account.id, result.messageId])).rows[0];
       if (receipt) await receiveAck(account.id, result.messageId, receipt.ack);
     }
-    await pool.query("UPDATE accounts SET next_send_at=now()+($1::integer * interval '1 millisecond') WHERE id=$2", [campaign.interval_ms, account.id]);
+    if(result.status!=='pending')await pool.query(`UPDATE accounts SET
+      next_send_at=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN now()+($1::integer*interval '1 millisecond') ELSE now() END,
+      batch_sent=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN 0 ELSE (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 END,
+      batch_campaign_id=$3 WHERE id=$2`,[campaign.interval_ms,account.id,campaign.id,campaign.batch_size||1]);
     if (result.quarantine) {
       await pool.query('UPDATE campaigns SET enabled=false WHERE id=$1',[campaign.id]);
       await audit(campaign.created_by,'campaign.review_required',campaign.id,{recipient_id:recipient.id,reason:result.error});

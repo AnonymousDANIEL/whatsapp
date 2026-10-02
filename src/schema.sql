@@ -87,3 +87,10 @@ UPDATE campaigns SET
  window_start=CASE WHEN window_start=window_end THEN '16:00' ELSE to_char((date '2000-01-01'+window_start::time-interval '8 hours'),'HH24:MI') END,
  window_end=CASE WHEN window_start=window_end THEN '16:00' ELSE to_char((date '2000-01-01'+window_end::time-interval '8 hours'),'HH24:MI') END,timezone='UTC'
  WHERE timezone='Asia/Kuala_Lumpur';
+
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS batch_size integer NOT NULL DEFAULT 1 CHECK(batch_size BETWEEN 1 AND 100);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS batch_campaign_id text;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS batch_sent integer NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS app_migrations(name text PRIMARY KEY);
+UPDATE campaigns SET send_now=true WHERE NOT EXISTS(SELECT 1 FROM app_migrations WHERE name='interval_only_v1');
+INSERT INTO app_migrations VALUES('interval_only_v1') ON CONFLICT DO NOTHING;

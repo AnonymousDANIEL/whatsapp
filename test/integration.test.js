@@ -87,6 +87,17 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   let calls=0;const result=await worker.send({id:a,client:{getNumberId:async()=>({_serialized:'60123456789@c.us'}),sendMessage:async(to,media,opts)=>{calls++;assert.equal(media.mimetype,'image/png');assert.equal(media.data,photo.data);assert.equal(opts.caption,'');return{id:'photo-msg',fromMe:true,to,type:'image',body:'',ack:2};}}},{phone:'+60123456789'},c);
   assert.equal(calls,1);assert.equal(result.status,'delivered');assert.equal((await db.pool.query("SELECT message_type FROM message_history WHERE message_id='photo-msg'")).rows[0].message_type,'image');
  });
+ await t.test('interval-only batches persist counts and expose pending/invalid per-number records',async()=>{
+  const r=await request('/campaigns','POST',{title:'Batch',account_id:a,body:'batch text',recipients:'0123456789\n0123456790\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);assert.equal(r.status,201);
+  const c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[r.data.id])).rows[0];assert.equal(c.send_now,true);assert.equal(c.batch_size,2);
+  assert.equal((await request('/campaigns/'+c.id,'PATCH',{pacing:true,interval_ms:60000,batch_size:0},user)).status,400);
+  await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[c.id]);await db.pool.query('UPDATE accounts SET next_send_at=now(),batch_sent=0 WHERE id=$1',[a]);
+  const before=(await request('/send-records','GET',null,user)).data.filter(x=>x.campaign_id===c.id);assert.equal(before.length,3);assert.equal(before.filter(x=>x.status==='pending').length,2);assert.equal(before.filter(x=>x.status==='invalid').length,1);assert.equal((await request('/send-records','GET',null,user2)).data.length,0);
+  let calls=0;const entry={id:a,ready:true,client:{getNumberId:async phone=>({_serialized:phone+'@c.us'}),sendMessage:async(to,body)=>({id:'batch-'+(++calls),fromMe:true,to,body,ack:2})}};
+  await worker.dispatch({id:a},entry);let saved=(await db.pool.query('SELECT * FROM accounts WHERE id=$1',[a])).rows[0];assert.equal(saved.batch_sent,1);
+  await worker.dispatch({id:a},entry);saved=(await db.pool.query('SELECT * FROM accounts WHERE id=$1',[a])).rows[0];assert.equal(saved.batch_sent,0);assert.ok(+saved.next_send_at>Date.now()+50000);assert.equal(calls,2);
+  const after=(await request('/send-records','GET',null,user)).data.filter(x=>x.campaign_id===c.id);assert.equal(after.length,3);assert.equal(after.filter(x=>x.status==='delivered').length,2);assert.ok(after.filter(x=>x.status==='delivered').every(x=>x.recipient.startsWith('+60')));
+ });
  await t.test('USER deletion is retained for Owner; Owner permanent deletion removes app records',async()=>{
   assert.equal((await request('/messages/'+a+'/message-1','DELETE',null,user)).status,200);
   assert.ok(!(await request('/messages','GET',null,user)).data.some(m=>m.message_id==='message-1'));

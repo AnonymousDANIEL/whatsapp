@@ -42,6 +42,12 @@ function validateSchedule(body) {
   assert(Number.isInteger(interval_ms) && interval_ms >= 5000 && interval_ms <= 3600000, '发送间隔需要在 5 秒–1 小时之间');
   return { timezone, window_start: body.window_start, window_end: body.window_end, weekdays: [...new Set(weekdays)], scheduled_at: scheduled_at.toISO(), expires_at: expires_at?.toISO() || null, interval_ms };
 }
+function validatePacing(body){
+ const interval_ms=Number(body.interval_ms),batch_size=Number(body.batch_size??1);
+ assert(Number.isInteger(interval_ms)&&interval_ms>=5000&&interval_ms<=3600000,'发送间隔需要在 5 秒–1 小时之间');
+ assert(Number.isInteger(batch_size)&&batch_size>=1&&batch_size<=100,'每批需要 1–100 条消息');
+ return {interval_ms,batch_size};
+}
 function inWindow(job, instant = new Date()) {
   if (!job.enabled || +instant < +new Date(job.scheduled_at) || (job.expires_at && +instant >= +new Date(job.expires_at))) return false;
   const dt = DateTime.fromJSDate(instant).setZone(job.timezone);
@@ -72,4 +78,4 @@ function manageUser(actor, target) {
 }
 function csvCell(value) { return '"' + String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""') + '"'; }
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
-module.exports = { PERMISSIONS, assert, parseRecipients, validateSchedule, inWindow, canDispatch, ackStatus, permission, manageUser, csvCell, hash };
+module.exports = { PERMISSIONS, assert, parseRecipients, validateSchedule, validatePacing, inWindow, canDispatch, ackStatus, permission, manageUser, csvCell, hash };

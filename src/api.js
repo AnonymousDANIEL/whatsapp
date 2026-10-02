@@ -9,7 +9,7 @@ const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
-const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, permission, manageUser, csvCell } = require('./domain');
+const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, validatePacing, permission, manageUser, csvCell } = require('./domain');
 const { createWorkerConnection } = require('./connection');
 
 const SESSION_HOURS = 168;
@@ -96,7 +96,7 @@ async function start() {
       next();
     }).catch(next);
   });
-  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'UTC' })));
+  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur' })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
   app.post('/api/password', route(async (req, res) => {
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
@@ -203,7 +203,7 @@ async function start() {
   }));
   app.get('/api/campaigns', route(async (req, res) => {
     const ids = (await visibleAccounts(req.user)).map(a => a.id);
-    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
+    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
       (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::integer n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) AS counts
       FROM campaigns c JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
       WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner') ORDER BY c.created_at DESC LIMIT 200`, [ids,req.user.role]);
@@ -221,11 +221,12 @@ async function start() {
     assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
     assert(b.opt_in_confirmed === true, '请确认这些联系人同意接收消息');
     assert(b.send_now === undefined || typeof b.send_now === 'boolean', 'send_now 无效');
-    const schedule = validateSchedule(b), parsed = parseRecipients(b.recipients);
+    const pacing=b.pacing===true?validatePacing(b):null;
+    const schedule = validateSchedule(pacing?{...b,timezone:'Asia/Kuala_Lumpur',window_start:'00:00',window_end:'00:00',weekdays:[1,2,3,4,5,6,7],scheduled_at:null,expires_at:null}:b), parsed = parseRecipients(b.recipients);
     const id = crypto.randomUUID();
     await transaction(async c => {
-      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now,media)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14,$15)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, b.send_now === true,media]);
+      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now,media,batch_size)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, pacing?true:b.send_now === true,media,pacing?.batch_size||1]);
       await c.query(`INSERT INTO recipients(campaign_id,raw_phone,phone,status,error_code)
         SELECT $1,r.raw,r.phone,r.status,r.error FROM jsonb_to_recordset($2::jsonb) AS r(raw text,phone text,status text,error text)`, [id, JSON.stringify(parsed.recipients)]);
     });
@@ -251,7 +252,11 @@ async function start() {
   app.patch('/api/campaigns/:id', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
     const c = await campaignAccess(req.user, req.params.id, true); assert(!c.cancelled, '任务已取消');
-    if(req.body.window_start!==undefined){
+    if(req.body.pacing===true){
+      const pace=validatePacing(req.body);
+      await pool.query('UPDATE campaigns SET interval_ms=$1,batch_size=$2,send_now=true WHERE id=$3',[pace.interval_ms,pace.batch_size,c.id]);
+      await audit(req.user.id,'campaign.schedule',c.id,pace);
+    }else if(req.body.window_start!==undefined){
       const schedule=validateSchedule({...c,scheduled_at:c.scheduled_at.toISOString(),expires_at:c.expires_at?.toISOString(),...req.body});
       assert(req.body.send_now===undefined||typeof req.body.send_now==='boolean','send_now 无效');
       await pool.query(`UPDATE campaigns SET timezone=$1,window_start=$2,window_end=$3,weekdays=$4,scheduled_at=$5,expires_at=$6,interval_ms=$7,send_now=$8 WHERE id=$9`,[schedule.timezone,schedule.window_start,schedule.window_end,schedule.weekdays,schedule.scheduled_at,schedule.expires_at,schedule.interval_ms,req.body.send_now??c.send_now,c.id]);
@@ -288,6 +293,18 @@ async function start() {
   app.get('/api/audit',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以查看全部操作记录',403);
     res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 1000 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*1000])).rows);
+  }));
+  app.get('/api/send-records',route(async(req,res)=>{
+    const ids=(await visibleAccounts(req.user)).map(a=>a.id),offset=(Math.max(1,Math.floor(Number(req.query.page)||1))-1)*500;
+    res.json((await pool.query(`SELECT * FROM (
+      SELECT c.account_id,a.label account_label,u.username actor,r.phone recipient,r.raw_phone,r.id::text recipient_id,c.id campaign_id,r.message_id,c.body,CASE WHEN c.media IS NULL THEN 'chat' ELSE 'image' END message_type,r.status,r.error_code,COALESCE(r.started_at,r.updated_at) sent_at,c.deleted_at
+      FROM recipients r JOIN campaigns c ON c.id=r.campaign_id JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
+      WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner')
+      UNION ALL
+      SELECT m.account_id,a.label,u.username,m.recipient,NULL,NULL,NULL,m.message_id,m.body,m.message_type,m.status,NULL,m.sent_at,m.deleted_at
+      FROM message_history m JOIN accounts a ON a.id=m.account_id LEFT JOIN users u ON u.id=m.actor_id
+      WHERE m.account_id=ANY($1::uuid[]) AND (m.deleted_at IS NULL OR $2='owner') AND NOT EXISTS(SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=m.account_id AND r.message_id=m.message_id)
+    ) records ORDER BY sent_at DESC,recipient_id DESC NULLS LAST,message_id DESC LIMIT 500 OFFSET $3`,[ids,req.user.role,offset])).rows);
   }));
   app.get('/api/messages',route(async(req,res)=>{
     const ids=(await visibleAccounts(req.user)).map(a=>a.id);
