@@ -57,9 +57,11 @@ test('invalid times, timezone, weekdays and deadline are rejected', () => {
 test('server receipt is distinct from device delivery and read receipt', () => {
  assert.deepEqual([-1,0,1,2,3,4].map(ackStatus),['failed','awaiting_ack','submitted','delivered','read','read']);
 });
-test('manager cannot administer another manager or another team staff', () => {
+test('only Owner can administer USER IDs', () => {
  const manager={id:'m1',role:'manager'};
- assert.equal(manageUser(manager,{role:'staff',manager_id:'m1'}),true);
+ assert.equal(manageUser(manager,{role:'staff',manager_id:'m1'}),false);
+ assert.equal(manageUser({role:'user'},{role:'user'}),false);
+ assert.equal(manageUser({role:'owner'},{role:'user'}),true);
  assert.equal(manageUser(manager,{role:'staff',manager_id:'m2'}),false);
  assert.equal(manageUser(manager,{role:'manager',manager_id:'m1'}),false);
  assert.equal(manageUser({role:'owner'},{role:'owner'}),false);

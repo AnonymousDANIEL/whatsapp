@@ -50,3 +50,19 @@ CREATE TABLE IF NOT EXISTS control_leases (
  account_id uuid PRIMARY KEY REFERENCES accounts(id), session_hash text NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
  expires_at timestamptz NOT NULL
 );
+
+-- Idempotent role migration requested by the Owner; preserve IDs and grants.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('owner','manager','staff','user'));
+UPDATE users SET active=false WHERE role='staff' AND manager_id IN(SELECT id FROM users WHERE NOT active);
+UPDATE users SET role='user',manager_id=NULL,permissions=ARRAY['tasks.create','reports.export']::text[] WHERE role IN ('manager','staff');
+UPDATE account_grants SET operate=true WHERE user_id IN (SELECT id FROM users WHERE role='user');
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS deleted_by uuid REFERENCES users(id);
+CREATE TABLE IF NOT EXISTS message_history (
+ account_id uuid NOT NULL REFERENCES accounts(id), message_id text NOT NULL,
+ actor_id uuid REFERENCES users(id), recipient text NOT NULL, body text NOT NULL DEFAULT '',
+ status text NOT NULL, ack integer, sent_at timestamptz NOT NULL,
+ updated_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz,
+ PRIMARY KEY(account_id,message_id)
+);

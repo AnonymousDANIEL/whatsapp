@@ -1,0 +1,3 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const {messageId,messageAck,validAck}=require('../src/messages');
+test('message IDs support both WhatsApp serialized object and string models',()=>{assert.equal(messageId({id:'true_123@c.us_ABC'}),'true_123@c.us_ABC');assert.equal(messageId({id:{_serialized:'x'}}),'x');assert.equal(messageId({id:{}}),null);assert.equal(messageId(),null);});
+test('undefined or malformed receipt fields cannot reach NOT NULL database columns',()=>{for(const a of [null,undefined,'2',NaN,5])assert.equal(validAck(a),false);for(const a of [-1,0,1,2,3,4])assert.equal(validAck(a),true);assert.equal(messageAck({}),0);});

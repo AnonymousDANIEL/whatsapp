@@ -9,9 +9,10 @@ const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
+const { messageId,validAck,messageAck } = require('./messages');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
-const { pool, audit } = require('./db');
+const { pool, audit, transaction } = require('./db');
 const { assert, canDispatch, ackStatus } = require('./domain');
 const group = process.env.WORKER_GROUP;
 const maxAccounts = Number(process.env.MAX_ACCOUNTS_PER_WORKER || 5);
@@ -82,10 +83,12 @@ async function fail(id, reason) {
   await state(id, 'error', reason);
 }
 async function receiveAck(id, messageId, ack) {
+  if(!messageId||!validAck(ack)) return;
   // Persist the receipt first: ACK can arrive before sendMessage's promise resolves.
   await pool.query(`INSERT INTO receipts(account_id,message_id,ack) VALUES($1,$2,$3)
     ON CONFLICT(account_id,message_id) DO UPDATE SET ack=CASE WHEN excluded.ack=-1 THEN -1 ELSE GREATEST(receipts.ack,excluded.ack) END,updated_at=now()`, [id, messageId, ack]);
   const saved = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [id, messageId])).rows[0].ack;
+  await pool.query(`UPDATE message_history SET ack=$1,status=$2,updated_at=now() WHERE account_id=$3 AND message_id=$4 AND (ack IS NULL OR (ack<>-1 AND ($1=-1 OR $1>=ack)))`,[saved,ackStatus(saved),id,messageId]);
   await pool.query(`UPDATE recipients r SET status=$1,ack=$2,error_code=CASE WHEN $2=-1 THEN 'ACK_ERROR' ELSE NULL END,updated_at=now()
     FROM campaigns c WHERE c.id=r.campaign_id AND c.account_id=$3 AND r.message_id=$4`, [ackStatus(saved), saved, id, messageId]);
 }
@@ -101,7 +104,7 @@ async function startAccount(account) {
     const identity = await desktopIdentity(account.id); e.uid = identity.uid;
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
-    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
+    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
     processChild(e, 'Xvfb', [display, '-screen', '0', '1366x900x24', '-nolisten', 'tcp', '-auth', identity.xauth]);
     await pause(500);
     for (const [port, viewOnly] of [[e.controlPort, false], [e.viewPort, true]]) {
@@ -128,8 +131,10 @@ async function startAccount(account) {
       e.ready = true; failures.delete(account.id); retryAt.delete(account.id);
       state(account.id, 'ready', null, e.client.info?.wid?.user || null).catch(() => {});
       e.client.pupPage.bringToFront().catch(() => {});
+      reconcileUnknown(account.id,e.client).catch(err=>console.error('reconcile:',err.code||err.name));
     });
-    e.client.on('message_ack', (message, ack) => { receiveAck(account.id, message.id._serialized, ack).catch(err => console.error('receipt persistence:', err.code || err.name)); });
+    e.client.on('message_ack', (message, ack) => { receiveAck(account.id, messageId(message), ack).catch(err => console.error('receipt persistence:', err.code || err.name)); });
+    e.client.on('message_create', message => { recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name)); });
     e.client.initialize().then(() => {
       if (!e.closing) {
         e.client.pupPage?.bringToFront().catch(() => {});
@@ -138,29 +143,56 @@ async function startAccount(account) {
     }).catch(error => { console.error(describeStartupError(error, 'chromium-initialize')); fail(account.id, 'WHATSAPP_INITIALIZATION_FAILED').catch(() => {}); });
   } catch (err) { await fail(account.id, err.message || 'START_FAILED'); }
 }
-// Staff must still have an active parent manager, inherited permissions and account grant.
-const eligible = `u.active AND (u.role='owner' OR ('tasks.create'=ANY(u.permissions) AND EXISTS
-  (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id AND g.operate)))
-  AND (u.role<>'staff' OR EXISTS(SELECT 1 FROM users m JOIN account_grants mg ON mg.user_id=m.id
-    WHERE m.id=u.manager_id AND m.active AND 'tasks.create'=ANY(m.permissions) AND mg.account_id=c.account_id AND mg.operate))`;
+async function recordMessage(accountId,message,actorId=null) {
+  const mid=messageId(message);if(!mid||!message.fromMe)return;
+  const ack=messageAck(message),sentAt=Number.isFinite(message.timestamp)?new Date(message.timestamp*1000):new Date();
+  if(!actorId) actorId=(await pool.query(`SELECT s.user_id FROM control_leases l JOIN sessions s ON s.token_hash=l.session_hash WHERE l.account_id=$1 AND l.expires_at>now()`,[accountId])).rows[0]?.user_id||null;
+  await pool.query(`INSERT INTO message_history(account_id,message_id,actor_id,recipient,body,status,ack,sent_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id)`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt]);
+  await receiveAck(accountId,mid,ack);
+}
+async function reconcileUnknown(accountId,client) {
+  const rows=(await pool.query(`SELECT r.*,c.body,c.created_by FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
+  const chats=new Map();
+  for(const row of rows){
+    try{
+      const chatId=row.phone?.replace(/^\+/,'')+'@c.us';
+      if(!chats.has(chatId))chats.set(chatId,await (await client.getChatById(chatId)).fetchMessages({limit:100}));
+      const matches=chats.get(chatId).filter(m=>m.fromMe&&messageId(m)&&m.body===row.body&&Math.abs(m.timestamp*1000-+new Date(row.started_at))<=90000);
+      if(matches.length!==1)continue;
+      const message=matches[0],mid=messageId(message);
+      // Ambiguous repeated identical sends remain unknown for human review.
+      if(rows.filter(other=>other.phone===row.phone&&other.body===row.body&&Math.abs(message.timestamp*1000-+new Date(other.started_at))<=90000).length!==1)continue;
+      if((await pool.query('SELECT 1 FROM recipients WHERE message_id=$1',[mid])).rowCount)continue;
+      await pool.query("UPDATE recipients SET status=$1,message_id=$2,ack=$3,error_code=NULL,updated_at=now() WHERE id=$4 AND status='unknown'",[ackStatus(messageAck(message)),mid,messageAck(message),row.id]);
+      await recordMessage(accountId,message,row.created_by);
+      await audit(row.created_by,'message.reconciled',row.campaign_id,{recipient_id:row.id,message_id:mid});
+    }catch(err){console.error('reconcile item:',err.code||err.name);}
+  }
+}
+const eligible = `u.active AND (u.role='owner' OR (u.role='user' AND EXISTS
+  (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id)))`;
 async function dispatch(account, entry) {
   if (busy.has(account.id) || !entry.ready || shuttingDown) return;
   busy.add(account.id);
   let recipient;
   try {
     const candidates = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
-      WHERE c.account_id=$1 AND c.enabled AND NOT c.cancelled AND (c.send_now OR (c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()))) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
+      WHERE c.account_id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND (c.send_now OR (c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()))) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())
       AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending')
       ORDER BY c.send_now DESC,c.created_at`, [account.id])).rows;
     const campaign = candidates.find(c => canDispatch(c)); if (!campaign) return;
-    recipient = (await pool.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
-      WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
-      RETURNING *`, [campaign.id])).rows[0];
+    recipient = await transaction(async db=>{
+      const current=(await db.query('SELECT * FROM campaigns WHERE id=$1 FOR UPDATE',[campaign.id])).rows[0];
+      if(!current||current.deleted_at||!canDispatch(current))return null;
+      return (await db.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
+        WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`,[campaign.id])).rows[0];
+    });
     if (!recipient) return;
     // Persist 'sending' before contacting WhatsApp. Crash recovery never blindly resends it.
     const stillAllowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
-      WHERE c.id=$1 AND c.enabled AND NOT c.cancelled AND a.enabled AND ${eligible}
+      WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
     if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); return; }
     const result = await send(entry, recipient, campaign);
@@ -170,7 +202,10 @@ async function dispatch(account, entry) {
       if (receipt) await receiveAck(account.id, result.messageId, receipt.ack);
     }
     await pool.query("UPDATE accounts SET next_send_at=now()+($1::integer * interval '1 millisecond') WHERE id=$2", [campaign.interval_ms, account.id]);
-    if (result.quarantine) await fail(account.id, 'SEND_RESULT_UNKNOWN');
+    if (result.quarantine) {
+      await pool.query('UPDATE campaigns SET enabled=false WHERE id=$1',[campaign.id]);
+      await audit(campaign.created_by,'campaign.review_required',campaign.id,{recipient_id:recipient.id,reason:result.error});
+    }
   } catch (err) {
     if (recipient) await pool.query("UPDATE recipients SET status='unknown',error_code='WORKER_EXCEPTION_REVIEW_REQUIRED',updated_at=now() WHERE id=$1 AND status='sending'", [recipient.id]).catch(() => {});
     console.error('dispatch:', err.code || err.name);
@@ -185,12 +220,15 @@ async function send(entry, recipient, campaign) {
       if (shuttingDown || entry.closing) return { status: 'unknown', error: 'WORKER_STOPPED' };
       // Recheck after number lookup, which may take a while.
       const allowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
-        WHERE c.id=$1 AND c.enabled AND NOT c.cancelled AND a.enabled AND ${eligible}
+        WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
         AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
       if (!allowed || !canDispatch(allowed)) return { status: 'pending', error: null };
       startedSend = true;
       const message = await entry.client.sendMessage(wid._serialized, campaign.body, { waitUntilMsgSent: true });
-      return { status: ackStatus(message.ack ?? 0), error: null, messageId: message.id._serialized, ack: message.ack ?? 0 };
+      const mid=messageId(message);
+      if(!mid) return {status:'unknown',error:'SEND_ID_MISSING_REVIEW_REQUIRED',quarantine:true};
+      await recordMessage(entry.id,{...message,fromMe:true,to:message.to||wid._serialized},campaign.created_by).catch(err=>console.error('message history:',err.code||err.name));
+      return { status: ackStatus(messageAck(message)), error: null, messageId:mid, ack:messageAck(message) };
     } catch { return { status: startedSend ? 'unknown' : 'failed', error: startedSend ? 'SEND_EXCEPTION_REVIEW_REQUIRED' : 'NUMBER_LOOKUP_FAILED', quarantine: startedSend }; }
   })();
   let timer;
@@ -293,4 +331,4 @@ async function start() {
   });
   return server;
 }
-module.exports = { start, send, receiveAck, eligible, dispatch };
+module.exports = { start, send, receiveAck, recordMessage, reconcileUnknown, eligible, dispatch };

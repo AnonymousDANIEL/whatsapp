@@ -66,9 +66,9 @@ function ackStatus(ack) {
   if (ack >= 1) return 'submitted';
   return 'awaiting_ack';
 }
-function permission(user, name) { return user.role === 'owner' || user.permissions.includes(name); }
+function permission(user, name) { return ['owner','user'].includes(user.role) && PERMISSIONS.includes(name); }
 function manageUser(actor, target) {
-  return actor.role === 'owner' ? target.role !== 'owner' : actor.role === 'manager' && target.role === 'staff' && target.manager_id === actor.id;
+  return actor.role === 'owner' && target.role !== 'owner';
 }
 function csvCell(value) { return '"' + String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""') + '"'; }
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }

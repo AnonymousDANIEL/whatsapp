@@ -1,61 +1,16 @@
 import RFB from '/novnc/core/rfb.js';
-const query = new URLSearchParams(location.search), id = query.get('id'), mode = query.get('mode') === 'operate' ? 'operate' : 'view';
-const status = document.getElementById('status'), screen = document.getElementById('screen');
-const retry = document.getElementById('retry'), start = document.getElementById('start-browser'), clipboard = document.getElementById('clipboard');
-let rfb, connecting = false, leaving = false;
-document.getElementById('label').textContent = mode === 'operate' ? '原版 WhatsApp Web · 可操作' : '原版 WhatsApp Web · 只看';
-clipboard.hidden = mode !== 'operate'; clipboard.disabled = true;
-async function json(path, options = {}) {
-  const response = await fetch('/api' + path, options);
-  let result;
-  try { result = await response.json(); } catch { throw Error('无法读取连接状态，请返回后台重新登录或稍后重试。'); }
-  if (!response.ok) throw Error(result.error || '连接检查失败');
-  return result;
-}
-function showIssue(message, canStart = false) {
-  status.textContent = message;
-  const panel = document.createElement('section'); panel.className = 'connection-panel';
-  const title = document.createElement('h1'); title.textContent = '扫码连接尚未建立';
-  const detail = document.createElement('p'); detail.textContent = message;
-  const guide = document.createElement('p'); guide.textContent = '添加号码只是保存账号备注。浏览器启动后，用手机 WhatsApp → 已关联设备 → 关联设备扫描二维码，后台显示“已连接”后才能发送。';
-  panel.append(title, detail, guide); screen.replaceChildren(panel);
-  start.hidden = !canStart; clipboard.disabled = true;
-}
-async function diagnose() {
-  try {
-    const info = await json(`/accounts/${encodeURIComponent(id)}/connection?mode=${mode}`);
-    if (!leaving) showIssue(info.ok ? '浏览器画面连接中断，请点击“重新连接”；若仍失败，请管理员检查浏览器服务日志。' : info.message, !info.ok && info.can_start);
-  } catch (error) { if (!leaving) showIssue(error.message); }
-}
-async function connect() {
-  if (connecting || leaving) return;
-  connecting = true; retry.disabled = true; start.disabled = true;
-  status.textContent = '正在检查扫码服务…';
-  try {
-    if (rfb) { const old = rfb; rfb = null; old.disconnect(); }
-    const info = await json(`/accounts/${encodeURIComponent(id)}/connection?mode=${mode}`);
-    if (leaving) return;
-    if (!info.ok) return showIssue(info.message, info.can_start);
-    start.hidden = true; screen.replaceChildren(); status.textContent = '正在连接浏览器画面…';
-    const active = new RFB(screen, `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/screen/${encodeURIComponent(id)}?mode=${mode}`);
-    rfb = active; active.scaleViewport = true; active.resizeSession = false; active.viewOnly = mode !== 'operate'; active.showDotCursor = true;
-    active.addEventListener('connect', () => { if (rfb === active) { status.textContent = info.connected ? '已连接浏览器' : '已连接浏览器 · 请用手机扫码登录 WhatsApp'; clipboard.disabled = false; } });
-    active.addEventListener('disconnect', () => { if (rfb === active && !leaving) { rfb = null; diagnose(); } });
-    active.addEventListener('securityfailure', () => { if (rfb === active) showIssue('浏览器画面验证失败，请联系管理员检查服务配置。'); });
-  } catch (error) { if (!leaving) showIssue(error.message); }
-  finally { connecting = false; retry.disabled = false; start.disabled = false; }
-}
-retry.onclick = connect;
-start.onclick = async () => {
-  start.disabled = true; retry.disabled = true;
-  try {
-    const session = await json('/me');
-    await json(`/accounts/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': session.csrf }, body: '{}' });
-    await connect();
-  } catch (error) { showIssue(error.message, true); }
-  finally { start.disabled = false; retry.disabled = false; }
-};
-clipboard.onclick = () => { if (!rfb) return; const value = prompt('粘贴文字到远程剪贴板，再在聊天框按 Ctrl+V：'); if (value !== null) rfb.clipboardPasteFrom(value); };
-document.getElementById('fullscreen').onclick = () => screen.requestFullscreen();
-window.addEventListener('pagehide', () => { leaving = true; rfb?.disconnect(); });
-connect();
+const query=new URLSearchParams(location.search),id=query.get('id'),mode=query.get('mode')==='operate'?'operate':'view';
+const status=document.getElementById('status'),screen=document.getElementById('screen'),retry=document.getElementById('retry'),start=document.getElementById('start-browser'),clipboard=document.getElementById('clipboard');
+let rfb,connecting=false,leaving=false,reconnectTimer,attempts=0;
+document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';
+document.getElementById('back').textContent=T('← 返回后台','← Back');
+document.getElementById('label').textContent=mode==='operate'?T('WhatsApp Web · 可操作','WhatsApp Web · Control'):T('WhatsApp Web · 只看','WhatsApp Web · View only');
+retry.textContent=T('重新连接画面','Reconnect screen');start.textContent=T('启动扫码浏览器','Start browser');clipboard.textContent=T('粘贴文字','Paste text');document.getElementById('fullscreen').textContent=T('全屏','Full screen');
+document.getElementById('hint').textContent=T('画面中断不代表 WhatsApp 被封。操作窗口打开时自动任务暂停，关闭后约 30 秒恢复。原版 WhatsApp 的语言由 WhatsApp 设置控制。','A screen interruption does not mean WhatsApp is banned. Automatic tasks pause in control mode and resume about 30 seconds after closing. The original WhatsApp language is controlled in WhatsApp settings.');
+clipboard.hidden=mode!=='operate';clipboard.disabled=true;
+async function json(path,options={}){const response=await fetch('/api'+path,options);const result=await response.json();if(!response.ok)throw Object.assign(new Error(result.code?connectionText(result):translateError(result.error)),{status:response.status});return result;}
+function showIssue(message,canStart=false){status.textContent=message;const panel=document.createElement('section');panel.className='connection-panel';const title=document.createElement('h1');title.textContent=T('浏览器画面暂未连接','Browser screen not connected');const detail=document.createElement('p');detail.textContent=message;const guide=document.createElement('p');guide.textContent=T('网络、服务或画面中断不能判断账号被封。需要登录时，请用手机 WhatsApp → 已关联设备 → 关联设备扫码。','A network, service or screen interruption does not establish an account ban. To sign in, open WhatsApp on your phone → Linked devices → Link a device.');panel.append(title,detail,guide);screen.replaceChildren(panel);start.hidden=!canStart;clipboard.disabled=true;}
+function scheduleReconnect(){if(leaving||attempts>=8)return;clearTimeout(reconnectTimer);reconnectTimer=setTimeout(()=>{attempts++;connect();},Math.min(30000,2000*2**Math.min(attempts,4)));}
+async function connect(){if(connecting||leaving)return;connecting=true;retry.disabled=true;clearTimeout(reconnectTimer);try{if(rfb){const old=rfb;rfb=null;old.disconnect();}status.textContent=T('正在检查连接…','Checking connection…');const info=await json(`/accounts/${encodeURIComponent(id)}/connection?mode=${mode}`);if(leaving)return;if(!info.ok){showIssue(connectionText(info),info.can_start);if(!['ACCOUNT_DISABLED','ACCOUNT_IN_USE','WORKER_AUTH_FAILED','WORKER_NOT_CONFIGURED','WORKER_GROUP_MISMATCH'].includes(info.code))scheduleReconnect();return;}screen.replaceChildren();start.hidden=true;const active=new RFB(screen,`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/screen/${encodeURIComponent(id)}?mode=${mode}`);rfb=active;active.scaleViewport=true;active.resizeSession=false;active.viewOnly=mode!=='operate';active.showDotCursor=true;active.addEventListener('connect',()=>{if(rfb===active){attempts=0;status.textContent=info.connected?T('画面已连接 · WhatsApp 在线','Screen connected · WhatsApp online'):T('画面已连接 · 等待手机扫码或同步','Screen connected · waiting for phone linking or sync');clipboard.disabled=false;}});active.addEventListener('disconnect',()=>{if(rfb===active&&!leaving){rfb=null;showIssue(T('画面暂时中断，正在重连；这不代表账号被封。','Screen interrupted. Reconnecting; this does not indicate an account ban.'));scheduleReconnect();}});active.addEventListener('securityfailure',()=>{if(rfb===active){rfb=null;active.disconnect();showIssue(T('画面验证失败，请检查服务设置','Screen authentication failed. Check service settings.'));}});}catch(error){showIssue(error.status===401?T('登录已过期，请返回后台登录','Session expired. Sign in from the dashboard.'):error.message);if(![401,403].includes(error.status))scheduleReconnect();}finally{connecting=false;retry.disabled=false;}}
+retry.onclick=()=>{attempts=0;connect();};start.onclick=async()=>{start.disabled=true;try{const session=await json('/me');await json(`/accounts/${encodeURIComponent(id)}/start`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});attempts=0;await connect();}catch(e){showIssue(e.message,true);}finally{start.disabled=false;}};
+clipboard.onclick=()=>{if(!rfb)return;const value=prompt(T('粘贴文字后，在远程聊天框按 Ctrl+V：','Paste text here, then press Ctrl+V in the remote chat:'));if(value!==null)rfb.clipboardPasteFrom(value);};document.getElementById('fullscreen').onclick=()=>screen.requestFullscreen();window.addEventListener('pagehide',()=>{leaving=true;clearTimeout(reconnectTimer);rfb?.disconnect();});window.addEventListener('online',()=>{if(!rfb){attempts=0;connect();}});connect();
