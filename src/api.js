@@ -294,6 +294,24 @@ async function start() {
     assert(req.user.role==='owner','只有 Owner 可以查看全部操作记录',403);
     res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 1000 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*1000])).rows);
   }));
+  app.get('/api/overview',route(async(req,res)=>{
+    const ids=(await visibleAccounts(req.user)).filter(a=>!a.deleted_at).map(a=>a.id);
+    const {rows}=await pool.query(`WITH records AS (
+      SELECT r.status, r.started_at AS sent_at FROM recipients r JOIN campaigns c ON c.id=r.campaign_id
+      WHERE c.account_id=ANY($1::uuid[]) AND c.deleted_at IS NULL
+      UNION ALL
+      SELECT m.status,m.sent_at FROM message_history m WHERE m.account_id=ANY($1::uuid[]) AND m.deleted_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=m.account_id AND r.message_id=m.message_id)
+    ), days AS (SELECT generate_series(0,6) AS n), today AS (SELECT (now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date AS day)
+    SELECT 'total' AS kind,status,NULL::text AS day,count(*)::int AS count FROM records GROUP BY status
+    UNION ALL
+    SELECT 'daily',r.status,to_char(t.day-6+d.n,'YYYY-MM-DD'),count(r.status)::int
+    FROM days d CROSS JOIN today t LEFT JOIN records r ON (r.sent_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date=t.day-6+d.n
+    GROUP BY d.n,t.day,r.status ORDER BY day`,[ids]);
+    const counts={},days=new Map();
+    for(const row of rows){if(row.kind==='total')counts[row.status]=row.count;else{if(!days.has(row.day))days.set(row.day,{date:row.day,counts:{}});if(row.status)days.get(row.day).counts[row.status]=row.count;}}
+    res.json({counts,days:[...days.values()],timezone:'Asia/Kuala_Lumpur'});
+  }));
   app.get('/api/send-records',route(async(req,res)=>{
     const ids=(await visibleAccounts(req.user)).map(a=>a.id),offset=(Math.max(1,Math.floor(Number(req.query.page)||1))-1)*500;
     res.json((await pool.query(`SELECT * FROM (

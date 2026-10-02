@@ -48,6 +48,16 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const m=(await request('/messages','GET',null,user)).data[0];assert.equal(m.status,'read');assert.equal(m.body,'hello');assert.equal(m.actor,'user1');
   assert.equal((await request('/messages','GET',null,user2)).data.length,0);
  });
+ await t.test('overview scopes accounts, deduplicates task history and fills seven Malaysia dates',async()=>{
+  const r=await request('/overview','GET',null,user);assert.equal(r.status,200);assert.equal(r.data.counts.read,1);assert.equal(r.data.counts.invalid,1);assert.equal(r.data.days.length,7);assert.equal(r.data.timezone,'Asia/Kuala_Lumpur');
+  assert.deepEqual((await request('/overview','GET',null,user2)).data.counts,{});
+  const today=r.data.days.at(-1).date;
+  await db.pool.query(`INSERT INTO message_history(account_id,message_id,recipient,body,status,ack,sent_at) VALUES($1,'overview-boundary','60123456789','test','submitted',1,($2::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur'))`,[a,today]);
+  const updated=(await request('/overview','GET',null,user)).data;assert.equal(updated.counts.submitted,1);assert.equal(updated.days.at(-1).counts.submitted,1);assert.equal(updated.days[0].date,require('luxon').DateTime.fromISO(today).minus({days:6}).toISODate());
+  await db.pool.query(`UPDATE message_history SET deleted_at=now() WHERE message_id='overview-boundary'`);
+  assert.equal((await request('/overview','GET',null,user)).data.counts.submitted,undefined);
+  await db.pool.query(`DELETE FROM message_history WHERE message_id='overview-boundary'`);
+ });
  await t.test('unknown send pauses task but keeps browser connected and never retries recipient',async()=>{
   const r=await request('/campaigns','POST',{...template,recipients:'0123456789',send_now:true,title:'Unknown send'},user),cid=r.data.id;
   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
