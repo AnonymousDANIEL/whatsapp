@@ -69,6 +69,24 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/messages/'+a+'/polled','DELETE',null,owner)).status,200);
   await worker.syncHistory(a,entry);assert.equal((await db.pool.query("SELECT 1 FROM message_history WHERE message_id='polled'")).rowCount,0);
  });
+ await t.test('UTC conversion preserves old window instants and photos travel through the fake sender',async()=>{
+  const {inWindow}=require('../src/domain');
+  for(const times of [['02:00','05:00'],['22:00','02:00'],['09:00','09:00']]){
+   const id=(await request('/campaigns','POST',{...template,window_start:times[0],window_end:times[1],scheduled_at:'2026-01-01T00:00',expires_at:'2030-01-01T00:00',weekdays:[1]},user)).data.id;
+   const old=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[id])).rows[0];await db.migrate();
+   const current=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[id])).rows[0];assert.equal(current.timezone,'UTC');assert.equal(+current.scheduled_at,+old.scheduled_at);
+   // Old equal windows represented the entire local calendar day.
+   const original=times[0]===times[1]?{...old,window_start:'00:00',window_end:'00:00'}:old;
+   for(let hour=0;hour<168;hour++)assert.equal(inWindow(current,new Date(Date.UTC(2026,8,27,hour))),inWindow(original,new Date(Date.UTC(2026,8,27,hour))));
+  }
+  const photo={mimetype:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII='};
+  const made=await request('/campaigns','POST',{...template,body:'',media:photo,timezone:'UTC',send_now:true,recipients:'0123456789'},user);assert.equal(made.status,201);
+  const c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[made.data.id])).rows[0];assert.equal(c.scheduled_at.toISOString(),'2030-10-02T09:15:00.000Z');assert.equal(c.media.data,photo.data);
+  const list=(await request('/campaigns','GET',null,user)).data.find(x=>x.id===c.id);assert.equal(list.has_image,true);assert.equal(list.media,undefined);
+  assert.equal((await request('/campaigns/'+c.id+'/image','GET',null,user2)).status,403);
+  let calls=0;const result=await worker.send({id:a,client:{getNumberId:async()=>({_serialized:'60123456789@c.us'}),sendMessage:async(to,media,opts)=>{calls++;assert.equal(media.mimetype,'image/png');assert.equal(media.data,photo.data);assert.equal(opts.caption,'');return{id:'photo-msg',fromMe:true,to,type:'image',body:'',ack:2};}}},{phone:'+60123456789'},c);
+  assert.equal(calls,1);assert.equal(result.status,'delivered');assert.equal((await db.pool.query("SELECT message_type FROM message_history WHERE message_id='photo-msg'")).rows[0].message_type,'image');
+ });
  await t.test('USER deletion is retained for Owner; Owner permanent deletion removes app records',async()=>{
   assert.equal((await request('/messages/'+a+'/message-1','DELETE',null,user)).status,200);
   assert.ok(!(await request('/messages','GET',null,user)).data.some(m=>m.message_id==='message-1'));

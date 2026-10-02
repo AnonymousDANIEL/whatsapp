@@ -13,7 +13,7 @@ const { messageId,validAck,messageAck } = require('./messages');
 const {readSnapshot}=require('./history-sync');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, canDispatch, ackStatus } = require('./domain');
@@ -107,7 +107,7 @@ async function startAccount(account) {
     const identity = await desktopIdentity(account.id); e.uid = identity.uid;
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
-    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
+    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'UTC', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
     processChild(e, 'Xvfb', [display, '-screen', '0', '1366x900x24', '-nolisten', 'tcp', '-auth', identity.xauth]);
     await pause(500);
     for (const [port, viewOnly] of [[e.controlPort, false], [e.viewPort, true]]) {
@@ -151,15 +151,16 @@ async function recordMessage(accountId,message,actorId=null,live=true) {
   const ack=messageAck(message),sentAt=Number.isFinite(message.timestamp)?new Date(message.timestamp*1000):new Date();
   if((await pool.query('SELECT 1 FROM history_exclusions WHERE account_id=$1 AND message_hash=$2',[accountId,crypto.createHash('sha256').update(mid).digest('hex')])).rowCount)return;
   if(live&&!actorId) actorId=(await pool.query(`SELECT s.user_id FROM control_leases l JOIN sessions s ON s.token_hash=l.session_hash WHERE l.account_id=$1 AND l.expires_at>now()`,[accountId])).rows[0]?.user_id||null;
-  await pool.query(`INSERT INTO message_history(account_id,message_id,actor_id,recipient,body,status,ack,sent_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-    ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id)`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt]);
+  await pool.query(`INSERT INTO message_history(account_id,message_id,actor_id,recipient,body,status,ack,sent_at,message_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id)`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt,message.type||'chat']);
   await receiveAck(accountId,mid,ack);
 }
 async function reconcileUnknown(accountId,client,snapshot=null) {
-  const rows=(await pool.query(`SELECT r.*,c.body,c.created_by FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
+  const rows=(await pool.query(`SELECT r.*,c.body,c.created_by,c.media FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
   const chats=new Map();
   for(const row of rows){
     try{
+      if(row.media)continue; // Never infer an image send from a matching caption alone.
       const chatId=row.phone?.replace(/^\+/,'')+'@c.us';
       if(!chats.has(chatId))chats.set(chatId,snapshot?snapshot.filter(m=>m.chatId===chatId||m.to===chatId):await (await client.getChatById(chatId)).fetchMessages({limit:100}));
       const matches=chats.get(chatId).filter(m=>m.fromMe&&messageId(m)&&m.body===row.body&&Math.abs(m.timestamp*1000-+new Date(row.started_at))<=90000);
@@ -245,7 +246,7 @@ async function send(entry, recipient, campaign) {
         AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
       if (!allowed || !canDispatch(allowed)) return { status: 'pending', error: null };
       startedSend = true;
-      const message = await entry.client.sendMessage(wid._serialized, campaign.body, { waitUntilMsgSent: true });
+      const message = await entry.client.sendMessage(wid._serialized, campaign.media?new MessageMedia(campaign.media.mimetype,campaign.media.data,campaign.media.filename):campaign.body, { waitUntilMsgSent: true,...(campaign.media?{caption:campaign.body}:{}) });
       const mid=messageId(message);
       if(!mid) return {status:'unknown',error:'SEND_ID_MISSING_REVIEW_REQUIRED',quarantine:true};
       await recordMessage(entry.id,{...message,fromMe:true,to:message.to||wid._serialized},campaign.created_by).catch(err=>console.error('message history:',err.code||err.name));

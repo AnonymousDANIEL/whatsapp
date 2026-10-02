@@ -1,4 +1,5 @@
 'use strict';
+const {validateImage}=require('./media');
 const express = require('express');
 const http = require('node:http');
 const path = require('node:path');
@@ -71,7 +72,7 @@ async function start() {
   const app = express();
   app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
   app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], frameSrc: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'self'"] } }, crossOriginEmbedderPolicy: false }));
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '8mb' }));
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
@@ -95,7 +96,7 @@ async function start() {
       next();
     }).catch(next);
   });
-  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur' })));
+  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'UTC' })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
   app.post('/api/password', route(async (req, res) => {
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
@@ -202,24 +203,29 @@ async function start() {
   }));
   app.get('/api/campaigns', route(async (req, res) => {
     const ids = (await visibleAccounts(req.user)).map(a => a.id);
-    const { rows } = await pool.query(`SELECT c.*,a.label AS account_label,u.username AS creator,
+    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
       (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::integer n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) AS counts
       FROM campaigns c JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
       WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner') ORDER BY c.created_at DESC LIMIT 200`, [ids,req.user.role]);
     res.json(rows);
   }));
+  app.get('/api/campaigns/:id/image',route(async(req,res)=>{
+    const c=await campaignAccess(req.user,req.params.id);assert(c.media,'Image not found',404);
+    res.type(c.media.mimetype).send(Buffer.from(c.media.data,'base64'));
+  }));
   app.post('/api/campaigns', route(async (req, res) => {
     const b = req.body; assert(permission(req.user, 'tasks.create'), '没有创建任务权限', 403);
     const a = await access(req.user, b.account_id, true); assert(a.enabled, '账号已停用');
     assert(typeof b.title === 'string' && b.title.trim().length && b.title.length <= 120, '请输入任务名称');
-    assert(typeof b.body === 'string' && b.body.trim().length && b.body.length <= 4000, '消息需要 1–4000 个字符');
+    const media=validateImage(b.media);
+    assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
     assert(b.opt_in_confirmed === true, '请确认这些联系人同意接收消息');
     assert(b.send_now === undefined || typeof b.send_now === 'boolean', 'send_now 无效');
     const schedule = validateSchedule(b), parsed = parseRecipients(b.recipients);
     const id = crypto.randomUUID();
     await transaction(async c => {
-      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, b.send_now === true]);
+      await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now,media)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14,$15)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, b.send_now === true,media]);
       await c.query(`INSERT INTO recipients(campaign_id,raw_phone,phone,status,error_code)
         SELECT $1,r.raw,r.phone,r.status,r.error FROM jsonb_to_recordset($2::jsonb) AS r(raw text,phone text,status text,error text)`, [id, JSON.stringify(parsed.recipients)]);
     });

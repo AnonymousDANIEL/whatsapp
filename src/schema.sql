@@ -78,3 +78,12 @@ CREATE TABLE IF NOT EXISTS history_exclusions (
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS deleted_by uuid REFERENCES users(id);
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS purge_requested boolean NOT NULL DEFAULT false;
+
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS media jsonb;
+ALTER TABLE message_history ADD COLUMN IF NOT EXISTS message_type text NOT NULL DEFAULT 'chat';
+-- Convert Malaysia recurring windows once, preserving real instants and start-day semantics.
+UPDATE campaigns SET
+ weekdays=CASE WHEN window_start=window_end OR window_start<'08:00' THEN ARRAY(SELECT CASE WHEN d=1 THEN 7 ELSE d-1 END FROM unnest(weekdays) d) ELSE weekdays END,
+ window_start=CASE WHEN window_start=window_end THEN '16:00' ELSE to_char((date '2000-01-01'+window_start::time-interval '8 hours'),'HH24:MI') END,
+ window_end=CASE WHEN window_start=window_end THEN '16:00' ELSE to_char((date '2000-01-01'+window_end::time-interval '8 hours'),'HH24:MI') END,timezone='UTC'
+ WHERE timezone='Asia/Kuala_Lumpur';

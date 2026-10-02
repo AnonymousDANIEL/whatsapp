@@ -30,7 +30,7 @@ function parseRecipients(text, country = 'MY') {
   return { recipients, duplicates };
 }
 function validateSchedule(body) {
-  const timezone = body.timezone || 'Asia/Kuala_Lumpur';
+  const timezone = body.timezone || 'UTC';
   assert(DateTime.now().setZone(timezone).isValid, '时区无效');
   for (const field of ['window_start', 'window_end']) assert(/^([01]\d|2[0-3]):[0-5]\d$/.test(body[field]), '时间格式必须为 HH:mm');
   const weekdays = body.weekdays || [1, 2, 3, 4, 5, 6, 7];
@@ -48,7 +48,7 @@ function inWindow(job, instant = new Date()) {
   if (!dt.isValid) return false;
   const time = dt.toFormat('HH:mm');
   const start = job.window_start.slice(0, 5), end = job.window_end.slice(0, 5);
-  if (start === end) return job.weekdays.includes(dt.weekday); // 24 hours on selected days
+  if (start === end) return job.weekdays.includes(time<start?dt.minus({days:1}).weekday:dt.weekday); // 24 hours from the selected start day/time
   if (start < end) return job.weekdays.includes(dt.weekday) && time >= start && time < end;
   // A Monday 22:00–02:00 window includes Tuesday 01:00.
   const day = time < end ? dt.minus({ days: 1 }).weekday : dt.weekday;

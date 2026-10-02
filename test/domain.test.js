@@ -52,7 +52,7 @@ test('invalid times, timezone, weekdays and deadline are rejected', () => {
  assert.throws(()=>validateSchedule({...b,weekdays:[]}));
  assert.throws(()=>validateSchedule({...b,interval_ms:1}));
  assert.throws(()=>validateSchedule({...b,scheduled_at:'2026-10-02',expires_at:'2026-10-01'}));
- assert.equal(validateSchedule({...b,scheduled_at:'2026-10-01T09:00'}).scheduled_at,'2026-10-01T01:00:00.000Z');
+ assert.equal(validateSchedule({...b,scheduled_at:'2026-10-01T09:00'}).scheduled_at,'2026-10-01T09:00:00.000Z');
 });
 test('server receipt is distinct from device delivery and read receipt', () => {
  assert.deepEqual([-1,0,1,2,3,4].map(ackStatus),['failed','awaiting_ack','submitted','delivered','read','read']);

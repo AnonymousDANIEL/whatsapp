@@ -1,0 +1,3 @@
+const{test}=require('node:test'),assert=require('node:assert/strict');const{validateImage}=require('../src/media');
+const data='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=';
+test('photo validation accepts PNG and rejects wrong type, invalid base64 and oversized input',()=>{assert.equal(validateImage({data,mimetype:'image/png'}).filename,'photo.png');assert.equal(validateImage(null),null);for(const v of [{data,mimetype:'image/jpeg'},{data:'<script>',mimetype:'image/png'},{data:'a'.repeat(6990520),mimetype:'image/png'}])assert.throws(()=>validateImage(v));});
