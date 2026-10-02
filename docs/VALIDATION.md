@@ -43,3 +43,8 @@
 - 集成覆盖账号创建部分失败、连接查询权限、启动错误、没有分组心跳时显示离线、IPv6 健康访问；原立即发送与员工范围测试保留。
 - jsdom 检查通过：离线说明、手机扫码提示、启动入口、权限拒绝；原任务交互检查通过。未做新页面的真实浏览器布局验收。
 - 原生 PostgreSQL 17 与两个 Docker 镜像由本次提交的 GitHub Actions 验证。真实扫码和发送仍需目标环境验收，没有发送测试消息。
+
+## 2026-10-02 浏览器镜像选择修正
+
+- Railway worker 构建日志显示实际加载根 Dockerfile（API），即使服务已设置 Dockerfile.worker。移除根 railway.json 的 dockerfilePath，避免覆盖各服务的 Dockerfile 路径。API 默认使用根 Dockerfile，worker 服务使用 Dockerfile.worker。
+- 新增脱敏桌面进程/浏览器初始化日志。语法检查和 23 项本地测试通过，数据库集成未在本地运行。实际构建路径及部署状态另查 Railway 日志；手机扫码、真实发送仍不能用健康检查替代。
