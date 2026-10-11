@@ -54,3 +54,4 @@ target-environment checks; do not call them tested based on a successful build.
 - Owner accounts are grouped by assigned USER ID, with unassigned accounts in their own Owner section. Assignment identities must never be exposed to other USERs.
 - Owner manages one bilingual notice displayed above every USER page, with an on/off switch. Disabled notice drafts are Owner-only; render notice text safely and preserve unsaved edits while refreshing.
 - Hide Online FPX from USER pages whenever live top-ups are unavailable; Owner can always see the maintenance switch and Off status. Existing paid orders must still settle exactly once.
+- USER create/edit forms contain ID, password and active status only; do not reintroduce the WhatsApp assignment picker. Omit grants in these form submissions so editing preserves existing assignments and new USERs can create their own accounts within the default ten-slot limit.
