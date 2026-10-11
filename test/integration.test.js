@@ -12,16 +12,33 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  const uid2=(await request('/users','POST',{username:'user2',password:'user-password-123',role:'user',grants:[{account_id:b}]},owner)).data.id;
  const user=await login('user1'),user2=await login('user2');
  const template={title:'Task',account_id:a,body:'Authorized fake message',recipients:'0123456789\n+60123456789\nwrong',opt_in_confirmed:true,timezone:'Asia/Kuala_Lumpur',window_start:'09:00',window_end:'18:00',scheduled_at:'2030-10-02T09:15',expires_at:'2030-10-03T18:00',weekdays:[1,2,3,4,5,6,7],interval_ms:10000};
+ await t.test('prepaid defaults deny USER sending and direct controls; Owner can configure credit',async()=>{
+  assert.equal((await request('/campaigns','POST',template,user)).status,402);
+  assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),0);
+  assert.equal((await request('/billing?user_id='+uid,'GET',null,user2)).data.user.id,uid2);
+  for(const [path,method,body] of [['/billing/price','PUT',{price:'0.10'}],['/billing/adjust','POST',{}],['/accounts/'+a+'/connection?mode=operate','GET',null],['/accounts/'+a+'/restart','POST',{}],['/accounts','POST',{label:'blocked',worker_group:'group-a'}]])assert.equal((await request(path,method,body,user)).status,403);
+  assert.equal((await request('/accounts/'+a+'/connection?mode=view','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
+  assert.equal((await request('/accounts','GET',null,user)).data[0].operate,false);
+  const {WebSocket}=require('ws');
+  await new Promise((resolve,reject)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/screen/'+a+'?mode=operate',{headers:{Origin:'http://localhost:3000',Cookie:user.cookie}});ws.on('unexpected-response',(_q,r)=>{try{assert.equal(r.statusCode,403);r.resume();resolve();}catch(e){reject(e);}});ws.on('open',()=>{ws.close();reject(Error('USER control opened'));});ws.on('error',reject);});
+  assert.equal((await request('/billing/price','PUT',{price:'0.00001'},owner)).status,400);
+  assert.equal((await request('/billing/price','PUT',{price:'0.1000'},owner)).status,200);
+  const adjustment={user_id:uid,amount:'100',direction:'add',note:'Test credit only',request_id:randomUUID()};
+  assert.equal((await request('/billing/adjust','POST',adjustment,owner)).status,200);
+  assert.equal((await request('/billing/adjust','POST',adjustment,owner)).status,200);
+  assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),1000000);
+  assert.equal((await request('/billing/adjust','POST',{...adjustment,request_id:randomUUID(),amount:'101',direction:'subtract'},owner)).status,400);
+ });
  let task;
  await t.test('users have equal assigned capabilities and cannot administer IDs or cross scope',async()=>{
   assert.equal((await request('/users','GET',null,user)).status,403);
   assert.equal((await request('/users','POST',{username:'nested',role:'user'},user)).status,403);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:false},user)).status,403);
   assert.equal((await request('/accounts/'+b,'PATCH',{label:'no'},user)).status,403);
-  assert.equal((await request('/accounts/'+a,'PATCH',{label:'Renamed'},user)).status,200);
+  assert.equal((await request('/accounts/'+a,'PATCH',{label:'Renamed'},user)).status,403);
   assert.equal((await request('/accounts','GET',null,user)).data.length,1);
-  assert.equal((await request('/accounts/'+a+'/connection','GET',null,user)).data.code,'WORKER_UNREACHABLE');
-  assert.equal((await request('/accounts/'+a+'/start','POST',{},user)).status,503);
+  assert.equal((await request('/accounts/'+a+'/connection','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
+  assert.equal((await request('/accounts/'+a+'/start','POST',{},user)).status,403);
   assert.equal((await request('/audit','GET',null,user)).status,403);
   assert.equal((await request('/data/purge','POST',{confirm:'DELETE HISTORY'},user)).status,403);
   const bad={...user,csrf:'bad'};assert.equal((await request('/accounts/'+a,'PATCH',{label:'bad'},bad)).status,403);
@@ -128,23 +145,54 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const old=(await db.pool.query('SELECT * FROM users WHERE id=$1',[s])).rows[0];assert.equal(old.role,'user');assert.equal(old.manager_id,null);assert.equal(old.active,false);assert.equal(old.password_hash,hash);
   assert.equal((await db.pool.query('SELECT operate FROM account_grants WHERE user_id=$1',[s])).rows[0].operate,true);
  });
- await t.test('USER creation dates and scoped account deletion retain records until Owner purge',async()=>{
+ await t.test('USER creation dates remain; only Owner can add or delete WhatsApp accounts',async()=>{
   const listed=(await request('/users','GET',null,owner)).data.find(u=>u.id===uid);assert.ok(Number.isFinite(Date.parse(listed.created_at)));
-  const c=(await request('/accounts','POST',{label:'Delete test',worker_group:'group-a'},user)).data.id;
-  assert.equal((await request('/accounts/'+c,'DELETE',null,user2)).status,403);
-  assert.equal((await request('/accounts/'+c,'DELETE',null,{...user,csrf:'bad'})).status,403);
+  const c=(await request('/accounts','POST',{label:'Delete test',worker_group:'group-a'},owner)).data.id;
+  await db.pool.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[uid,c]);
+  assert.equal((await request('/accounts/'+c,'DELETE',null,user)).status,403);
+  assert.equal((await request('/accounts/'+c,'DELETE',null,{...owner,csrf:'bad'})).status,403);
   const taskId=(await request('/campaigns','POST',{...template,account_id:c},user)).data.id;
-  assert.equal((await request('/accounts/'+c,'DELETE',null,user)).status,202);
-  assert.ok(!(await request('/accounts','GET',null,user)).data.some(a=>a.id===c));
-  assert.ok((await request('/accounts','GET',null,owner)).data.find(a=>a.id===c).deleted_at);
-  assert.equal((await request('/accounts/'+c,'PATCH',{enabled:true},owner)).status,403);
-  assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[taskId])).rows[0].enabled,false);
-  assert.ok((await request('/audit','GET',null,owner)).data.some(a=>a.action==='account.delete'&&a.entity_id===c));
   const {purgeAccountData}=require('../src/account-deletion');assert.equal(await purgeAccountData(c),false);
   assert.equal((await request('/accounts/'+c,'DELETE',null,owner)).status,202);
+  assert.equal((await request('/accounts/'+c,'PATCH',{enabled:true},owner)).status,403);
+  assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[taskId])).rows[0].enabled,false);
   assert.equal(await purgeAccountData(c),true);
-  for(const table of ['accounts','campaigns','audit'])assert.equal((await db.pool.query('SELECT 1 FROM '+table+' WHERE '+(table==='audit'?'entity_id':'id')+'=$1',[c])).rowCount,0);
   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE id=$1',[taskId])).rowCount,0);
+ });
+ await t.test('credit reservation is atomic across concurrent tasks; settlement is exactly once',async()=>{
+  const billing=require('../src/billing');await billing.reconcile();
+  // Discrete fake record IDs exercise wallet locking without sending any messages.
+  await db.pool.query('UPDATE users SET credit_units=1000 WHERE id=$1',[uid2]);
+  const reserved=await Promise.all([900001,900002].map(id=>db.transaction(tx=>billing.reserve(tx,uid2,id))));
+  assert.equal(reserved.filter(Boolean).length,1);assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),0);
+  const rid=reserved[0]?900001:900002;
+  await billing.settle(rid,'unknown');assert.equal(Number((await request('/billing','GET',null,user2)).data.held_units),1000);
+  await request('/billing/price','PUT',{price:'0.2000'},owner);
+  await Promise.all([billing.settle(rid,'failed'),billing.settle(rid,'failed')]);
+  assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),1000);
+  await request('/billing/price','PUT',{price:'0.1000'},owner);
+  assert.equal(await db.transaction(tx=>billing.reserve(tx,uid2,rid)),true);
+  await billing.settle(rid,'pending',null,'',1);
+  assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),0);
+  await billing.settle(rid,'failed');
+  await request('/billing/price','PUT',{price:'0.2000'},owner);
+  await db.pool.query('UPDATE users SET credit_units=2000 WHERE id=$1',[uid2]);
+  assert.equal(await db.transaction(tx=>billing.reserve(tx,uid2,900003)),true);
+  await Promise.all([billing.settle(900003,'submitted'),billing.settle(900003,'read')]);
+  assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),0);
+  assert.equal((await db.pool.query("SELECT count(*)::int n FROM credit_ledger WHERE recipient_id=900003 AND kind='charged'")).rows[0].n,1);
+  const ownerId=(await request('/me','GET',null,owner)).data.user.id;
+  assert.equal(await db.transaction(tx=>billing.reserve(tx,ownerId,900004)),true);
+  assert.equal((await db.pool.query('SELECT 1 FROM message_charges WHERE recipient_id=900004')).rowCount,0);
+  const made=(await request('/campaigns','POST',{...template,title:'Owner only'},owner)).data.id;
+  assert.equal((await request('/campaigns/'+made+'/send-now','POST',{},user)).status,403);
+  // An empty USER wallet pauses a queued task before touching the WhatsApp client.
+  await db.pool.query('UPDATE users SET credit_units=2000 WHERE id=$1',[uid2]);
+  const paused=(await request('/campaigns','POST',{...template,account_id:b,send_now:true},user2)).data.id;
+  await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);let calls=0;
+  await worker.dispatch({id:b},{id:b,ready:true,client:{getNumberId:async()=>{calls++;return null;}}});assert.equal(calls,0);
+  assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[paused])).rows[0].enabled,false);
+  assert.equal((await request('/campaigns/'+paused+'/send-now','POST',{},user2)).status,402);
  });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);

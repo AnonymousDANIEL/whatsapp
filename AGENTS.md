@@ -42,3 +42,9 @@ against PostgreSQL and building both Docker images.
 Report skipped or unavailable checks accurately in docs/VALIDATION.md. Real
 WhatsApp login, remote media/voice and large-account load require separate
 target-environment checks; do not call them tested based on a successful build.
+
+## Prepaid access (2026-10-11)
+
+- All USERs pay the single Owner-configured MYR rate through manual prepaid credit. Owner remains unlimited. Never invent an official WhatsApp tariff for the Web integration; an unset price blocks USER sends.
+- USER WhatsApp screens are view-only; only Owner creates/manages browser accounts or scans/controls the original screen. Assigned users may create paid sending tasks but cannot modify another creator's tasks.
+- Keep immutable credit movements separate from deletable chat/task/audit data. Reserve funds atomically before sending, settle/refund once, retain uncertain holds for review, and never overspend or re-charge old sends.

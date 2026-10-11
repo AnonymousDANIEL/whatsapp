@@ -94,3 +94,22 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS batch_sent integer NOT NULL DEFAUL
 CREATE TABLE IF NOT EXISTS app_migrations(name text PRIMARY KEY);
 UPDATE campaigns SET send_now=true WHERE NOT EXISTS(SELECT 1 FROM app_migrations WHERE name='interval_only_v1');
 INSERT INTO app_migrations VALUES('interval_only_v1') ON CONFLICT DO NOTHING;
+
+-- Prepaid MYR credit: existing USERs start at zero; never charge historical sends.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS credit_units bigint NOT NULL DEFAULT 0 CHECK(credit_units>=0);
+CREATE TABLE IF NOT EXISTS billing_settings(id integer PRIMARY KEY CHECK(id=1),price_units bigint CHECK(price_units>0));
+INSERT INTO billing_settings(id,price_units) VALUES(1,NULL) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS message_charges(
+ recipient_id bigint PRIMARY KEY,user_id uuid NOT NULL REFERENCES users(id),amount_units bigint NOT NULL CHECK(amount_units>0),
+ state text NOT NULL CHECK(state IN ('held','charged','refunded')),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS charges_user ON message_charges(user_id,state);
+CREATE TABLE IF NOT EXISTS credit_ledger(
+ id bigserial PRIMARY KEY,user_id uuid NOT NULL REFERENCES users(id),actor_id uuid REFERENCES users(id),
+ kind text NOT NULL CHECK(kind IN ('hold','charged','refunded','adjustment')),delta_units bigint NOT NULL,balance_units bigint NOT NULL,
+ recipient_id bigint,note text NOT NULL DEFAULT '',request_id uuid UNIQUE,created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ledger_user ON credit_ledger(user_id,id DESC);
+DELETE FROM control_leases WHERE session_hash IN(SELECT s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.role<>'owner');
+
+ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;

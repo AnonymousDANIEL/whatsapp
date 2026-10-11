@@ -92,3 +92,11 @@
 - 新聚合接口统计可见、未删除账号的全部现有消息，不受任务列表 200 条限制；按账号和消息 ID 去重。七日走势使用首次发送日期及马来西亚时区，未开始发送的号码不计入走势。
 - 语法检查通过；普通测试 28 通过、数据库项跳过；临时 PGlite 集成 13 通过，新增权限隔离、重复消息、七日补零和马来西亚午夜测试。中英文空数据和有数据 DOM 检查通过。
 - 没有发送真实消息。DOM 检查不等同于真实浏览器视觉验收；原生 PostgreSQL 和两个镜像构建由 GitHub Actions 验证。
+
+## 2026-10-11 Prepaid USER credit and Owner-only WhatsApp controls
+
+- Added MYR credit (1 Credit = RM 1), integer arithmetic to four decimal places, shared editable per-message price, Owner-only manual positive/negative adjustments, idempotent adjustment request IDs, and separate credit ledger. All existing/new USERs begin at zero; Owner is exempt. Initial price is deliberately unset: this is a WhatsApp Web system, not the official Business Platform, whose country/category pricing must not be presented as this system's tariff.
+- Task dispatch atomically locks the wallet and reserves the current rate before any send; inadequate credit pauses the task. Successful submission settles once, failures refund, uncertain results retain the hold and never auto-retry. Owner can explicitly review unknown holds. Rates are snapshotted per attempt; historical sends are not billed. Ledger survives chat/task deletion; unresolved holds block destructive purges.
+- USER accounts have view-only WhatsApp access. Server rejects control/QR, start/reconnect, and account management, including direct WebSocket control requests. View requires a linked account; worker blocks frames when the connection is no longer ready. USERs cannot alter another creator's tasks to borrow Owner's free sending. Group labels now display WhatsApp while internal routing keys remain intact.
+- Syntax and ordinary tests passed (28 pass, database item skipped there). Disposable PGlite integration passed 15 tests including credit defaults, scope, adjustment deduplication, overspend protection, exactly-once settlement, unlimited Owner, and blocked control requests. Chinese/English Owner/USER DOM checks passed. Native concurrent PostgreSQL locks and both production images are additionally checked by GitHub Actions.
+- No live WhatsApp test messages, real top-ups, or production data deletions performed. No card payment processor added: Owner records manual top-ups. Real desktop rendering and QR behavior need live user verification; DOM/server tests do not substitute for that.

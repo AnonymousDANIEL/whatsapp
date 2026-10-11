@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const billing=require('./billing');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -125,8 +126,8 @@ async function startAccount(account) {
         env: { ...e.env, WA_BROWSER_UID: String(e.uid) }, timeout: 60000,
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-size=1366,900', '--window-position=0,0', '--disable-session-crashed-bubble', '--no-first-run'] }
     });
-    e.client.on('qr', () => { state(account.id, 'scan_required').catch(() => {}); });
-    e.client.on('authenticated', () => { state(account.id, 'loading').catch(() => {}); });
+    e.client.on('qr', () => { e.ready=false; state(account.id, 'scan_required').catch(() => {}); });
+    e.client.on('authenticated', () => { e.ready=false; state(account.id, 'loading').catch(() => {}); });
     e.client.on('auth_failure', () => { fail(account.id, 'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED').catch(() => {}); });
     e.client.on('disconnected', reason => { fail(account.id, 'DISCONNECTED_' + String(reason).slice(0, 60)).catch(() => {}); });
     e.client.on('ready', () => {
@@ -208,6 +209,9 @@ async function dispatch(account, entry) {
     recipient = await transaction(async db=>{
       const current=(await db.query('SELECT * FROM campaigns WHERE id=$1 FOR UPDATE',[campaign.id])).rows[0];
       if(!current||current.deleted_at||!canDispatch(current))return null;
+      const next=(await db.query("SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED",[campaign.id])).rows[0];
+      if(!next)return null;
+      if(!await billing.reserve(db,current.created_by,next.id)){await db.query("UPDATE campaigns SET enabled=false WHERE id=$1",[campaign.id]);await db.query("UPDATE recipients SET error_code='CREDIT_REQUIRED' WHERE id=$1",[next.id]);return null;}
       return (await db.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
         WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`,[campaign.id])).rows[0];
     });
@@ -216,13 +220,14 @@ async function dispatch(account, entry) {
     const stillAllowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
       WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
-    if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); return; }
+    if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); await billing.settle(recipient.id,'pending'); return; }
     const result = await send(entry, recipient, campaign);
     await pool.query('UPDATE recipients SET status=$1,error_code=$2,message_id=$3,ack=$4,updated_at=now() WHERE id=$5', [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
     if (result.messageId) {
       const receipt = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [account.id, result.messageId])).rows[0];
       if (receipt) await receiveAck(account.id, result.messageId, receipt.ack);
     }
+    await billing.settle(recipient.id,(await pool.query('SELECT status FROM recipients WHERE id=$1',[recipient.id])).rows[0]?.status);
     if(result.status!=='pending')await pool.query(`UPDATE accounts SET
       next_send_at=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN now()+($1::integer*interval '1 millisecond') ELSE now() END,
       batch_sent=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN 0 ELSE (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 END,
@@ -274,6 +279,7 @@ async function tick() {
   if (ticking || shuttingDown) return;
   ticking = true;
   try {
+    await billing.reconcile();
     const accounts = (await pool.query('SELECT * FROM accounts WHERE worker_group=$1 ORDER BY created_at', [group])).rows;
     for (const a of accounts) {
       if(a.purge_requested){
@@ -341,11 +347,12 @@ async function start() {
       const id = req.url.match(/^\/screen\/([a-f0-9-]+)$/)?.[1], entry = entries.get(id);
       assert(entry && !entry.closing, 'Desktop unavailable', 503);
       const enabled = (await pool.query('SELECT enabled FROM accounts WHERE id=$1', [id])).rows[0]?.enabled; assert(enabled, 'Disabled', 403);
+      const requireReady=req.headers['x-require-ready']==='true';assert(!requireReady||entry.ready,'Owner linking required',403);
       const port = req.headers['x-control-mode'] === 'operate' ? entry.controlPort : entry.viewPort;
       wss.handleUpgrade(req, socket, head, ws => {
         const tcp = net.connect(port, '127.0.0.1'); entry.sockets.add(ws);
         ws.on('message', data => { if (!tcp.destroyed) tcp.write(data); });
-        tcp.on('data', data => { if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
+        tcp.on('data', data => { if(requireReady&&!entry.ready)return ws.close();if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
         tcp.on('error', () => ws.close()); tcp.on('close', () => ws.close());
         ws.on('close', () => { tcp.destroy(); entry.sockets.delete(ws); }); ws.on('error', () => tcp.destroy());
       });

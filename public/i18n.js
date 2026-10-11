@@ -5,6 +5,24 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+ '管理员尚未设置每条消息价格':'The Owner has not set a price per message yet.',
+ '余额不足，请联系管理员充值':'Insufficient credit. Contact the Owner to top up.',
+ 'USER 仅可查看聊天，操作和扫码由 Owner 管理':'USERs can only view chats. The Owner manages controls and QR linking.',
+ 'USER 仅可查看已连接的聊天':'USERs can only view connected chats.',
+ '只能修改自己创建的发送任务':'You can only modify tasks you created.',
+ '只有 Owner 可以管理余额和定价':'Only the Owner can manage credit and pricing.',
+ '存在待结算消息，请先在余额管理中核对':'Messages are on hold. Review them in Credit management first.',
+ '金额须为正数，最多四位小数':'Enter a positive amount with up to four decimal places.',
+ '金额超出允许范围':'Amount is outside the allowed range.',
+ '每条价格不能超过 RM 10000':'Price per message cannot exceed RM 10000.',
+ '请选择增加或扣减':'Choose add or deduct.',
+ '请填写调整原因':'Enter a reason for the adjustment.',
+ 'Owner 余额无限，无需调整':'The Owner has unlimited credit and needs no adjustments.',
+ '重复请求内容不一致':'The repeated request does not match the original.',
+ '调整后余额超出允许范围':'The resulting balance is outside the allowed range.',
+ '结算操作无效':'Invalid settlement action.',
+ '仅可手动核对结果不确定的消息':'Only uncertain messages can be manually settled.',
+
  '每批需要 1–100 条消息':'Each batch requires 1–100 messages.',
  '请输入消息或上传照片':'Enter a message or upload a photo.',
  '只有 Owner 可以管理 USER ID':'Only the Owner can manage USER IDs.',
@@ -66,6 +84,7 @@ window.connectionText=info=>({
  WORKER_UPDATE_REQUIRED:T('浏览器服务需要更新或检查分组','Update the browser service or check its group.'),
  BROWSER_START_FAILED:T('浏览器启动失败，请查看服务日志','Browser startup failed. Check service logs.'),
  WORKER_BUSY:T('浏览器分组已满或正在发送，请稍后重试','The browser group is full or a send is in progress. Please retry.'),
+ OWNER_LINK_REQUIRED:T('请联系 Owner 完成连接后查看聊天','Ask the Owner to link WhatsApp before viewing chats.'),
  ACCOUNT_DISABLED:T('此账号已停用','This account is inactive.'),
  ACCOUNT_IN_USE:T('另一个操作窗口正在使用此账号','Another control window is using this account.'),
  SCREEN_READY:info.connected?T('WhatsApp 已连接','WhatsApp is connected.'):T('浏览器画面已准备好，请用手机扫码','The browser is ready. Link it using WhatsApp on your phone.'),
