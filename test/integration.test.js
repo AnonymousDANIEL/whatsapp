@@ -2,7 +2,7 @@ const {test}=require('node:test');const assert=require('node:assert/strict');con
 test('PostgreSQL: USER migration, isolation, schedules, receipts, retained deletes and Owner purge',{skip:!process.env.TEST_DATABASE_URL},async t=>{
  const {Pool}=require('pg'),admin=new Pool({connectionString:process.env.TEST_DATABASE_URL}),name='wa_test_'+randomUUID().replaceAll('-','');
  if(!process.env.TEST_SINGLE_DATABASE)await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);if(!process.env.TEST_SINGLE_DATABASE)url.pathname='/'+name;
- Object.assign(process.env,{DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'test-internal-secret-thirty-two-characters',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'test-owner-password-123',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9"}'});
+ Object.assign(process.env,{APP_VAULT_KEY:'11'.repeat(32),DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'test-internal-secret-thirty-two-characters',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'test-owner-password-123',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9"}'});
  const db=require('../src/db');let server; t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body!==null?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  async function login(username,password='user-password-123'){const r=await request('/login','POST',{username,password});assert.equal(r.status,200);const s={cookie:r.cookie};s.csrf=(await request('/me','GET',null,s)).data.csrf;return s;}
@@ -16,7 +16,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/campaigns','POST',template,user)).status,402);
   assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),0);
   assert.equal((await request('/billing?user_id='+uid,'GET',null,user2)).data.user.id,uid2);
-  for(const [path,method,body] of [['/billing/price','PUT',{price:'0.10'}],['/billing/adjust','POST',{}],['/accounts/'+a+'/connection?mode=operate','GET',null],['/accounts/'+a+'/restart','POST',{}],['/accounts','POST',{label:'blocked',worker_group:'group-a'}]])assert.equal((await request(path,method,body,user)).status,403);
+  for(const [path,method,body] of [['/billing/price','PUT',{price:'0.10'}],['/billing/adjust','POST',{}],['/accounts/'+a+'/connection?mode=operate','GET',null]])assert.equal((await request(path,method,body,user)).status,403);
   assert.equal((await request('/accounts/'+a+'/connection?mode=view','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
   assert.equal((await request('/accounts','GET',null,user)).data[0].operate,false);
   const {WebSocket}=require('ws');
@@ -35,10 +35,10 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/users','POST',{username:'nested',role:'user'},user)).status,403);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:false},user)).status,403);
   assert.equal((await request('/accounts/'+b,'PATCH',{label:'no'},user)).status,403);
-  assert.equal((await request('/accounts/'+a,'PATCH',{label:'Renamed'},user)).status,403);
+  assert.equal((await request('/accounts/'+a,'PATCH',{label:'Renamed'},user)).status,200);
   assert.equal((await request('/accounts','GET',null,user)).data.length,1);
   assert.equal((await request('/accounts/'+a+'/connection','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
-  assert.equal((await request('/accounts/'+a+'/start','POST',{},user)).status,403);
+  assert.equal((await request('/accounts/'+a+'/start','POST',{},user)).status,503);
   assert.equal((await request('/audit','GET',null,user)).status,403);
   assert.equal((await request('/data/purge','POST',{confirm:'DELETE HISTORY'},user)).status,403);
   const bad={...user,csrf:'bad'};assert.equal((await request('/accounts/'+a,'PATCH',{label:'bad'},bad)).status,403);
@@ -193,6 +193,72 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await worker.dispatch({id:b},{id:b,ready:true,client:{getNumberId:async()=>{calls++;return null;}}});assert.equal(calls,0);
   assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[paused])).rows[0].enabled,false);
   assert.equal((await request('/campaigns/'+paused+'/send-now','POST',{},user2)).status,402);
+ });
+ await t.test('USER QR-only, rename and reconnect are scoped; concurrent creation cannot exceed ten slots',async()=>{
+  assert.equal((await request('/me','GET',null,user2)).data.user.account_limit,10);
+  assert.equal((await request('/accounts/'+b+'/connection?mode=scan','GET',null,user2)).data.code,'WORKER_UNREACHABLE');
+  await db.pool.query("UPDATE accounts SET status='ready' WHERE id=$1",[b]);
+  assert.equal((await request('/accounts/'+b+'/connection?mode=scan','GET',null,user2)).data.code,'ALREADY_LINKED');
+  await db.pool.query("UPDATE accounts SET status='stopped' WHERE id=$1",[b]);
+  assert.equal((await request('/accounts/'+a+'/restart','POST',{},user2)).status,403);
+  assert.equal((await request('/accounts/'+b,'PATCH',{enabled:false},user2)).status,403);
+  const ids=[];for(let i=0;i<8;i++){const r=await request('/accounts','POST',{label:'Quota '+i,worker_group:'group-a'},user2);assert.equal(r.status,201);ids.push(r.data.id);}
+  const pair=await Promise.all([8,9].map(i=>request('/accounts','POST',{label:'Quota '+i,worker_group:'group-a'},user2)));
+  assert.deepEqual(pair.map(r=>r.status).sort(),[201,409]);ids.push(pair.find(r=>r.status===201).data.id);
+  assert.equal((await request('/accounts','GET',null,user2)).data.length,10);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,grants:[a,b,...ids].map(account_id=>({account_id}))},owner)).status,409);
+  for(const id of ids){await request('/accounts/'+id,'DELETE',null,owner);assert.equal(await require('../src/account-deletion').purgeAccountData(id),true);}
+ });
+ await t.test('FPX switch, signed verified payments, configuration snapshots and duplicate callbacks',async()=>{
+  const payments=require('../src/payments'),originalFetch=global.fetch,bills=new Map();let created=0;
+  global.fetch=async(url,opts)=>{const u=new URL(url);if(u.host==='www.billplz.com'){
+    if(opts.method==='POST'){const f=Object.fromEntries(opts.body),id='test-bill-'+(++created);const bill={id,collection_id:f.collection_id,reference_2:f.reference_2,amount:Number(f.amount),paid_amount:0,paid:false,state:'due',url:'https://www.billplz.com/bills/'+id};bills.set(id,bill);return{ok:true,json:async()=>bill};}
+    return{ok:true,json:async()=>bills.get(u.pathname.split('/').at(-1))};
+  }return originalFetch(url,opts);};
+  try{
+    assert.equal((await request('/payments/settings','PUT',{enabled:true,sandbox:false,collection_id:'fake'},user)).status,403);
+    assert.equal((await request('/payments/orders','POST',{amount:'20',email:'test@example.test',request_id:randomUUID()},user)).status,503);
+    const settings={enabled:true,sandbox:false,collection_id:'test-collection',api_key:'fake-api-key',x_key:'fake-signature-key'};
+    assert.equal((await request('/payments/settings','PUT',settings,owner)).status,200);
+    const visible=(await request('/payments/settings','GET',null,owner)).data;assert.equal(visible.api_key,undefined);assert.equal(visible.x_key,undefined);assert.equal(visible.configured,true);
+    const payload={amount:'20.00',email:'test@example.test',request_id:randomUUID()};
+    const made=await request('/payments/orders','POST',payload,user);assert.equal(made.status,201);const id=made.data.id;
+    assert.equal((await request('/payments/orders','POST',payload,user)).data.id,id);assert.equal(created,1);
+    assert.equal((await request('/payments/orders/'+id+'/check','POST',{},user2)).status,403);
+    assert.equal((await request('/payments/orders','GET',null,user2)).data.length,0);
+    const order=(await db.pool.query('SELECT * FROM topup_orders WHERE id=$1',[id])).rows[0];const bill=bills.get(order.bill_id);
+    const before=Number((await request('/billing','GET',null,user)).data.user.credit_units);
+    const unsigned={id:bill.id,collection_id:bill.collection_id,amount:String(bill.amount),paid_amount:'2000',paid:'true',state:'paid'};
+    assert.equal((await request('/payments/callback/'+id,'POST',{...unsigned,x_signature:'0'.repeat(64)})).status,403);
+    assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),before);
+    // A maintenance shutdown does not discard payments from an already-created bill.
+    assert.equal((await request('/payments/settings','PUT',{...settings,enabled:false,api_key:'new-fake-key',x_key:'new-fake-signature'},owner)).status,200);
+    assert.equal((await request('/payments/orders','POST',{...payload,request_id:randomUUID()},user)).status,503);
+    bill.paid=true;bill.state='paid';bill.paid_amount=1999;
+    const body={...unsigned,x_signature:payments.signature(unsigned,settings.x_key)};
+    assert.equal((await request('/payments/callback/'+id,'POST',body)).status,409);
+    assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),before);
+    bill.paid_amount=2000;
+    const callbacks=await Promise.all([request('/payments/callback/'+id,'POST',body),request('/payments/callback/'+id,'POST',body)]);assert.ok(callbacks.every(r=>r.status===200));
+    assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),before+200000);
+    assert.equal((await db.pool.query('SELECT count(*)::int n FROM credit_ledger WHERE order_id=$1',[id])).rows[0].n,1);
+    assert.equal((await request('/payments/orders/'+id+'/check','POST',{},user)).data.state,'paid');
+  }finally{global.fetch=originalFetch;}
+ });
+ await t.test('Owner verification gates encrypted USER password viewing and shows self changes immediately',async()=>{
+  let rows=(await request('/users?passwords=true','GET',null,owner)).data;
+  assert.equal(rows.find(x=>x.id===uid2).password,undefined);assert.equal(rows.find(x=>x.id===uid2).password_cipher,undefined);
+  assert.equal((await request('/users/password-access','POST',{password:'user-password-123'},user2)).status,403);
+  assert.equal((await request('/users/password-access','POST',{password:'wrong'},owner)).status,403);
+  assert.equal((await request('/users/password-access','POST',{password:'test-owner-password-123'},owner)).status,200);
+  assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,'user-password-123');
+  assert.equal((await request('/password','POST',{current_password:'user-password-123',password:'changed-user-password-123'},user2)).status,200);
+  rows=(await request('/users?passwords=true','GET',null,owner)).data;const changed=rows.find(x=>x.id===uid2);assert.equal(changed.password,'changed-user-password-123');assert.ok(changed.password_changed_at);
+  assert.equal(rows.find(x=>x.role==='owner').password,undefined);
+  assert.ok(!(await db.pool.query('SELECT password_cipher FROM users WHERE id=$1',[uid2])).rows[0].password_cipher.includes('changed-user-password-123'));
+  Object.assign(user2,await login('user2','changed-user-password-123'));
+  await db.pool.query("UPDATE sessions SET password_reveal_until=now()-interval '1 second' WHERE user_id IN(SELECT id FROM users WHERE role='owner')");
+  assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,undefined);
  });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);

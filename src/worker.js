@@ -132,7 +132,7 @@ async function startAccount(account) {
     e.client.on('disconnected', reason => { fail(account.id, 'DISCONNECTED_' + String(reason).slice(0, 60)).catch(() => {}); });
     e.client.on('ready', () => {
       if (e.closing) return;
-      e.ready = true; failures.delete(account.id); retryAt.delete(account.id);
+      e.ready = true; for(const ws of e.sockets)if(ws.scanOnly)ws.close(); failures.delete(account.id); retryAt.delete(account.id);
       state(account.id, 'ready', null, e.client.info?.wid?.user || null).catch(() => {});
       e.client.pupPage.bringToFront().catch(() => {});
       syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
@@ -347,12 +347,13 @@ async function start() {
       const id = req.url.match(/^\/screen\/([a-f0-9-]+)$/)?.[1], entry = entries.get(id);
       assert(entry && !entry.closing, 'Desktop unavailable', 503);
       const enabled = (await pool.query('SELECT enabled FROM accounts WHERE id=$1', [id])).rows[0]?.enabled; assert(enabled, 'Disabled', 403);
+      const requireUnlinked=req.headers['x-require-unlinked']==='true';assert(!requireUnlinked||!entry.ready,'Already linked',403);
       const requireReady=req.headers['x-require-ready']==='true';assert(!requireReady||entry.ready,'Owner linking required',403);
       const port = req.headers['x-control-mode'] === 'operate' ? entry.controlPort : entry.viewPort;
       wss.handleUpgrade(req, socket, head, ws => {
-        const tcp = net.connect(port, '127.0.0.1'); entry.sockets.add(ws);
+        const tcp = net.connect(port, '127.0.0.1');ws.scanOnly=requireUnlinked;entry.sockets.add(ws);
         ws.on('message', data => { if (!tcp.destroyed) tcp.write(data); });
-        tcp.on('data', data => { if(requireReady&&!entry.ready)return ws.close();if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
+        tcp.on('data', data => { if(requireReady&&!entry.ready||requireUnlinked&&entry.ready)return ws.close();if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
         tcp.on('error', () => ws.close()); tcp.on('close', () => ws.close());
         ws.on('close', () => { tcp.destroy(); entry.sockets.delete(ws); }); ws.on('error', () => tcp.destroy());
       });

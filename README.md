@@ -102,3 +102,13 @@ TEST_DATABASE_URL=postgresql://postgres:PASSWORD@localhost:5432/postgres npm tes
 本项目与 WhatsApp / Meta 无隶属关系，不是官网或官方产品。
 
 账号名称/号码仅作备注，登录必须用手机扫码。账号页提供“检查连接”，扫码窗口会说明服务离线、配置或权限问题。首次浏览器服务配置见 [部署步骤](docs/RAILWAY_SETUP.md#已添加号码但未扫码先启动浏览器服务)。
+
+### Online FPX setup
+
+Owner: open **Credit / top-up → Online payment settings / switch**.
+1. Add and verify your settlement bank account in your Billplz merchant dashboard.
+2. Create a dedicated Collection and enable only FPX for it.
+3. Fill in live Collection ID, API Secret Key and X Signature Key in this dashboard. Keep X Signature callbacks enabled in Billplz.
+4. Select Live payments and turn online top-up on. Turn it off during maintenance to stop new orders; already completed orders continue to credit safely.
+
+The service receives payment callbacks at `/api/payments/callback/<order-id>` and returns the browser to `/?topup=<order-id>`. `PUBLIC_URL` must be the real HTTPS public origin. Payment credentials and newly saved USER passwords require a stable random 32-byte `APP_VAULT_KEY` (64 hex characters), set only on the API service. Preserve this key across redeploys; do not commit it. Existing bcrypt passwords cannot be recovered; reset/change them to make them available through Owner's verified five-minute password view. The worker capacity is separate from the default ten-account limit for each USER.

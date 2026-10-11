@@ -46,5 +46,8 @@ target-environment checks; do not call them tested based on a successful build.
 ## Prepaid access (2026-10-11)
 
 - All USERs pay the single Owner-configured MYR rate through manual prepaid credit. Owner remains unlimited. Never invent an official WhatsApp tariff for the Web integration; an unset price blocks USER sends.
-- USER WhatsApp screens are view-only; only Owner creates/manages browser accounts or scans/controls the original screen. Assigned users may create paid sending tasks but cannot modify another creator's tasks.
+- USER can create up to 10 assigned accounts and rename/reconnect them. Chat viewing and QR linking both use read-only screens; QR-only sessions end on connection. Only Owner may use interactive WhatsApp controls. Assigned users may create paid sending tasks but cannot modify another creator's tasks.
 - Keep immutable credit movements separate from deletable chat/task/audit data. Reserve funds atomically before sending, settle/refund once, retain uncertain holds for review, and never overspend or re-charge old sends.
+
+- Online FPX uses Billplz merchant credentials encrypted under APP_VAULT_KEY. Credit only verified live payments once; honor the maintenance switch for new orders and never credit from browser redirects or sandbox payments.
+- Owner-requested USER password visibility uses purpose-bound encryption plus five-minute Owner re-verification. Never commit, log or show those passwords outside that authorized account-management view. Historical hashes are not recoverable; do not reset existing passwords without authorization.

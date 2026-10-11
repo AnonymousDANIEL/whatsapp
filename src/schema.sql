@@ -113,3 +113,24 @@ CREATE INDEX IF NOT EXISTS ledger_user ON credit_ledger(user_id,id DESC);
 DELETE FROM control_leases WHERE session_hash IN(SELECT s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.role<>'owner');
 
 ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_limit integer NOT NULL DEFAULT 10 CHECK(account_limit BETWEEN 1 AND 10);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_cipher text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS password_reveal_until timestamptz;
+CREATE TABLE IF NOT EXISTS payment_settings(
+ id integer PRIMARY KEY CHECK(id=1),enabled boolean NOT NULL DEFAULT false,sandbox boolean NOT NULL DEFAULT true,
+ collection_id text NOT NULL DEFAULT '',api_key_cipher text,x_key_cipher text,updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO payment_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS topup_orders(
+ id uuid PRIMARY KEY,user_id uuid NOT NULL REFERENCES users(id),request_id uuid UNIQUE NOT NULL,
+ amount_cents integer NOT NULL CHECK(amount_cents BETWEEN 200 AND 1000000),
+ state text NOT NULL DEFAULT 'creating' CHECK(state IN ('creating','pending','paid','create_failed')),
+ bill_id text UNIQUE,payment_url text,config_cipher text NOT NULL,sandbox boolean NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),paid_at timestamptz,last_checked_at timestamptz
+);
+ALTER TABLE credit_ledger DROP CONSTRAINT IF EXISTS credit_ledger_kind_check;
+ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_kind_check CHECK(kind IN ('hold','charged','refunded','adjustment','online_topup'));
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS order_id uuid UNIQUE REFERENCES topup_orders(id);
+CREATE INDEX IF NOT EXISTS orders_user ON topup_orders(user_id,created_at DESC);

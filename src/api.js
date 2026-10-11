@@ -2,6 +2,7 @@
 const {validateImage}=require('./media');
 const express = require('express');
 const billing=require('./billing');
+const payments=require('./payments'),vault=require('./secrets');
 const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -27,7 +28,7 @@ function cookieToken(req) {
 async function getSession(req) {
   const token = cookieToken(req);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-  const { rows } = await pool.query(`SELECT u.id,u.username,u.role,u.permissions,u.active,s.csrf,s.token_hash
+  const { rows } = await pool.query(`SELECT u.id,u.username,u.role,u.permissions,u.active,u.account_limit,s.csrf,s.token_hash,s.password_reveal_until
     FROM sessions s JOIN users u ON u.id=s.user_id
     WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active`, [hash(token)]);
   const user = rows[0];
@@ -35,7 +36,7 @@ async function getSession(req) {
 }
 function route(fn) { return (req, res, next) => Promise.resolve(fn(req, res)).catch(next); }
 function sessionCookie(res, token) { res.cookie(COOKIE, token, { httpOnly: true, secure, sameSite: 'strict', maxAge: SESSION_HOURS * 3600000, path: '/' }); }
-function publicUser(u) { return { id: u.id, username: u.username, role: u.role, manager_id: u.manager_id, permissions: u.permissions, active: u.active }; }
+function publicUser(u) { return { id: u.id, username: u.username, role: u.role, manager_id: u.manager_id, permissions: u.permissions, active: u.active, account_limit:u.account_limit }; }
 async function access(user, id, operate = false) {
   uuid(id);
   const a = (await pool.query(`SELECT a.*,($2='owner') AS operate FROM accounts a
@@ -91,6 +92,7 @@ async function start() {
     await pool.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`, [hash(token), u.id, csrf]);
     sessionCookie(res, token); await audit(u.id, 'login', u.id); res.json({ ok: true });
   }));
+  payments.callbackRoutes(app,route,uuid);
   app.use('/api', (req, res, next) => {
     getSession(req).then(user => {
       assert(user, '登录已过期，或账号已停用', 401); req.user = user;
@@ -104,47 +106,49 @@ async function start() {
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
     const row = (await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id])).rows[0];
     assert(await bcrypt.compare(req.body.current_password || '', row.password_hash), '原密码不正确', 403);
-    await transaction(async c => { await c.query('UPDATE users SET password_hash=$1 WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
+    await transaction(async c => { await c.query('UPDATE users SET password_hash=$1,password_cipher=$3,password_changed_at=now() WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id,req.user.role==='owner'?null:vault.seal(req.body.password,'user-password:'+req.user.id)]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
     await audit(req.user.id, 'password.change', req.user.id); res.json({ ok: true });
   }));
   billing.routes(app,route,uuid);
+  payments.routes(app,route,uuid);
   app.get('/api/accounts', route(async (req, res) => res.json(await visibleAccounts(req.user))));
   app.post('/api/accounts', route(async (req, res) => {
-    assert(req.user.role==='owner','USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
-
     assert(typeof req.body.label === 'string' && req.body.label.trim().length > 0 && req.body.label.length <= 80, '请输入账号名称');
     assert(Object.hasOwn(routes, req.body.worker_group), '请选择已配置的浏览器分组');
-    const id = crypto.randomUUID();
-    await pool.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)', [id, req.body.label.trim(), req.body.worker_group]);
-    if(req.user.role!=='owner') await pool.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[req.user.id,id]);
-    await audit(req.user.id, 'account.create', id, {label:req.body.label.trim()});
-    try {
-      await workerCommand({ id, worker_group: req.body.worker_group }, 'start');
-      res.status(201).json({ id, started: true });
-    } catch (error) {
-      if (!error.publicMessage) throw error;
-      res.status(201).json({ id, started: false, connection: { code: error.code, message: error.message } });
-    }
+    const id=crypto.randomUUID();
+    await transaction(async db=>{
+      if(req.user.role!=='owner'){
+        const u=(await db.query('SELECT account_limit FROM users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];
+        const n=(await db.query('SELECT count(*)::int n FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=$1 AND a.deleted_at IS NULL',[req.user.id])).rows[0].n;
+        assert(n<u.account_limit,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
+      }
+      await db.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)',[id,req.body.label.trim(),req.body.worker_group]);
+      if(req.user.role!=='owner')await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[req.user.id,id]);
+    });
+    await audit(req.user.id,'account.create',id,{label:req.body.label.trim()});
+    try {await workerCommand({id,worker_group:req.body.worker_group},'start');res.status(201).json({id,started:true});}
+    catch(error){if(!error.publicMessage)throw error;res.status(201).json({id,started:false,connection:{code:error.code,message:error.message}});}
   }));
   app.get('/api/accounts/:id/connection', route(async (req, res) => {
-    const operate = req.query.mode === 'operate', a = await access(req.user, req.params.id, operate);
+    const operate = req.query.mode === 'operate',scan=req.query.mode==='scan', a = await access(req.user, req.params.id, operate);
     assert(req.user.role==='owner'||!operate,'USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
-    const canStart = operate;
-    if(req.user.role!=='owner'&&a.status!=='ready')return res.json({ok:false,code:'OWNER_LINK_REQUIRED',message:'请联系 Owner 完成连接后查看聊天',can_start:false});
+    const canStart = operate||scan;
+    if(req.user.role!=='owner'&&!scan&&a.status!=='ready')return res.json({ok:false,code:'OWNER_LINK_REQUIRED',message:'请先扫码完成连接，再查看聊天',can_start:false});
+    if(scan&&a.status==='ready')return res.json({ok:false,code:'ALREADY_LINKED',message:'WhatsApp 已连接，请使用查看聊天',can_start:false});
     if (!a.enabled) return res.json({ ok: false, code: 'ACCOUNT_DISABLED', message: '此账号已停用，请管理员启用后再连接。', can_start: false });
     if (operate && (await pool.query('SELECT 1 FROM control_leases WHERE account_id=$1 AND expires_at>now() AND session_hash<>$2', [a.id, req.user.token_hash])).rowCount) {
       return res.json({ ok: false, code: 'ACCOUNT_IN_USE', message: '此账号正被其他操作窗口使用，请关闭该窗口后再连接。', can_start: false });
     }
     try {
       const connection = await browser.status(a);
-      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||connection.connected), code: connection.screen_ready ? 'SCREEN_READY' : 'BROWSER_NOT_READY', message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart });
+      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||scan&&!connection.connected||!scan&&connection.connected), code: scan&&connection.connected?'ALREADY_LINKED':connection.screen_ready ? 'SCREEN_READY' : 'BROWSER_NOT_READY', message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart });
     } catch (error) {
       if (!error.publicMessage) throw error;
       res.json({ ok: false, code: error.code, message: error.message, can_start: false });
     }
   }));
   app.patch('/api/accounts/:id', route(async(req,res)=>{
-    assert(req.user.role==='owner','USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
+    assert(req.body.enabled===undefined||req.user.role==='owner','只有 Owner 可以启用或停用 WhatsApp 账号',403);
     const a=await access(req.user,req.params.id,true);
     if(req.body.label!==undefined){
       assert(typeof req.body.label==='string'&&req.body.label.trim().length>0&&req.body.label.length<=80,'请输入账号名称');
@@ -152,6 +156,7 @@ async function start() {
       await audit(req.user.id,'account.rename',a.id,{before:a.label,after:req.body.label.trim()});
     }
     if(req.body.enabled!==undefined){
+      assert(req.user.role==='owner','只有 Owner 可以启用或停用 WhatsApp 账号',403);
       assert(typeof req.body.enabled==='boolean','enabled 无效');
       await pool.query('UPDATE accounts SET enabled=$1 WHERE id=$2',[req.body.enabled,a.id]);
       await audit(req.user.id,'account.enabled',a.id,{enabled:req.body.enabled});
@@ -173,24 +178,33 @@ async function start() {
   }));
   app.post('/api/accounts/:id/:command', route(async (req, res) => {
 
-    assert(req.user.role==='owner','USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
     assert(['start', 'restart'].includes(req.params.command), '指令无效');
     const a = await access(req.user, req.params.id, true); assert(a.enabled, '账号已停用');
     const result = await workerCommand(a, req.params.command); await audit(req.user.id, 'account.' + req.params.command, a.id); res.json(result);
   }));
+  app.post('/api/users/password-access',rateLimit({windowMs:15*60000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id}),route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
+    const row=(await pool.query('SELECT password_hash FROM users WHERE id=$1',[req.user.id])).rows[0];
+    assert(typeof req.body.password==='string'&&req.body.password.length<=200&&await bcrypt.compare(req.body.password,row.password_hash),'Owner 密码不正确',403);
+    await pool.query("UPDATE sessions SET password_reveal_until=now()+interval '5 minutes' WHERE token_hash=$1",[req.user.token_hash]);
+    await audit(req.user.id,'passwords.view',null);res.json({ok:true});
+  }));
   app.get('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
-    res.json((await pool.query(`SELECT u.id,u.username,u.role,u.active,u.created_at,u.permissions,u.credit_units,
-      COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g WHERE g.user_id=u.id),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows);
+    const reveal=req.query.passwords==='true'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date();
+    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,
+      (SELECT count(*)::int FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL) AS account_count,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows;
+    res.json(rows.map(u=>{const cipher=u.password_cipher;delete u.password_cipher;return{...u,password_available:!!cipher,password:reveal&&u.role!=='owner'&&cipher?vault.open(cipher,'user-password:'+u.id):undefined,password_access:!!reveal};}));
   }));
   app.post('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     const b=req.body;assert(!b.role||b.role==='user','只能创建 USER ID');
     assert(/^[\w.-]{3,40}$/.test(b.username||''),'ID 需要 3–40 位字母、数字、点、横线或下划线');
     assert(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200,'密码需要 12–200 个字符');
-    const grants=await grantsFor(req.user,(b.grants||[]).map(g=>({...g,operate:true}))),id=crypto.randomUUID();
+    const grants=await grantsFor(req.user,(b.grants||[]).map(g=>({...g,operate:true}))),id=crypto.randomUUID();assert(grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
     await transaction(async db=>{
-      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active) VALUES($1,$2,$3,'user',$4,$5)",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,b.active!==false]);
+      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active,password_cipher,password_changed_at) VALUES($1,$2,$3,'user',$4,$5,$6,now())",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,b.active!==false,vault.seal(b.password,'user-password:'+id)]);
       for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[id,g.account_id]);
     });
     await audit(req.user.id,'user.create',id,{username:b.username});res.status(201).json({id});
@@ -202,14 +216,16 @@ async function start() {
     const b=req.body;assert(typeof b.active==='boolean','请选择 Active/Inactive');
     assert(!b.password||(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200),'密码需要 12–200 个字符');
     const grants=b.grants===undefined?null:await grantsFor(req.user,b.grants.map(g=>({...g,operate:true})));
+    assert(!grants||grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
     await transaction(async db=>{
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[target.id]);
       await db.query('UPDATE users SET active=$1,permissions=$2 WHERE id=$3',[b.active,PERMISSIONS,target.id]);
-      if(b.password)await db.query('UPDATE users SET password_hash=$1 WHERE id=$2',[await bcrypt.hash(b.password,12),target.id]);
+      if(b.password)await db.query('UPDATE users SET password_hash=$1,password_cipher=$3,password_changed_at=now() WHERE id=$2',[await bcrypt.hash(b.password,12),target.id,vault.seal(b.password,'user-password:'+target.id)]);
       if(grants){await db.query('DELETE FROM account_grants WHERE user_id=$1',[target.id]);for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[target.id,g.account_id]);}
       if(!b.active||b.password)await db.query('DELETE FROM sessions WHERE user_id=$1',[target.id]);
       if(!b.active)await db.query('UPDATE campaigns SET enabled=false WHERE created_by=$1',[target.id]);
     });
-    await audit(req.user.id,'user.update',target.id,{active:b.active,grants:grants?.map(g=>g.account_id)});res.json({ok:true});
+    await audit(req.user.id,'user.update',target.id,{active:b.active,password_changed:!!b.password,grants:grants?.map(g=>g.account_id)});res.json({ok:true});
   }));
   app.get('/api/campaigns', route(async (req, res) => {
     const ids = (await visibleAccounts(req.user)).map(a => a.id);
@@ -398,8 +414,8 @@ async function start() {
       const url = new URL(req.url, publicURL); const match = url.pathname.match(/^\/screen\/([a-f0-9-]+)$/);
       assert(match, 'Wrong endpoint', 404); accountId = uuid(match[1]);
       user = await getSession(req); assert(user, 'Unauthorized', 401);
-      const operate = url.searchParams.get('mode') === 'operate', a = await access(user, accountId, operate);
-      assert(user.role==='owner'||(!operate&&a.status==='ready'),'USER 仅可查看已连接的聊天',403);
+      const operate = url.searchParams.get('mode') === 'operate',scan=url.searchParams.get('mode')==='scan', a = await access(user, accountId, operate);
+      assert(user.role==='owner'||(!operate&&(scan?a.status!=='ready':a.status==='ready')),'USER 仅可查看聊天或扫码关联',403);
       assert(a.enabled && routes[a.worker_group], 'Unavailable', 503);
       if (operate) {
         const result = await pool.query(`INSERT INTO control_leases(account_id,session_hash,expires_at) VALUES($1,$2,now()+interval '30 seconds')
@@ -409,7 +425,7 @@ async function start() {
       }
       const target = new URL('/screen/' + accountId, routes[a.worker_group]); target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
       wss.handleUpgrade(req, socket, head, ws => {
-        const upstream = new WebSocket(target, { headers: { Authorization: 'Bearer ' + process.env.INTERNAL_SECRET, 'X-Control-Mode': operate ? 'operate' : 'view', 'X-Require-Ready':user.role==='owner'?'false':'true' }, handshakeTimeout: 10000 });
+        const upstream = new WebSocket(target, { headers: { Authorization: 'Bearer ' + process.env.INTERNAL_SECRET, 'X-Control-Mode': operate ? 'operate' : 'view', 'X-Require-Ready':user.role==='owner'||scan?'false':'true','X-Require-Unlinked':scan?'true':'false' }, handshakeTimeout: 10000 });
         const pending = []; let pendingSize = 0, stopped = false;
         ws.on('message', data => { if (upstream.readyState === WebSocket.OPEN) upstream.send(data); else { pendingSize += data.length; if (pendingSize > 1024 * 1024) return ws.close(1009); pending.push(data); } });
         upstream.on('open', () => { for (const data of pending) upstream.send(data); pending.length = 0; });
@@ -418,7 +434,7 @@ async function start() {
         ws.on('close', close); ws.on('error', close); upstream.on('close', close); upstream.on('error', close);
         const timer = setInterval(async () => {
           try {
-            const current = await getSession(req); assert(current, 'Expired'); const currentAccount = await access(current, accountId, operate); assert(currentAccount.enabled, 'Disabled');assert(current.role==='owner'||(!operate&&currentAccount.status==='ready'),'View unavailable');
+            const current = await getSession(req); assert(current, 'Expired'); const currentAccount = await access(current, accountId, operate); assert(currentAccount.enabled, 'Disabled');assert(current.role==='owner'||(!operate&&(scan?currentAccount.status!=='ready':currentAccount.status==='ready')),'View unavailable');
             if (lease) {
               const changed = await pool.query("UPDATE control_leases SET expires_at=now()+interval '30 seconds' WHERE account_id=$1 AND session_hash=$2 RETURNING account_id", [accountId, current.token_hash]); assert(changed.rowCount, 'Lease lost');
             }
