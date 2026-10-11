@@ -46,8 +46,11 @@ target-environment checks; do not call them tested based on a successful build.
 ## Prepaid access (2026-10-11)
 
 - All USERs pay the single Owner-configured MYR rate through manual prepaid credit. Owner remains unlimited. Never invent an official WhatsApp tariff for the Web integration; an unset price blocks USER sends.
-- USER can create up to 10 assigned accounts and rename/reconnect them. Chat viewing and QR linking both use read-only screens; QR-only sessions end on connection. Only Owner may use interactive WhatsApp controls. Assigned users may create paid sending tasks but cannot modify another creator's tasks.
+- USER can create up to 10 assigned accounts and rename/reconnect them. Only QR linking is available to USER; reject chat viewing and interactive controls on HTTP and WebSocket paths. QR-only sessions use read-only screens and end on connection. Assigned users may create paid sending tasks but cannot modify another creator's tasks. Hide USER slot counters while retaining the server-side limit.
 - Keep immutable credit movements separate from deletable chat/task/audit data. Reserve funds atomically before sending, settle/refund once, retain uncertain holds for review, and never overspend or re-charge old sends.
 
 - Online FPX uses Billplz merchant credentials encrypted under APP_VAULT_KEY. Credit only verified live payments once; honor the maintenance switch for new orders and never credit from browser redirects or sandbox payments.
 - Owner-requested USER password visibility uses purpose-bound encryption plus five-minute Owner re-verification. Never commit, log or show those passwords outside that authorized account-management view. Historical hashes are not recoverable; do not reset existing passwords without authorization.
+- Owner accounts are grouped by assigned USER ID, with unassigned accounts in their own Owner section. Assignment identities must never be exposed to other USERs.
+- Owner manages one bilingual notice displayed above every USER page, with an on/off switch. Disabled notice drafts are Owner-only; render notice text safely and preserve unsaved edits while refreshing.
+- Hide Online FPX from USER pages whenever live top-ups are unavailable; Owner can always see the maintenance switch and Off status. Existing paid orders must still settle exactly once.

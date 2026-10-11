@@ -134,3 +134,11 @@ ALTER TABLE credit_ledger DROP CONSTRAINT IF EXISTS credit_ledger_kind_check;
 ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_kind_check CHECK(kind IN ('hold','charged','refunded','adjustment','online_topup'));
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS order_id uuid UNIQUE REFERENCES topup_orders(id);
 CREATE INDEX IF NOT EXISTS orders_user ON topup_orders(user_id,created_at DESC);
+
+-- One Owner-managed announcement shared across all signed-in USER pages.
+CREATE TABLE IF NOT EXISTS workspace_notice(
+ id integer PRIMARY KEY CHECK(id=1),enabled boolean NOT NULL DEFAULT false,
+ content_zh text NOT NULL DEFAULT '' CHECK(length(content_zh)<=6000),
+ content_en text NOT NULL DEFAULT '' CHECK(length(content_en)<=6000),updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO workspace_notice(id) VALUES(1) ON CONFLICT DO NOTHING;

@@ -44,7 +44,9 @@ async function access(user, id, operate = false) {
   assert(a && (!a.deleted_at || (user.role==='owner'&&!operate)), '无权操作此 WhatsApp 账号',403); return a;
 }
 async function visibleAccounts(user) {
-  const {rows}=await pool.query(`SELECT a.*,($1='owner') AS operate,h.heartbeat_at AS worker_heartbeat_at
+  const {rows}=await pool.query(`SELECT a.*,($1='owner') AS operate,h.heartbeat_at AS worker_heartbeat_at,
+    CASE WHEN $1='owner' THEN COALESCE((SELECT jsonb_agg(jsonb_build_object('id',u.id,'username',u.username,'active',u.active) ORDER BY u.username)
+      FROM account_grants g JOIN users u ON u.id=g.user_id WHERE g.account_id=a.id AND u.role='user'),'[]'::jsonb) ELSE NULL END AS assigned_users
     FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
     WHERE $1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2))
     ORDER BY a.created_at`,[user.role,user.id]);
@@ -100,7 +102,7 @@ async function start() {
       next();
     }).catch(next);
   });
-  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur' })));
+  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur',password_access:!!(req.user.role==='owner'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date()) })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
   app.post('/api/password', route(async (req, res) => {
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
@@ -111,6 +113,20 @@ async function start() {
   }));
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
+  app.get('/api/notice',route(async(req,res)=>{
+    const notice=(await pool.query('SELECT enabled,content_zh,content_en,updated_at FROM workspace_notice WHERE id=1')).rows[0];
+    res.json(req.user.role==='owner'||notice.enabled?notice:{enabled:false,content_zh:'',content_en:'',updated_at:null});
+  }));
+  app.put('/api/notice',route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以管理公告',403);
+    const b=req.body;
+    assert(typeof b.enabled==='boolean'&&typeof b.content_zh==='string'&&typeof b.content_en==='string'&&b.content_zh.length<=6000&&b.content_en.length<=6000,'公告内容无效');
+    const zh=b.content_zh.trim(),en=b.content_en.trim();assert(!b.enabled||zh||en,'请填写公告内容');
+    const notice=await transaction(async db=>{
+      const row=(await db.query('UPDATE workspace_notice SET enabled=$1,content_zh=$2,content_en=$3,updated_at=now() WHERE id=1 RETURNING enabled,content_zh,content_en,updated_at',[b.enabled,zh,en])).rows[0];
+      await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'notice.update',$2)",[req.user.id,{enabled:b.enabled}]);return row;
+    });res.json(notice);
+  }));
   app.get('/api/accounts', route(async (req, res) => res.json(await visibleAccounts(req.user))));
   app.post('/api/accounts', route(async (req, res) => {
     assert(typeof req.body.label === 'string' && req.body.label.trim().length > 0 && req.body.label.length <= 80, '请输入账号名称');
@@ -131,10 +147,9 @@ async function start() {
   }));
   app.get('/api/accounts/:id/connection', route(async (req, res) => {
     const operate = req.query.mode === 'operate',scan=req.query.mode==='scan', a = await access(req.user, req.params.id, operate);
-    assert(req.user.role==='owner'||!operate,'USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
+    assert(req.user.role==='owner'||scan&&!operate,'USER 仅可扫码关联，不能查看聊天或操作 WhatsApp',403);
     const canStart = operate||scan;
-    if(req.user.role!=='owner'&&!scan&&a.status!=='ready')return res.json({ok:false,code:'OWNER_LINK_REQUIRED',message:'请先扫码完成连接，再查看聊天',can_start:false});
-    if(scan&&a.status==='ready')return res.json({ok:false,code:'ALREADY_LINKED',message:'WhatsApp 已连接，请使用查看聊天',can_start:false});
+    if(scan&&a.status==='ready')return res.json({ok:false,code:'ALREADY_LINKED',message:'WhatsApp 已连接，无需再次扫码',can_start:false});
     if (!a.enabled) return res.json({ ok: false, code: 'ACCOUNT_DISABLED', message: '此账号已停用，请管理员启用后再连接。', can_start: false });
     if (operate && (await pool.query('SELECT 1 FROM control_leases WHERE account_id=$1 AND expires_at>now() AND session_hash<>$2', [a.id, req.user.token_hash])).rowCount) {
       return res.json({ ok: false, code: 'ACCOUNT_IN_USE', message: '此账号正被其他操作窗口使用，请关闭该窗口后再连接。', can_start: false });
@@ -164,7 +179,7 @@ async function start() {
     res.json({ok:true});
   }));
   app.delete('/api/accounts/:id',route(async(req,res)=>{
-    assert(req.user.role==='owner','USER 仅可查看聊天，操作和扫码由 Owner 管理',403);
+    assert(req.user.role==='owner','只有 Owner 可以删除 WhatsApp 账号',403);
     await billing.assertNoHolds(pool,null,uuid(req.params.id));
     const a=await access(req.user,req.params.id);
     await transaction(async db=>{
@@ -415,7 +430,7 @@ async function start() {
       assert(match, 'Wrong endpoint', 404); accountId = uuid(match[1]);
       user = await getSession(req); assert(user, 'Unauthorized', 401);
       const operate = url.searchParams.get('mode') === 'operate',scan=url.searchParams.get('mode')==='scan', a = await access(user, accountId, operate);
-      assert(user.role==='owner'||(!operate&&(scan?a.status!=='ready':a.status==='ready')),'USER 仅可查看聊天或扫码关联',403);
+      assert(user.role==='owner'||(!operate&&scan&&a.status!=='ready'),'USER 仅可扫码关联，不能查看聊天或操作 WhatsApp',403);
       assert(a.enabled && routes[a.worker_group], 'Unavailable', 503);
       if (operate) {
         const result = await pool.query(`INSERT INTO control_leases(account_id,session_hash,expires_at) VALUES($1,$2,now()+interval '30 seconds')
@@ -434,7 +449,7 @@ async function start() {
         ws.on('close', close); ws.on('error', close); upstream.on('close', close); upstream.on('error', close);
         const timer = setInterval(async () => {
           try {
-            const current = await getSession(req); assert(current, 'Expired'); const currentAccount = await access(current, accountId, operate); assert(currentAccount.enabled, 'Disabled');assert(current.role==='owner'||(!operate&&(scan?currentAccount.status!=='ready':currentAccount.status==='ready')),'View unavailable');
+            const current = await getSession(req); assert(current, 'Expired'); const currentAccount = await access(current, accountId, operate); assert(currentAccount.enabled, 'Disabled');assert(current.role==='owner'||(!operate&&scan&&currentAccount.status!=='ready'),'View unavailable');
             if (lease) {
               const changed = await pool.query("UPDATE control_leases SET expires_at=now()+interval '30 seconds' WHERE account_id=$1 AND session_hash=$2 RETURNING account_id", [accountId, current.token_hash]); assert(changed.rowCount, 'Lease lost');
             }

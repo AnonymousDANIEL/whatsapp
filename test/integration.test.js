@@ -17,7 +17,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),0);
   assert.equal((await request('/billing?user_id='+uid,'GET',null,user2)).data.user.id,uid2);
   for(const [path,method,body] of [['/billing/price','PUT',{price:'0.10'}],['/billing/adjust','POST',{}],['/accounts/'+a+'/connection?mode=operate','GET',null]])assert.equal((await request(path,method,body,user)).status,403);
-  assert.equal((await request('/accounts/'+a+'/connection?mode=view','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
+  assert.equal((await request('/accounts/'+a+'/connection?mode=view','GET',null,user)).status,403);
   assert.equal((await request('/accounts','GET',null,user)).data[0].operate,false);
   const {WebSocket}=require('ws');
   await new Promise((resolve,reject)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/screen/'+a+'?mode=operate',{headers:{Origin:'http://localhost:3000',Cookie:user.cookie}});ws.on('unexpected-response',(_q,r)=>{try{assert.equal(r.statusCode,403);r.resume();resolve();}catch(e){reject(e);}});ws.on('open',()=>{ws.close();reject(Error('USER control opened'));});ws.on('error',reject);});
@@ -37,7 +37,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/accounts/'+b,'PATCH',{label:'no'},user)).status,403);
   assert.equal((await request('/accounts/'+a,'PATCH',{label:'Renamed'},user)).status,200);
   assert.equal((await request('/accounts','GET',null,user)).data.length,1);
-  assert.equal((await request('/accounts/'+a+'/connection','GET',null,user)).data.code,'OWNER_LINK_REQUIRED');
+  assert.equal((await request('/accounts/'+a+'/connection','GET',null,user)).status,403);
   assert.equal((await request('/accounts/'+a+'/start','POST',{},user)).status,503);
   assert.equal((await request('/audit','GET',null,user)).status,403);
   assert.equal((await request('/data/purge','POST',{confirm:'DELETE HISTORY'},user)).status,403);
@@ -199,6 +199,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/accounts/'+b+'/connection?mode=scan','GET',null,user2)).data.code,'WORKER_UNREACHABLE');
   await db.pool.query("UPDATE accounts SET status='ready' WHERE id=$1",[b]);
   assert.equal((await request('/accounts/'+b+'/connection?mode=scan','GET',null,user2)).data.code,'ALREADY_LINKED');
+  assert.equal((await request('/accounts/'+b+'/connection?mode=view','GET',null,user2)).status,403);
+  const {WebSocket}=require('ws');
+  await new Promise((resolve,reject)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/screen/'+b+'?mode=view',{headers:{Origin:'http://localhost:3000',Cookie:user2.cookie}});ws.on('unexpected-response',(_q,r)=>{try{assert.equal(r.statusCode,403);r.resume();resolve();}catch(e){reject(e);}});ws.on('open',()=>{ws.close();reject(Error('USER chat view opened'));});ws.on('error',reject);});
   await db.pool.query("UPDATE accounts SET status='stopped' WHERE id=$1",[b]);
   assert.equal((await request('/accounts/'+a+'/restart','POST',{},user2)).status,403);
   assert.equal((await request('/accounts/'+b,'PATCH',{enabled:false},user2)).status,403);
@@ -246,11 +249,13 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   }finally{global.fetch=originalFetch;}
  });
  await t.test('Owner verification gates encrypted USER password viewing and shows self changes immediately',async()=>{
+  assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   let rows=(await request('/users?passwords=true','GET',null,owner)).data;
   assert.equal(rows.find(x=>x.id===uid2).password,undefined);assert.equal(rows.find(x=>x.id===uid2).password_cipher,undefined);
   assert.equal((await request('/users/password-access','POST',{password:'user-password-123'},user2)).status,403);
   assert.equal((await request('/users/password-access','POST',{password:'wrong'},owner)).status,403);
   assert.equal((await request('/users/password-access','POST',{password:'test-owner-password-123'},owner)).status,200);
+  assert.equal((await request('/me','GET',null,owner)).data.password_access,true);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,'user-password-123');
   assert.equal((await request('/password','POST',{current_password:'user-password-123',password:'changed-user-password-123'},user2)).status,200);
   rows=(await request('/users?passwords=true','GET',null,owner)).data;const changed=rows.find(x=>x.id===uid2);assert.equal(changed.password,'changed-user-password-123');assert.ok(changed.password_changed_at);
@@ -258,7 +263,29 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.ok(!(await db.pool.query('SELECT password_cipher FROM users WHERE id=$1',[uid2])).rows[0].password_cipher.includes('changed-user-password-123'));
   Object.assign(user2,await login('user2','changed-user-password-123'));
   await db.pool.query("UPDATE sessions SET password_reveal_until=now()-interval '1 second' WHERE user_id IN(SELECT id FROM users WHERE role='owner')");
+  assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,undefined);
+ });
+ await t.test('Owner account grouping is scoped; global bilingual notices require Owner and hide disabled drafts',async()=>{
+  const own=(await request('/accounts','GET',null,owner)).data;
+  assert.equal(own.find(x=>x.id===a).assigned_users.find(x=>x.id===uid).username,'user1');
+  assert.deepEqual(own.find(x=>x.id===b).assigned_users.map(x=>x.id),[uid2]);
+  assert.equal((await request('/accounts','GET',null,user2)).data.find(x=>x.id===b).assigned_users,null);
+  const draft={enabled:false,content_zh:'待发布公告',content_en:'Draft notice'};
+  assert.equal((await request('/notice','GET',null,null)).status,401);
+  assert.equal((await request('/notice','PUT',draft,user2)).status,403);
+  assert.equal((await request('/notice','PUT',{...draft,enabled:true,content_zh:'',content_en:''},owner)).status,400);
+  assert.equal((await request('/notice','PUT',{...draft,content_en:'x'.repeat(6001)},owner)).status,400);
+  assert.equal((await request('/notice','PUT',draft,{...owner,csrf:'wrong'})).status,403);
+  assert.equal((await request('/notice','PUT',draft,owner)).status,200);
+  assert.equal((await request('/notice','GET',null,owner)).data.content_zh,draft.content_zh);
+  assert.deepEqual((await request('/notice','GET',null,user2)).data,{enabled:false,content_zh:'',content_en:'',updated_at:null});
+  const published={enabled:true,content_zh:'系统更新完成。\n<img src=x onerror=alert(1)>',content_en:'System updated.\nMaintenance notice.'};
+  assert.equal((await request('/notice','PUT',published,owner)).status,200);
+  for(const session of [user,user2]){const n=(await request('/notice','GET',null,session)).data;assert.equal(n.enabled,true);assert.equal(n.content_zh,published.content_zh);assert.equal(n.content_en,published.content_en);assert.ok(n.updated_at);}
+  await request('/notice','PUT',{...published,enabled:false},owner);
+  assert.equal((await request('/notice','GET',null,user)).data.content_en,'');
+  assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE action='notice.update'")).rows[0].n,3);
  });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);
