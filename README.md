@@ -11,12 +11,13 @@
 - 自动恢复只继续未发送号码，保留批次数量和发送间隔，不重设收件人状态，也不重发已提交或结果不确定的消息。旧余额暂停仅在可识别且没有后续手动停止 / 未知结果时迁移。
 - 页面按需并行读取数据；切换页面取消旧请求，后台刷新仅在实际显示数据改变时重绘。编辑公告、横向滚动和密码验证状态继续保留。发送记录 / 操作记录每页 100 条，导出仍包含完整任务结果。
 
-## 2026-10-11 当前权限、密码与公告
+## 2026-10-12 当前权限、密码与公告
 
 - USER WhatsApp 账号行仅有扫码、启动 / 重连、修改名称。聊天画面与操作画面仅 Owner 可访问，包括直接 HTTP / WebSocket 请求。页面隐藏名额数字，每个 USER 的 10 个账号上限仍由服务器强制执行。
 - 创建 / 修改 USER ID 填写 ID、密码、状态及资料备注，已移除 WhatsApp 账号分配说明及勾选列表。编辑提交沿用已有账号归属；新 USER 自行添加账号，默认上限 10 个。
 - Owner 的 WhatsApp 账号页面和总览按分配的 USER ID 展示独立区块；未分配账号在 Owner 区块。共享分配账号会出现在各对应 USER 区块，其他 USER 无法读取分配人员信息。
-- 在 **USER ID 管理 → 密码旁的查看** 验证 Owner 密码后，USER 密码明文显示五分钟。有效验证会随同一登录会话恢复，刷新不再强制隐藏；验证到期提示重新验证。USER 修改密码约五秒内更新。没有保存的历史密码仍须合法重设或由 USER 修改，不自动重设任何密码。
+- USER 已移除「修改密码」入口，后台也拒绝 USER 自行修改密码。只有 Owner 可以在 **USER ID 管理 → 账号 / 状态 / 密码** 重设 USER 密码；留空不变，更改后该 USER 的所有登录会话立即失效。Owner 可继续修改自己的密码，需要验证当前密码。
+- 在 **USER ID 管理 → 密码旁的查看** 验证 Owner 密码后，USER 密码明文显示五分钟。有效验证会随同一登录会话恢复，刷新不再强制隐藏；验证到期提示重新验证。Owner 重设 USER 密码约五秒内更新。没有保存的历史密码仍须由 Owner 合法重设，不自动重设任何密码。
 - Online FPX 关闭或未准备好时，USER 页面不显示 FPX 区块。Owner 始终可在 **余额 / 充值** 查看关闭状态、订单及设置开关；已付款订单仍按原规则核对入账。
 - Owner 在 **公告管理** 填写中文 / 可选英文内容并开启，公告显示在全部 USER 页面顶部，约五秒内更新。关闭后隐藏公告；未发布草稿仅 Owner 可读。编辑中的公告不会被定时刷新覆盖。
 
@@ -127,4 +128,4 @@ Owner: open **Credit / top-up → Online payment settings / switch**.
 3. Fill in live Collection ID, API Secret Key and X Signature Key in this dashboard. Keep X Signature callbacks enabled in Billplz.
 4. Select Live payments and turn online top-up on. Turn it off during maintenance to stop new orders; already completed orders continue to credit safely.
 
-The service receives payment callbacks at `/api/payments/callback/<order-id>` and returns the browser to `/?topup=<order-id>`. `PUBLIC_URL` must be the real HTTPS public origin. Payment credentials and newly saved USER passwords require a stable random 32-byte `APP_VAULT_KEY` (64 hex characters), set only on the API service. Preserve this key across redeploys; do not commit it. Existing bcrypt passwords cannot be recovered; reset/change them to make them available through Owner's verified five-minute password view. The worker capacity is separate from the default ten-account limit for each USER.
+The service receives payment callbacks at `/api/payments/callback/<order-id>` and returns the browser to `/?topup=<order-id>`. `PUBLIC_URL` must be the real HTTPS public origin. Payment credentials and newly saved USER passwords require a stable random 32-byte `APP_VAULT_KEY` (64 hex characters), set only on the API service. Preserve this key across redeploys; do not commit it. Existing bcrypt passwords cannot be recovered; only the Owner can reset USER passwords to make them available through the verified five-minute password view. USER self-service password changes are disabled on both the page and API. The worker capacity is separate from the default ten-account limit for each USER.

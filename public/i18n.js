@@ -13,6 +13,7 @@ window.translateError=(message)=>{
  '公告内容无效':'Invalid notice content.',
  '请填写公告内容':'Enter notice content.',
  'Owner 密码不正确':'The Owner password is incorrect.',
+ '只有 Owner 可以修改密码':'Only the Owner can change passwords.',
  '缺少 APP_VAULT_KEY，暂不能保存密码或支付配置':'The encryption key is missing. Password and payment settings cannot be saved yet.',
  '只有 Owner 可以管理在线充值':'Only the Owner can manage online payments.',
  '支付配置无效':'Invalid payment configuration.',

@@ -110,10 +110,11 @@ async function start() {
   app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur',password_access:!!(req.user.role==='owner'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date()) })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
   app.post('/api/password', route(async (req, res) => {
+    assert(req.user.role === 'owner', '只有 Owner 可以修改密码', 403);
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
     const row = (await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id])).rows[0];
     assert(await bcrypt.compare(req.body.current_password || '', row.password_hash), '原密码不正确', 403);
-    await transaction(async c => { await c.query('UPDATE users SET password_hash=$1,password_cipher=$3,password_changed_at=now() WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id,req.user.role==='owner'?null:vault.seal(req.body.password,'user-password:'+req.user.id)]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
+    await transaction(async c => { await c.query('UPDATE users SET password_hash=$1,password_cipher=NULL,password_changed_at=now() WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
     await audit(req.user.id, 'password.change', req.user.id); res.json({ ok: true });
   }));
   billing.routes(app,route,uuid);

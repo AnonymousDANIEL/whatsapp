@@ -316,7 +316,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
     assert.equal((await request('/payments/orders/'+id+'/check','POST',{},user)).data.state,'paid');
   }finally{global.fetch=originalFetch;}
  });
- await t.test('Owner verification gates encrypted USER password viewing and shows self changes immediately',async()=>{
+ await t.test('only Owner can reset USER passwords; verified viewing reflects resets and USER sessions are revoked',async()=>{
   assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   let rows=(await request('/users?passwords=true','GET',null,owner)).data;
   assert.equal(rows.find(x=>x.id===uid2).password,undefined);assert.equal(rows.find(x=>x.id===uid2).password_cipher,undefined);
@@ -325,11 +325,21 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/users/password-access','POST',{password:'test-owner-password-123'},owner)).status,200);
   assert.equal((await request('/me','GET',null,owner)).data.password_access,true);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,'user-password-123');
-  assert.equal((await request('/password','POST',{current_password:'user-password-123',password:'changed-user-password-123'},user2)).status,200);
-  rows=(await request('/users?passwords=true','GET',null,owner)).data;const changed=rows.find(x=>x.id===uid2);assert.equal(changed.password,'changed-user-password-123');assert.ok(changed.password_changed_at);
+  const before=(await db.pool.query('SELECT password_hash,password_cipher,password_changed_at FROM users WHERE id=$1',[uid2])).rows[0];
+  const denied=await request('/password','POST',{current_password:'user-password-123',password:'changed-user-password-123'},user2);
+  assert.equal(denied.status,403);assert.equal(denied.data.error,'只有 Owner 可以修改密码');
+  assert.equal((await request('/password','POST',{},user2)).status,403);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'changed-user-password-123'},user2)).status,403);
+  assert.deepEqual((await db.pool.query('SELECT password_hash,password_cipher,password_changed_at FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.equal((await request('/me','GET',null,user2)).status,200);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'owner-reset-user-password-123'},{...owner,csrf:'wrong'})).status,403);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'owner-reset-user-password-123'},owner)).status,200);
+  rows=(await request('/users?passwords=true','GET',null,owner)).data;const changed=rows.find(x=>x.id===uid2);assert.equal(changed.password,'owner-reset-user-password-123');assert.ok(+new Date(changed.password_changed_at)>+new Date(before.password_changed_at));
   assert.equal(rows.find(x=>x.role==='owner').password,undefined);
-  assert.ok(!(await db.pool.query('SELECT password_cipher FROM users WHERE id=$1',[uid2])).rows[0].password_cipher.includes('changed-user-password-123'));
-  Object.assign(user2,await login('user2','changed-user-password-123'));
+  assert.ok(!(await db.pool.query('SELECT password_cipher FROM users WHERE id=$1',[uid2])).rows[0].password_cipher.includes('owner-reset-user-password-123'));
+  assert.equal((await request('/me','GET',null,user2)).status,401);
+  assert.equal((await request('/login','POST',{username:'user2',password:'user-password-123'})).status,401);
+  Object.assign(user2,await login('user2','owner-reset-user-password-123'));
   await db.pool.query("UPDATE sessions SET password_reveal_until=now()-interval '1 second' WHERE user_id IN(SELECT id FROM users WHERE role='owner')");
   assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,undefined);
@@ -365,6 +375,18 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const logs=(await request('/audit?page=1','GET',null,owner)).data,logs2=(await request('/audit?page=2','GET',null,owner)).data;
   assert.equal(logs.length,100);assert.equal(logs2.length,100);assert.equal(new Set([...logs,...logs2].map(r=>r.id)).size,200);assert.equal((await request('/audit','GET',null,user2)).status,403);
   await db.pool.query("DELETE FROM message_history WHERE message_id LIKE 'pagination-scope-%'");await db.pool.query("DELETE FROM audit WHERE action='test.pagination'");
+ });
+ await t.test('Owner can change their own password with current-password verification and revoke every Owner session',async()=>{
+  const other=await login('owner','test-owner-password-123');
+  assert.equal((await request('/password','POST',{current_password:'wrong',password:'new-owner-password-123'},owner)).status,403);
+  assert.equal((await request('/me','GET',null,owner)).status,200);
+  assert.equal((await request('/password','POST',{current_password:'test-owner-password-123',password:'new-owner-password-123'},owner)).status,200);
+  for(const session of [owner,other])assert.equal((await request('/me','GET',null,session)).status,401);
+  assert.equal((await request('/login','POST',{username:'owner',password:'test-owner-password-123'})).status,401);
+  Object.assign(owner,await login('owner','new-owner-password-123'));
+  assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
+  assert.equal((await db.pool.query("SELECT password_cipher FROM users WHERE role='owner'")).rows[0].password_cipher,null);
+  assert.equal((await request('/users','GET',null,owner)).status,200);
  });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);

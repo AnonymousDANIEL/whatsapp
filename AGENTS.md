@@ -51,6 +51,7 @@ target-environment checks; do not call them tested based on a successful build.
 
 - Online FPX uses Billplz merchant credentials encrypted under APP_VAULT_KEY. Credit only verified live payments once; honor the maintenance switch for new orders and never credit from browser redirects or sandbox payments.
 - Owner-requested USER password visibility uses purpose-bound encryption plus five-minute Owner re-verification. Never commit, log or show those passwords outside that authorized account-management view. Historical hashes are not recoverable; do not reset existing passwords without authorization.
+- Only Owner can change passwords: USERs have no self-service password button, and the API rejects USER password changes even with the correct current password. Owner resets USER passwords in USER ID management and may change their own password with current-password verification. Password resets revoke all of that account's sessions; never reset production passwords as a test.
 - Owner accounts are grouped by assigned USER ID, with unassigned accounts in their own Owner section. Assignment identities must never be exposed to other USERs.
 - Owner manages one bilingual notice displayed above every USER page, with an on/off switch. Disabled notice drafts are Owner-only; render notice text safely and preserve unsaved edits while refreshing.
 - Hide Online FPX from USER pages whenever live top-ups are unavailable; Owner can always see the maintenance switch and Off status. Existing paid orders must still settle exactly once.
