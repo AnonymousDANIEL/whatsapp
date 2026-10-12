@@ -194,6 +194,71 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[paused])).rows[0].enabled,false);
   assert.equal((await request('/campaigns/'+paused+'/send-now','POST',{},user2)).status,402);
  });
+ await t.test('Owner USER remarks are private, editable and do not reset credentials, grants or sessions',async()=>{
+  const before=(await db.pool.query('SELECT password_hash,active FROM users WHERE id=$1',[uid2])).rows[0];
+  const note='Synthetic customer note\n<img src=x onerror=alert(1)>';
+  assert.equal((await request('/users/'+uid2+'/remark','PATCH',{remark:note},user)).status,403);
+  assert.equal((await request('/users/'+uid2+'/remark','PATCH',{remark:note},{...owner,csrf:'wrong'})).status,403);
+  assert.equal((await request('/users/'+uid2+'/remark','PATCH',{remark:'x'.repeat(2001)},owner)).status,400);
+  assert.equal((await request('/users/'+uid2+'/remark','PATCH',{remark:null},owner)).status,400);
+  assert.equal((await request('/users/'+uid2+'/remark','PATCH',{remark:note},owner)).data.remark,note);
+  assert.equal((await request('/users','GET',null,owner)).data.find(x=>x.id===uid2).remark,note);
+  assert.equal((await request('/me','GET',null,user2)).data.user.remark,undefined);
+  assert.equal((await request('/users?compact=true','GET',null,owner)).data.find(x=>x.id===uid2).remark,undefined);
+  assert.equal((await request('/users?compact=true','GET',null,user2)).status,403);
+  assert.deepEqual((await db.pool.query('SELECT password_hash,active FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.equal((await db.pool.query('SELECT count(*)::int n FROM account_grants WHERE user_id=$1 AND account_id=$2',[uid2,b])).rows[0].n,1);
+  await request('/users/'+uid2,'PATCH',{active:true},owner);assert.equal((await request('/users','GET',null,owner)).data.find(x=>x.id===uid2).remark,note);
+  const made=await request('/users','POST',{username:'remark-user',password:'synthetic-user-password-123',remark:'New USER info'},owner);
+  assert.equal(made.status,201);assert.equal((await request('/users','GET',null,owner)).data.find(x=>x.id===made.data.id).remark,'New USER info');
+  const ownerId=(await request('/me','GET',null,owner)).data.user.id;
+  assert.equal((await request('/users/'+ownerId+'/remark','PATCH',{remark:note},owner)).status,403);
+  await request('/users/'+uid2+'/remark','PATCH',{remark:''},owner);assert.equal((await request('/users','GET',null,owner)).data.find(x=>x.id===uid2).remark,'');
+ });
+ await t.test('top-ups auto-resume only credit pauses, preserve manual/review stops and never resend finished recipients',async()=>{
+  const billing=require('../src/billing'),worker=require('../src/worker');
+  await db.pool.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[uid2]);
+  await db.pool.query('UPDATE users SET credit_units=2000 WHERE id=$1',[uid2]);
+  const make=async title=>(await request('/campaigns','POST',{...template,title,account_id:b,send_now:true},user2)).data.id;
+  const auto=await make('Credit auto-resume'),manual=await make('Manual stop'),review=await make('Review stop'),cancelled=await make('Cancelled stop'),removed=await make('Deleted stop');
+  await request('/campaigns/'+manual,'PATCH',{enabled:false},user2);
+  await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[review]);
+  await db.pool.query("UPDATE recipients SET status='unknown' WHERE campaign_id=$1 AND status='pending'",[review]);
+  await request('/campaigns/'+cancelled+'/cancel','POST',{},user2);
+  await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit',deleted_at=now() WHERE id=$1",[removed]);
+  await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);let lookups=0,sends=0;
+  const entry={id:b,ready:true,client:{getNumberId:async()=>{lookups++;return{_serialized:'60123456789@c.us'};},sendMessage:async()=>{sends++;return{id:{_serialized:'credit-auto-fake'},ack:1,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(Date.now()/1000)};}}};
+  await worker.dispatch({id:b},entry);assert.equal(lookups,0);
+  let row=(await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[auto])).rows[0];assert.deepEqual(row,{enabled:false,pause_reason:'credit'});
+  const adjustment=amount=>request('/billing/adjust','POST',{user_id:uid2,amount,direction:'add',note:'Synthetic top-up',request_id:randomUUID()},owner);
+  await adjustment('0.10');assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[auto])).rows[0].enabled,false);
+  await adjustment('0.10');row=(await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[auto])).rows[0];assert.deepEqual(row,{enabled:true,pause_reason:null});
+  for(const id of [manual,review,cancelled,removed])assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[id])).rows[0].enabled,false);
+  assert.equal((await db.pool.query("SELECT count(*)::int n FROM recipients WHERE campaign_id=$1 AND error_code='CREDIT_REQUIRED'",[auto])).rows[0].n,0);
+  assert.equal(await billing.resumeCreditTasks(uid2),0);
+  await worker.dispatch({id:b},entry);assert.equal(sends,1);assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),0);
+  const adjustmentId=randomUUID(),payload={user_id:uid2,amount:'1',direction:'add',note:'Synthetic duplicate request',request_id:adjustmentId};
+  await Promise.all([request('/billing/adjust','POST',payload,owner),request('/billing/adjust','POST',payload,owner)]);
+  assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),10000);
+  await worker.dispatch({id:b},entry);assert.equal(sends,1);
+  assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE entity_id=$1 AND action='campaign.credit_resume'",[auto])).rows[0].n,1);
+  // A five-second worker recovery also repairs a missed top-up notification.
+  const recovery=await make('Recovery check');await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit' WHERE id=$1",[recovery]);
+  await db.pool.query('UPDATE users SET active=false WHERE id=$1',[uid2]);assert.equal(await billing.resumeCreditTasks(uid2),0);await db.pool.query('UPDATE users SET active=true WHERE id=$1',[uid2]);
+  await db.pool.query('UPDATE accounts SET enabled=false WHERE id=$1',[b]);assert.equal(await billing.resumeCreditTasks(uid2),0);await db.pool.query('UPDATE accounts SET enabled=true WHERE id=$1',[b]);
+  await db.pool.query('DELETE FROM account_grants WHERE user_id=$1 AND account_id=$2',[uid2,b]);assert.equal(await billing.resumeCreditTasks(uid2),0);await db.pool.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[uid2,b]);
+  assert.equal(await billing.resumeCreditTasks(uid2,'other-group'),0);assert.equal(await billing.resumeCreditTasks(uid2,'group-a'),1);
+  // A user can explicitly stop automatic recovery while their wallet is empty.
+  await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit' WHERE id=$1",[recovery]);await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);
+  assert.equal((await request('/campaigns/'+recovery,'PATCH',{enabled:false},user2)).status,200);await adjustment('1');assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[recovery])).rows[0].enabled,false);
+  const legacy=await make('Legacy credit pause'),legacyManual=await make('Legacy manual pause');
+  await db.pool.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE id=ANY($1::uuid[])',[[legacy,legacyManual]]);
+  await db.pool.query("UPDATE recipients SET error_code='CREDIT_REQUIRED' WHERE campaign_id=ANY($1::uuid[]) AND status='pending'",[[legacy,legacyManual]]);
+  await request('/campaigns/'+legacyManual,'PATCH',{enabled:false},user2);
+  await db.pool.query("DELETE FROM app_migrations WHERE name='credit_auto_resume_v1'");await db.migrate();
+  assert.equal((await db.pool.query('SELECT pause_reason FROM campaigns WHERE id=$1',[legacy])).rows[0].pause_reason,'credit');
+  assert.equal((await db.pool.query('SELECT pause_reason FROM campaigns WHERE id=$1',[legacyManual])).rows[0].pause_reason,null);
+ });
  await t.test('USER QR-only, rename and reconnect are scoped; concurrent creation cannot exceed ten slots',async()=>{
   assert.equal((await request('/me','GET',null,user2)).data.user.account_limit,10);
   assert.equal((await request('/accounts/'+b+'/connection?mode=scan','GET',null,user2)).data.code,'WORKER_UNREACHABLE');
@@ -224,6 +289,8 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
     const settings={enabled:true,sandbox:false,collection_id:'test-collection',api_key:'fake-api-key',x_key:'fake-signature-key'};
     assert.equal((await request('/payments/settings','PUT',settings,owner)).status,200);
     const visible=(await request('/payments/settings','GET',null,owner)).data;assert.equal(visible.api_key,undefined);assert.equal(visible.x_key,undefined);assert.equal(visible.configured,true);
+    const fpxTask=(await request('/campaigns','POST',{...template,title:'FPX recovery',send_now:true},user)).data.id;
+    await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit' WHERE id=$1",[fpxTask]);
     const payload={amount:'20.00',email:'test@example.test',request_id:randomUUID()};
     const made=await request('/payments/orders','POST',payload,user);assert.equal(made.status,201);const id=made.data.id;
     assert.equal((await request('/payments/orders','POST',payload,user)).data.id,id);assert.equal(created,1);
@@ -245,6 +312,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
     const callbacks=await Promise.all([request('/payments/callback/'+id,'POST',body),request('/payments/callback/'+id,'POST',body)]);assert.ok(callbacks.every(r=>r.status===200));
     assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),before+200000);
     assert.equal((await db.pool.query('SELECT count(*)::int n FROM credit_ledger WHERE order_id=$1',[id])).rows[0].n,1);
+    assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[fpxTask])).rows[0],{enabled:true,pause_reason:null});
     assert.equal((await request('/payments/orders/'+id+'/check','POST',{},user)).data.state,'paid');
   }finally{global.fetch=originalFetch;}
  });
@@ -286,6 +354,17 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await request('/notice','PUT',{...published,enabled:false},owner);
   assert.equal((await request('/notice','GET',null,user)).data.content_en,'');
   assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE action='notice.update'")).rows[0].n,3);
+ });
+ await t.test('message and audit pagination are bounded at 100 rows without leaking other USER accounts',async()=>{
+  await db.pool.query("INSERT INTO message_history(account_id,message_id,recipient,body,status,ack,sent_at) SELECT $1,'pagination-scope-'||n,'60123456789','Synthetic pagination record','submitted',1,timestamptz '2050-01-01'+n*interval '1 second' FROM generate_series(1,205) n",[a]);
+  const first=(await request('/send-records?page=1','GET',null,user)).data,second=(await request('/send-records?page=2','GET',null,user)).data,third=(await request('/send-records?page=3','GET',null,user)).data;
+  assert.equal(first.length,100);assert.equal(second.length,100);assert.ok(first.every(r=>r.message_id.startsWith('pagination-scope-')));assert.ok(second.every(r=>r.message_id.startsWith('pagination-scope-')));
+  assert.equal(third.filter(r=>r.message_id?.startsWith('pagination-scope-')).length,5);assert.equal(new Set([...first,...second].map(r=>r.message_id)).size,200);
+  assert.ok((await request('/send-records?page=1','GET',null,user2)).data.every(r=>!r.message_id?.startsWith('pagination-scope-')));
+  await db.pool.query("INSERT INTO audit(action) SELECT 'test.pagination' FROM generate_series(1,205)");
+  const logs=(await request('/audit?page=1','GET',null,owner)).data,logs2=(await request('/audit?page=2','GET',null,owner)).data;
+  assert.equal(logs.length,100);assert.equal(logs2.length,100);assert.equal(new Set([...logs,...logs2].map(r=>r.id)).size,200);assert.equal((await request('/audit','GET',null,user2)).status,403);
+  await db.pool.query("DELETE FROM message_history WHERE message_id LIKE 'pagination-scope-%'");await db.pool.query("DELETE FROM audit WHERE action='test.pagination'");
  });
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);

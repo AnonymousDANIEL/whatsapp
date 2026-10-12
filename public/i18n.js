@@ -55,6 +55,7 @@ window.translateError=(message)=>{
  '每批需要 1–100 条消息':'Each batch requires 1–100 messages.',
  '请输入消息或上传照片':'Enter a message or upload a photo.',
  '只有 Owner 可以管理 USER ID':'Only the Owner can manage USER IDs.',
+ '资料备注最多 2000 个字符':'Remarks must contain at most 2,000 characters.',
  '只有 Owner 可以查看全部操作记录':'Only the Owner can view all activity records.',
  '只有 Owner 可以永久清除资料':'Only the Owner can permanently clear records.',
  '登录已过期，或账号已停用':'Your session has expired or your ID has been deactivated.',

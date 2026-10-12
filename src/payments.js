@@ -3,6 +3,7 @@ const crypto=require('node:crypto');
 const express=require('express');
 const {rateLimit}=require('express-rate-limit');
 const {pool,transaction}=require('./db');
+const billing=require('./billing');
 const {assert}=require('./domain');
 const vault=require('./secrets');
 function signature(data,key){
@@ -33,7 +34,7 @@ async function finish(order,bill){
   await db.query('UPDATE users SET credit_units=$1 WHERE id=$2',[balance,order.user_id]);
   await db.query("UPDATE topup_orders SET state='paid',bill_id=$2,paid_at=now(),last_checked_at=now() WHERE id=$1",[order.id,bill.id]);
   await db.query("INSERT INTO credit_ledger(user_id,kind,delta_units,balance_units,order_id) VALUES($1,'online_topup',$2,$3,$4)",[order.user_id,amount,balance,order.id]);
- });return true;
+ });await billing.recoverCreditTasks(order.user_id);return true;
 }
 async function verify(order,billId=order.bill_id){assert(billId&&/^[\w-]{1,80}$/.test(billId),'付款订单尚未准备好',409);const c=JSON.parse(vault.open(order.config_cipher,'order:'+order.id));const b=await gateway(c,'v3/bills/'+encodeURIComponent(billId));await finish(order,b);await pool.query('UPDATE topup_orders SET last_checked_at=now() WHERE id=$1',[order.id]);}
 function callbackRoutes(app,route,uuid){

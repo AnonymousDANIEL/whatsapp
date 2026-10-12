@@ -37,6 +37,7 @@ async function getSession(req) {
 function route(fn) { return (req, res, next) => Promise.resolve(fn(req, res)).catch(next); }
 function sessionCookie(res, token) { res.cookie(COOKIE, token, { httpOnly: true, secure, sameSite: 'strict', maxAge: SESSION_HOURS * 3600000, path: '/' }); }
 function publicUser(u) { return { id: u.id, username: u.username, role: u.role, manager_id: u.manager_id, permissions: u.permissions, active: u.active, account_limit:u.account_limit }; }
+function userRemark(value){assert(typeof value==='string'&&value.length<=2000,'资料备注最多 2000 个字符');return value.trim();}
 async function access(user, id, operate = false) {
   uuid(id);
   const a = (await pool.query(`SELECT a.*,($2='owner') AS operate FROM accounts a
@@ -51,6 +52,10 @@ async function visibleAccounts(user) {
     WHERE $1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2))
     ORDER BY a.created_at`,[user.role,user.id]);
   return rows.map(a=>({...a,status:a.enabled&&(!a.worker_heartbeat_at||Date.now()-+new Date(a.worker_heartbeat_at)>90000)?'worker_offline':a.status}));
+}
+async function visibleAccountIds(user,includeDeleted=true){
+ return (await pool.query(`SELECT a.id FROM accounts a WHERE (a.deleted_at IS NULL OR ($1='owner' AND $3))
+  AND ($1='owner' OR EXISTS(SELECT 1 FROM account_grants g WHERE g.account_id=a.id AND g.user_id=$2))`,[user.role,user.id,includeDeleted])).rows.map(a=>a.id);
 }
 async function campaignAccess(user, id, modify = false) {
   uuid(id);
@@ -185,7 +190,7 @@ async function start() {
     await transaction(async db=>{
       await db.query('SELECT id FROM accounts WHERE id=$1 FOR UPDATE',[a.id]);
       await db.query('UPDATE accounts SET enabled=false,deleted_at=COALESCE(deleted_at,now()),deleted_by=COALESCE(deleted_by,$2),purge_requested=purge_requested OR $3 WHERE id=$1',[a.id,req.user.id,req.user.role==='owner']);
-      await db.query('UPDATE campaigns SET enabled=false WHERE account_id=$1',[a.id]);
+      await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE account_id=$1',[a.id]);
       await db.query('DELETE FROM control_leases WHERE account_id=$1',[a.id]);
       if(req.user.role!=='owner')await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)',[req.user.id,'account.delete',a.id,{label:a.label}]);
     });
@@ -206,8 +211,9 @@ async function start() {
   }));
   app.get('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
+    if(req.query.compact==='true')return res.json((await pool.query('SELECT id,username,role FROM users ORDER BY created_at')).rows);
     const reveal=req.query.passwords==='true'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date();
-    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,
+    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,
       (SELECT count(*)::int FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL) AS account_count,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows;
     res.json(rows.map(u=>{const cipher=u.password_cipher;delete u.password_cipher;return{...u,password_available:!!cipher,password:reveal&&u.role!=='owner'&&cipher?vault.open(cipher,'user-password:'+u.id):undefined,password_access:!!reveal};}));
@@ -215,36 +221,47 @@ async function start() {
   app.post('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     const b=req.body;assert(!b.role||b.role==='user','只能创建 USER ID');
+    const remark=userRemark(b.remark===undefined?'':b.remark);
     assert(/^[\w.-]{3,40}$/.test(b.username||''),'ID 需要 3–40 位字母、数字、点、横线或下划线');
     assert(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200,'密码需要 12–200 个字符');
     const grants=await grantsFor(req.user,(b.grants||[]).map(g=>({...g,operate:true}))),id=crypto.randomUUID();assert(grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
     await transaction(async db=>{
-      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active,password_cipher,password_changed_at) VALUES($1,$2,$3,'user',$4,$5,$6,now())",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,b.active!==false,vault.seal(b.password,'user-password:'+id)]);
+      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active,password_cipher,password_changed_at,remark) VALUES($1,$2,$3,'user',$4,$5,$6,now(),$7)",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,b.active!==false,vault.seal(b.password,'user-password:'+id),remark]);
       for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[id,g.account_id]);
     });
     await audit(req.user.id,'user.create',id,{username:b.username});res.status(201).json({id});
+  }));
+  app.patch('/api/users/:id/remark',route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
+    const id=uuid(req.params.id),remark=userRemark(req.body.remark);
+    const changed=await transaction(async db=>{
+      const row=(await db.query("UPDATE users SET remark=$2 WHERE id=$1 AND role='user' RETURNING id,remark",[id,remark])).rows[0];
+      assert(row,'无权修改此 USER ID',403);await db.query("INSERT INTO audit(actor_id,action,entity_id) VALUES($1,'user.remark',$2)",[req.user.id,id]);return row;
+    });res.json(changed);
   }));
   app.patch('/api/users/:id',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     const target=(await pool.query('SELECT * FROM users WHERE id=$1',[uuid(req.params.id)])).rows[0];
     assert(target&&manageUser(req.user,target),'无权修改此 USER ID',403);
     const b=req.body;assert(typeof b.active==='boolean','请选择 Active/Inactive');
+    const remark=b.remark===undefined?undefined:userRemark(b.remark);
     assert(!b.password||(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200),'密码需要 12–200 个字符');
     const grants=b.grants===undefined?null:await grantsFor(req.user,b.grants.map(g=>({...g,operate:true})));
     assert(!grants||grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
     await transaction(async db=>{
       await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[target.id]);
       await db.query('UPDATE users SET active=$1,permissions=$2 WHERE id=$3',[b.active,PERMISSIONS,target.id]);
+      if(remark!==undefined)await db.query('UPDATE users SET remark=$1 WHERE id=$2',[remark,target.id]);
       if(b.password)await db.query('UPDATE users SET password_hash=$1,password_cipher=$3,password_changed_at=now() WHERE id=$2',[await bcrypt.hash(b.password,12),target.id,vault.seal(b.password,'user-password:'+target.id)]);
       if(grants){await db.query('DELETE FROM account_grants WHERE user_id=$1',[target.id]);for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[target.id,g.account_id]);}
       if(!b.active||b.password)await db.query('DELETE FROM sessions WHERE user_id=$1',[target.id]);
-      if(!b.active)await db.query('UPDATE campaigns SET enabled=false WHERE created_by=$1',[target.id]);
+      if(!b.active)await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[target.id]);
     });
     await audit(req.user.id,'user.update',target.id,{active:b.active,password_changed:!!b.password,grants:grants?.map(g=>g.account_id)});res.json({ok:true});
   }));
   app.get('/api/campaigns', route(async (req, res) => {
-    const ids = (await visibleAccounts(req.user)).map(a => a.id);
-    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
+    const ids = await visibleAccountIds(req.user);
+    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.pause_reason,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
       (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::integer n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) AS counts
       FROM campaigns c JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
       WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner') ORDER BY c.created_at DESC LIMIT 200`, [ids,req.user.role]);
@@ -286,7 +303,7 @@ async function start() {
       const count = (await db.query("SELECT count(*)::integer n FROM recipients WHERE campaign_id=$1 AND status='pending'", [c.id])).rows[0].n;
       assert(count > 0, '任务没有待发送的号码');
       // Never reset recipients: submitted, unknown and other finished results stay intact.
-      await db.query('UPDATE campaigns SET enabled=true,send_now=true WHERE id=$1', [c.id]);
+      await db.query('UPDATE campaigns SET enabled=true,send_now=true,pause_reason=NULL WHERE id=$1', [c.id]);
       await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)', [req.user.id, 'campaign.send_now', c.id, { pending: count }]);
       return count;
     });
@@ -307,7 +324,7 @@ async function start() {
       await audit(req.user.id,'campaign.schedule',c.id,schedule);
     }else{
       assert(typeof req.body.enabled==='boolean','enabled 无效');
-      await pool.query('UPDATE campaigns SET enabled=$1 WHERE id=$2',[req.body.enabled,c.id]);
+      await pool.query('UPDATE campaigns SET enabled=$1,pause_reason=NULL WHERE id=$2',[req.body.enabled,c.id]);
       await audit(req.user.id,'campaign.enabled',c.id,{enabled:req.body.enabled});
     }
     res.json({ok:true});
@@ -315,7 +332,7 @@ async function start() {
   app.post('/api/campaigns/:id/cancel', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
     const c = await campaignAccess(req.user, req.params.id, true);
-    await transaction(async db => { await db.query('UPDATE campaigns SET enabled=false,cancelled=true WHERE id=$1', [c.id]); await db.query("UPDATE recipients SET status='cancelled',updated_at=now() WHERE campaign_id=$1 AND status='pending'", [c.id]); });
+    await transaction(async db => { await db.query('UPDATE campaigns SET enabled=false,cancelled=true,pause_reason=NULL WHERE id=$1', [c.id]); await db.query("UPDATE recipients SET status='cancelled',updated_at=now() WHERE campaign_id=$1 AND status='pending'", [c.id]); });
     await audit(req.user.id, 'campaign.cancel', c.id); res.json({ ok: true });
   }));
   app.get('/api/campaigns/:id/results', route(async (req, res) => {
@@ -336,10 +353,10 @@ async function start() {
   }));
   app.get('/api/audit',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以查看全部操作记录',403);
-    res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 1000 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*1000])).rows);
+    res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 100 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*100])).rows);
   }));
   app.get('/api/overview',route(async(req,res)=>{
-    const ids=(await visibleAccounts(req.user)).filter(a=>!a.deleted_at).map(a=>a.id);
+    const ids=await visibleAccountIds(req.user,false);
     const {rows}=await pool.query(`WITH records AS (
       SELECT r.status, r.started_at AS sent_at FROM recipients r JOIN campaigns c ON c.id=r.campaign_id
       WHERE c.account_id=ANY($1::uuid[]) AND c.deleted_at IS NULL
@@ -357,7 +374,7 @@ async function start() {
     res.json({counts,days:[...days.values()],timezone:'Asia/Kuala_Lumpur'});
   }));
   app.get('/api/send-records',route(async(req,res)=>{
-    const ids=(await visibleAccounts(req.user)).map(a=>a.id),offset=(Math.max(1,Math.floor(Number(req.query.page)||1))-1)*500;
+    const ids=await visibleAccountIds(req.user),offset=(Math.max(1,Math.floor(Number(req.query.page)||1))-1)*100;
     res.json((await pool.query(`SELECT * FROM (
       SELECT c.account_id,a.label account_label,u.username actor,r.phone recipient,r.raw_phone,r.id::text recipient_id,c.id campaign_id,r.message_id,c.body,CASE WHEN c.media IS NULL THEN 'chat' ELSE 'image' END message_type,r.status,r.error_code,COALESCE(r.started_at,r.updated_at) sent_at,c.deleted_at
       FROM recipients r JOIN campaigns c ON c.id=r.campaign_id JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
@@ -366,10 +383,10 @@ async function start() {
       SELECT m.account_id,a.label,u.username,m.recipient,NULL,NULL,NULL,m.message_id,m.body,m.message_type,m.status,NULL,m.sent_at,m.deleted_at
       FROM message_history m JOIN accounts a ON a.id=m.account_id LEFT JOIN users u ON u.id=m.actor_id
       WHERE m.account_id=ANY($1::uuid[]) AND (m.deleted_at IS NULL OR $2='owner') AND NOT EXISTS(SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=m.account_id AND r.message_id=m.message_id)
-    ) records ORDER BY sent_at DESC,recipient_id DESC NULLS LAST,message_id DESC LIMIT 500 OFFSET $3`,[ids,req.user.role,offset])).rows);
+    ) records ORDER BY sent_at DESC,recipient_id DESC NULLS LAST,message_id DESC LIMIT 100 OFFSET $3`,[ids,req.user.role,offset])).rows);
   }));
   app.get('/api/messages',route(async(req,res)=>{
-    const ids=(await visibleAccounts(req.user)).map(a=>a.id);
+    const ids=await visibleAccountIds(req.user);
     res.json((await pool.query(`SELECT m.*,a.label AS account_label,u.username AS actor FROM message_history m JOIN accounts a ON a.id=m.account_id LEFT JOIN users u ON u.id=m.actor_id WHERE m.account_id=ANY($1::uuid[]) AND (m.deleted_at IS NULL OR $2='owner') ORDER BY m.sent_at DESC,m.message_id DESC LIMIT 500 OFFSET $3`,[ids,req.user.role,(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*500])).rows);
   }));
   app.delete('/api/messages/:accountId/:messageId',route(async(req,res)=>{
@@ -393,7 +410,7 @@ async function start() {
         await db.query('DELETE FROM audit WHERE entity_id IN(SELECT message_id FROM recipients WHERE campaign_id=$1)',[c.id]);
         await billing.assertNoHolds(db,c.id);await db.query('DELETE FROM recipients WHERE campaign_id=$1',[c.id]);await db.query('DELETE FROM campaigns WHERE id=$1',[c.id]);await db.query('DELETE FROM audit WHERE entity_id=$1',[c.id]);
       }else{
-        await db.query('UPDATE campaigns SET enabled=false,cancelled=true,deleted_at=now(),deleted_by=$1 WHERE id=$2',[req.user.id,c.id]);
+        await db.query('UPDATE campaigns SET enabled=false,cancelled=true,pause_reason=NULL,deleted_at=now(),deleted_by=$1 WHERE id=$2',[req.user.id,c.id]);
         await db.query("UPDATE recipients SET status='cancelled' WHERE campaign_id=$1 AND status='pending'",[c.id]);
         await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)',[req.user.id,'campaign.delete',c.id,{title:c.title,body:c.body}]);
       }

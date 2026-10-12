@@ -142,3 +142,19 @@ CREATE TABLE IF NOT EXISTS workspace_notice(
  content_en text NOT NULL DEFAULT '' CHECK(length(content_en)<=6000),updated_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO workspace_notice(id) VALUES(1) ON CONFLICT DO NOTHING;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS remark text NOT NULL DEFAULT '' CHECK(length(remark)<=2000);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS pause_reason text CHECK(pause_reason IN ('credit','review'));
+CREATE INDEX IF NOT EXISTS grants_account_user ON account_grants(account_id,user_id);
+CREATE INDEX IF NOT EXISTS campaigns_account_created ON campaigns(account_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS history_account_time ON message_history(account_id,sent_at DESC);
+CREATE INDEX IF NOT EXISTS campaigns_credit_wait ON campaigns(created_by,account_id) WHERE pause_reason='credit' AND NOT enabled AND NOT cancelled AND deleted_at IS NULL;
+-- Recover identifiable old credit pauses once, excluding manual stops and uncertain sends.
+UPDATE campaigns c SET pause_reason='credit' WHERE NOT EXISTS(SELECT 1 FROM app_migrations WHERE name='credit_auto_resume_v1')
+ AND NOT c.enabled AND NOT c.cancelled AND c.deleted_at IS NULL AND c.pause_reason IS NULL
+ AND EXISTS(SELECT 1 FROM users u WHERE u.id=c.created_by AND u.active)
+ AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending' AND r.error_code='CREDIT_REQUIRED')
+ AND NOT EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status IN ('unknown','sending'))
+ AND NOT EXISTS(SELECT 1 FROM audit a WHERE a.entity_id=c.id::text AND a.action='campaign.enabled' AND a.details->>'enabled'='false'
+  AND a.id=(SELECT max(b.id) FROM audit b WHERE b.entity_id=c.id::text AND b.action IN ('campaign.enabled','campaign.send_now')));
+INSERT INTO app_migrations(name) VALUES('credit_auto_resume_v1') ON CONFLICT DO NOTHING;

@@ -15,19 +15,40 @@ async function canPay(userId,db=pool){
   assert(price!==null&&price!==undefined,'管理员尚未设置每条消息价格',402);
   assert(Number(u?.credit_units)>=Number(price),'余额不足，请联系管理员充值',402);
 }
-async function reserve(db,userId,recipientId){
+async function reserveForSend(db,userId,recipientId){
   const u=(await db.query('SELECT role,active,credit_units FROM users WHERE id=$1 FOR UPDATE',[userId])).rows[0];
-  if(!u?.active)return false;if(u.role==='owner')return true;
+  if(!u?.active)return {ok:false,pause_reason:null,error:'USER_INACTIVE'};if(u.role==='owner')return {ok:true};
   const existing=(await db.query('SELECT * FROM message_charges WHERE recipient_id=$1 FOR UPDATE',[recipientId])).rows[0];
-  if(existing&&existing.state!=='refunded')return false; // no second send for held or charged records
+  if(existing&&existing.state!=='refunded')return {ok:false,pause_reason:'review',error:'BILLING_REVIEW_REQUIRED'}; // never reserve a held/charged send twice
   const p=(await db.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0]?.price_units;
-  if(p==null||Number(u.credit_units)<Number(p))return false;
+  if(p==null||Number(u.credit_units)<Number(p))return {ok:false,pause_reason:'credit',error:'CREDIT_REQUIRED'};
   await db.query('UPDATE users SET credit_units=credit_units-$1 WHERE id=$2',[p,userId]);
   await db.query(`INSERT INTO message_charges(recipient_id,user_id,amount_units,state) VALUES($1,$2,$3,'held')
     ON CONFLICT(recipient_id) DO UPDATE SET amount_units=excluded.amount_units,state='held',version=message_charges.version+1,updated_at=now()`,[recipientId,userId,p]);
   await db.query(`INSERT INTO credit_ledger(user_id,kind,delta_units,balance_units,recipient_id) SELECT id,'hold',-$1::bigint,credit_units,$3 FROM users WHERE id=$2`,[p,userId,recipientId]);
-  return true;
+  return {ok:true};
 }
+async function reserve(db,userId,recipientId){return (await reserveForSend(db,userId,recipientId)).ok;}
+async function resumeCreditTasks(userId=null,workerGroup=null){
+ return transaction(async db=>{
+  // Run after wallet mutations commit; recovery does not reserve credit or lock wallets.
+  // A later reserve always rechecks the balance, even if another task spends it first.
+  const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL FROM users u,accounts a,billing_settings b
+   WHERE c.created_by=u.id AND c.account_id=a.id AND b.id=1 AND c.pause_reason='credit' AND NOT c.enabled
+   AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND a.enabled AND a.deleted_at IS NULL
+   AND ($1::uuid IS NULL OR u.id=$1) AND ($2::text IS NULL OR a.worker_group=$2)
+   AND b.price_units IS NOT NULL AND (u.role='owner' OR (u.role='user' AND u.credit_units>=b.price_units
+    AND 'tasks.create'=ANY(u.permissions) AND EXISTS(SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=a.id)))
+   AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending')
+   AND NOT EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status IN ('unknown','sending'))
+   RETURNING c.id`,[userId,workerGroup])).rows;
+  if(rows.length){const ids=rows.map(r=>r.id);
+   await db.query("UPDATE recipients SET error_code=NULL,updated_at=now() WHERE campaign_id=ANY($1::uuid[]) AND status='pending' AND error_code='CREDIT_REQUIRED'",[ids]);
+   await db.query("INSERT INTO audit(action,entity_id) SELECT 'campaign.credit_resume',id::text FROM unnest($1::uuid[]) id",[ids]);
+  }return rows.length;
+ });
+}
+async function recoverCreditTasks(userId=null,workerGroup=null){try{return await resumeCreditTasks(userId,workerGroup);}catch(e){console.error('credit resume:',e.code||e.name);return 0;}}
 async function settle(recipientId,status,actorId=null,note='',expectedVersion=null){
   const target=['submitted','delivered','read'].includes(status)?'charged':['failed','invalid','pending','cancelled'].includes(status)?'refunded':null;
   if(!target)return;
@@ -66,7 +87,7 @@ function routes(app,route,uuid){
  }));
  app.put('/api/billing/price',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以管理余额和定价',403);const amount=units(req.body.price,true);assert(amount<=100000000,'每条价格不能超过 RM 10000');
-  await transaction(async db=>{await db.query('UPDATE billing_settings SET price_units=$1 WHERE id=1',[amount]);await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'billing.price',$2)",[req.user.id,{price_units:amount,currency:'MYR'}]);});res.json({ok:true});
+  await transaction(async db=>{await db.query('UPDATE billing_settings SET price_units=$1 WHERE id=1',[amount]);await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'billing.price',$2)",[req.user.id,{price_units:amount,currency:'MYR'}]);});await recoverCreditTasks();res.json({ok:true});
  }));
  app.post('/api/billing/adjust',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以管理余额和定价',403);const b=req.body,id=uuid(b.user_id),amount=units(b.amount,true);
@@ -78,7 +99,7 @@ function routes(app,route,uuid){
    const delta=b.direction==='add'?amount:-amount,balance=Number(u.credit_units)+delta;assert(balance>=0&&balance<=MAX_BALANCE,'调整后余额超出允许范围');
    await db.query('UPDATE users SET credit_units=$1 WHERE id=$2',[balance,id]);
    await db.query(`INSERT INTO credit_ledger(user_id,actor_id,kind,delta_units,balance_units,note,request_id) VALUES($1,$2,'adjustment',$3,$4,$5,$6)`,[id,req.user.id,delta,balance,b.note.trim(),b.request_id]);
-  });res.json({ok:true});
+  });if(b.direction==='add')await recoverCreditTasks(id);res.json({ok:true});
  }));
  app.post('/api/billing/resolve',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以管理余额和定价',403);const b=req.body;
@@ -88,4 +109,4 @@ function routes(app,route,uuid){
   await settle(b.recipient_id,b.action==='charge'?'submitted':'failed',req.user.id,b.note.trim());res.json({ok:true});
  }));
 }
-module.exports={units,canPay,reserve,settle,reconcile,assertNoHolds,routes};
+module.exports={units,canPay,reserve,reserveForSend,resumeCreditTasks,recoverCreditTasks,settle,reconcile,assertNoHolds,routes};

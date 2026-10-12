@@ -207,11 +207,13 @@ async function dispatch(account, entry) {
       ORDER BY c.send_now DESC,c.created_at`, [account.id])).rows;
     const campaign = candidates.find(c => canDispatch(c)); if (!campaign) return;
     recipient = await transaction(async db=>{
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[campaign.created_by]);
       const current=(await db.query('SELECT * FROM campaigns WHERE id=$1 FOR UPDATE',[campaign.id])).rows[0];
       if(!current||current.deleted_at||!canDispatch(current))return null;
       const next=(await db.query("SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED",[campaign.id])).rows[0];
       if(!next)return null;
-      if(!await billing.reserve(db,current.created_by,next.id)){await db.query("UPDATE campaigns SET enabled=false WHERE id=$1",[campaign.id]);await db.query("UPDATE recipients SET error_code='CREDIT_REQUIRED' WHERE id=$1",[next.id]);return null;}
+      const reservation=await billing.reserveForSend(db,current.created_by,next.id);
+      if(!reservation.ok){await db.query('UPDATE campaigns SET enabled=false,pause_reason=$2 WHERE id=$1',[campaign.id,reservation.pause_reason]);await db.query('UPDATE recipients SET error_code=$2,updated_at=now() WHERE id=$1',[next.id,reservation.error]);return null;}
       return (await db.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
         WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`,[campaign.id])).rows[0];
     });
@@ -233,7 +235,7 @@ async function dispatch(account, entry) {
       batch_sent=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN 0 ELSE (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 END,
       batch_campaign_id=$3 WHERE id=$2`,[campaign.interval_ms,account.id,campaign.id,campaign.batch_size||1]);
     if (result.quarantine) {
-      await pool.query('UPDATE campaigns SET enabled=false WHERE id=$1',[campaign.id]);
+      await pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[campaign.id]);
       await audit(campaign.created_by,'campaign.review_required',campaign.id,{recipient_id:recipient.id,reason:result.error});
     }
   } catch (err) {
@@ -280,6 +282,7 @@ async function tick() {
   ticking = true;
   try {
     await billing.reconcile();
+    await billing.recoverCreditTasks(null,group);
     const accounts = (await pool.query('SELECT * FROM accounts WHERE worker_group=$1 ORDER BY created_at', [group])).rows;
     for (const a of accounts) {
       if(a.purge_requested){
