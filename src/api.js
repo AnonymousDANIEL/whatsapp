@@ -240,6 +240,22 @@ async function start() {
       assert(row,'无权修改此 USER ID',403);await db.query("INSERT INTO audit(actor_id,action,entity_id) VALUES($1,'user.remark',$2)",[req.user.id,id]);return row;
     });res.json(changed);
   }));
+  app.patch('/api/users/:id/status',route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
+    const id=uuid(req.params.id),active=req.body.active;assert(typeof active==='boolean','请选择 Active/Inactive');
+    const changed=await transaction(async db=>{
+      const previous=(await db.query("SELECT id,active FROM users WHERE id=$1 AND role='user' FOR UPDATE",[id])).rows[0];
+      assert(previous,'无权修改此 USER ID',403);
+      if(previous.active===active)return {id,active};
+      await db.query('UPDATE users SET active=$2 WHERE id=$1',[id,active]);
+      if(!active){
+        await db.query('DELETE FROM sessions WHERE user_id=$1',[id]);
+        await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[id]);
+      }
+      await db.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,'user.status',$2,$3)",[req.user.id,id,{active}]);
+      return {id,active};
+    });res.json(changed);
+  }));
   app.patch('/api/users/:id',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     const target=(await pool.query('SELECT * FROM users WHERE id=$1',[uuid(req.params.id)])).rows[0];

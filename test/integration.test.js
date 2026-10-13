@@ -28,6 +28,13 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/billing/adjust','POST',adjustment,owner)).status,200);
   assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),1000000);
   assert.equal((await request('/billing/adjust','POST',{...adjustment,request_id:randomUUID(),amount:'101',direction:'subtract'},owner)).status,400);
+  for(const session of [user,user2]){
+   const mine=(await request('/billing?user_id='+uid,'GET',null,session)).data;
+   assert.deepEqual(Object.keys(mine).sort(),['currency','scale','user']);assert.equal(mine.currency,'MYR');assert.equal(mine.scale,10000);
+   assert.equal(mine.user.id,session===user?uid:uid2);assert.deepEqual(Object.keys(mine.user).sort(),['credit_units','id','role','username']);
+  }
+  const ownerView=(await request('/billing?user_id='+uid,'GET',null,owner)).data;
+  assert.equal(ownerView.user.id,uid);assert.equal(Number(ownerView.price_units),1000);assert.equal(Number(ownerView.held_units),0);assert.equal(ownerView.ledger.length,1);assert.deepEqual(ownerView.held,[]);
  });
  let task;
  await t.test('users have equal assigned capabilities and cannot administer IDs or cross scope',async()=>{
@@ -166,7 +173,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const reserved=await Promise.all([900001,900002].map(id=>db.transaction(tx=>billing.reserve(tx,uid2,id))));
   assert.equal(reserved.filter(Boolean).length,1);assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),0);
   const rid=reserved[0]?900001:900002;
-  await billing.settle(rid,'unknown');assert.equal(Number((await request('/billing','GET',null,user2)).data.held_units),1000);
+  await billing.settle(rid,'unknown');
+  const heldView=(await request('/billing?user_id='+uid2,'GET',null,owner)).data;assert.equal(Number(heldView.held_units),1000);assert.equal(Number(heldView.held[0].amount_units),1000);
+  for(const key of ['price_units','held_units','held','ledger'])assert.equal((await request('/billing','GET',null,user2)).data[key],undefined);
   await request('/billing/price','PUT',{price:'0.2000'},owner);
   await Promise.all([billing.settle(rid,'failed'),billing.settle(rid,'failed')]);
   assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),1000);
@@ -375,6 +384,40 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const logs=(await request('/audit?page=1','GET',null,owner)).data,logs2=(await request('/audit?page=2','GET',null,owner)).data;
   assert.equal(logs.length,100);assert.equal(logs2.length,100);assert.equal(new Set([...logs,...logs2].map(r=>r.id)).size,200);assert.equal((await request('/audit','GET',null,user2)).status,403);
   await db.pool.query("DELETE FROM message_history WHERE message_id LIKE 'pagination-scope-%'");await db.pool.query("DELETE FROM audit WHERE action='test.pagination'");
+ });
+ await t.test('only Owner can toggle USER status; deactivation revokes sessions and pauses tasks without altering credentials or grants',async()=>{
+  const ownerId=(await request('/me','GET',null,owner)).data.user.id;
+  const path='/users/'+uid2+'/status';
+  assert.equal((await request(path,'PATCH',{active:false})).status,401);
+  for(const id of [uid,uid2,ownerId])assert.equal((await request('/users/'+id+'/status','PATCH',{active:false},user2)).status,403);
+  assert.equal((await request(path,'PATCH',{active:false},{...owner,csrf:'wrong'})).status,403);
+  for(const active of ['false',null,0])assert.equal((await request(path,'PATCH',{active},owner)).status,400);
+  assert.equal((await request('/users/'+ownerId+'/status','PATCH',{active:false},owner)).status,403);
+  assert.equal((await request('/users/'+randomUUID()+'/status','PATCH',{active:false},owner)).status,403);
+  await request('/billing/adjust','POST',{user_id:uid2,amount:'1',direction:'add',note:'Synthetic status test credit',request_id:randomUUID()},owner);
+  const made=await request('/campaigns','POST',{...template,account_id:b,title:'Status test',send_now:true,recipients:'0123456789'},user2);assert.equal(made.status,201);
+  const cid=made.data.id,fields='password_hash,password_cipher,password_changed_at,remark,permissions,credit_units,account_limit';
+  const before=(await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0];
+  const grants=(await db.pool.query('SELECT * FROM account_grants WHERE user_id=$1 ORDER BY account_id',[uid2])).rows;
+  const recipients=(await db.pool.query('SELECT id,status FROM recipients WHERE campaign_id=$1 ORDER BY id',[cid])).rows;
+  const other=await login('user2','owner-reset-user-password-123');
+  const inactive=await request(path,'PATCH',{active:false,password:'must-not-change-password',remark:'must-not-change-remark',grants:[]},owner);
+  assert.equal(inactive.status,200);assert.deepEqual(inactive.data,{id:uid2,active:false});
+  for(const session of [user2,other])assert.equal((await request('/me','GET',null,session)).status,401);
+  assert.equal((await request('/login','POST',{username:'user2',password:'owner-reset-user-password-123'})).status,401);
+  assert.deepEqual((await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.deepEqual((await db.pool.query('SELECT * FROM account_grants WHERE user_id=$1 ORDER BY account_id',[uid2])).rows,grants);
+  assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
+  assert.deepEqual((await db.pool.query('SELECT id,status FROM recipients WHERE campaign_id=$1 ORDER BY id',[cid])).rows,recipients);
+  const audit=(await db.pool.query("SELECT details FROM audit WHERE action='user.status' AND entity_id=$1 ORDER BY id DESC",[uid2])).rows;assert.equal(audit.length,1);assert.deepEqual(audit[0].details,{active:false});
+  assert.equal((await request(path,'PATCH',{active:false},owner)).status,200);
+  assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE action='user.status' AND entity_id=$1",[uid2])).rows[0].n,1);
+  assert.equal((await request(path,'PATCH',{active:true},owner)).status,200);
+  assert.equal((await request('/me','GET',null,user2)).status,401);
+  Object.assign(user2,await login('user2','owner-reset-user-password-123'));
+  assert.deepEqual((await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
+  assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,200);
  });
  await t.test('Owner can change their own password with current-password verification and revoke every Owner session',async()=>{
   const other=await login('owner','test-owner-password-123');

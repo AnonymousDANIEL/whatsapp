@@ -4,6 +4,12 @@
 
 源码仓库：https://github.com/AnonymousDANIEL/whatsapp 。后续更新采用直接提交此仓库的方式，并通过 GitHub Actions 自动运行测试和两个 Docker 镜像构建。完整流程见 [后续更新说明](docs/UPDATE_WORKFLOW.md)。Railway 需要首次连接仓库并配置服务；启用 Autodeploys 和 Wait for CI 后，后续提交可触发自动更新。
 
+## 2026-10-13 USER 余额显示与状态管理
+
+- USER 的 **余额 / 充值** 页仅显示自己的可用余额；待结算预扣、每条消息单价、预扣明细、余额流水和收费说明只显示给 Owner。USER 的余额接口也不返回这些管理资料。已启用的 Online FPX 充值入口仍可使用。
+- Owner 在 **USER ID 管理 → 状态** 直接选择 **Active / Inactive**，自动保存。Owner 自己的状态受保护；只有 Owner 可以更改 USER 状态。
+- 停用 USER 会立即撤销其全部登录会话并暂停其发送任务。重新启用后需要再次登录，已暂停任务不会自动重启。独立状态操作保留密码、备注、权限、WhatsApp 分配与余额，并写入操作记录。
+
 ## 2026-10-12 USER 备注、页面刷新与余额恢复
 
 - **USER ID 管理 → 修改备注**：Owner 可保存每位 USER 的资料备注，最多 2000 个字符。创建 / 修改 USER 的表单也可填写备注；独立修改备注只改备注，USER 无法读取管理备注。

@@ -77,9 +77,10 @@ async function assertNoHolds(db,campaignId=null,accountId=null){
 }
 function routes(app,route,uuid){
  app.get('/api/billing',route(async(req,res)=>{
-  const settings=(await pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
   const id=req.user.role==='owner'&&req.query.user_id?uuid(req.query.user_id):req.user.id;
   const u=(await pool.query('SELECT id,username,role,credit_units FROM users WHERE id=$1',[id])).rows[0];assert(u,'账号不存在',404);
+  if(req.user.role!=='owner')return res.json({currency:'MYR',scale:SCALE,user:u});
+  const settings=(await pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
   const ledger=(await pool.query('SELECT l.*,u.username actor FROM credit_ledger l LEFT JOIN users u ON u.id=l.actor_id WHERE l.user_id=$1 ORDER BY l.id DESC LIMIT 100',[id])).rows;
   const held=(await pool.query("SELECT m.*,r.status FROM message_charges m LEFT JOIN recipients r ON r.id=m.recipient_id WHERE m.user_id=$1 AND m.state='held' ORDER BY m.created_at DESC LIMIT 100",[id])).rows;
   const heldTotal=(await pool.query("SELECT COALESCE(sum(amount_units),0) total FROM message_charges WHERE user_id=$1 AND state='held'",[id])).rows[0].total;
