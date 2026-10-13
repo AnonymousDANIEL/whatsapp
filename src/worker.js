@@ -193,7 +193,7 @@ async function syncHistory(accountId,entry) {
     console.error('history sync:',err.code||err.name);
   }finally{entry.syncing=false;}
 }
-const eligible = `u.active AND (u.role='owner' OR (u.role='user' AND EXISTS
+const eligible = `u.active AND NOT u.locked AND (u.role='owner' OR (u.role='user' AND EXISTS
   (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id)))`;
 async function dispatch(account, entry) {
   if (busy.has(account.id) || !entry.ready || shuttingDown) return;

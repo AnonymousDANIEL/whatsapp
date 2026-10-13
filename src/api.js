@@ -28,9 +28,9 @@ function cookieToken(req) {
 async function getSession(req) {
   const token = cookieToken(req);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-  const { rows } = await pool.query(`SELECT u.id,u.username,u.role,u.permissions,u.active,u.account_limit,s.csrf,s.token_hash,s.password_reveal_until
+  const { rows } = await pool.query(`SELECT u.id,u.username,u.role,u.permissions,u.active,u.locked,u.account_limit,s.csrf,s.token_hash,s.password_reveal_until
     FROM sessions s JOIN users u ON u.id=s.user_id
-    WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active`, [hash(token)]);
+    WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active AND NOT u.locked`, [hash(token)]);
   const user = rows[0];
   return user;
 }
@@ -38,6 +38,7 @@ function route(fn) { return (req, res, next) => Promise.resolve(fn(req, res)).ca
 function sessionCookie(res, token) { res.cookie(COOKIE, token, { httpOnly: true, secure, sameSite: 'strict', maxAge: SESSION_HOURS * 3600000, path: '/' }); }
 function publicUser(u) { return { id: u.id, username: u.username, role: u.role, manager_id: u.manager_id, permissions: u.permissions, active: u.active, account_limit:u.account_limit }; }
 function userRemark(value){assert(typeof value==='string'&&value.length<=2000,'资料备注最多 2000 个字符');return value.trim();}
+function userAccess(body,current={active:true,locked:false}){const active=body.active===undefined?current.active:body.active,locked=active?(body.locked===undefined?current.locked:body.locked):false;assert(typeof active==='boolean','请选择 Active/Inactive');assert(body.locked===undefined||typeof body.locked==='boolean','锁定状态无效');assert(!(body.active===false&&body.locked===true),'锁定和停用状态不能同时设置');return {active,locked};}
 async function access(user, id, operate = false) {
   uuid(id);
   const a = (await pool.query(`SELECT a.*,($2='owner') AS operate FROM accounts a
@@ -94,7 +95,7 @@ async function start() {
     const u = (await pool.query('SELECT * FROM users WHERE username=$1', [username])).rows[0];
     const valid = await bcrypt.compare(password, u?.password_hash || dummyHash);
     const parentOK = true;
-    assert(u && u.active && parentOK && valid, '账号或密码不正确，或账号已停用', 401);
+    assert(u && u.active && !u.locked && parentOK && valid, '账号或密码不正确，或账号已停用或锁定', 401);
     const token = crypto.randomBytes(32).toString('hex'), csrf = crypto.randomBytes(24).toString('hex');
     await pool.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`, [hash(token), u.id, csrf]);
     sessionCookie(res, token); await audit(u.id, 'login', u.id); res.json({ ok: true });
@@ -214,7 +215,7 @@ async function start() {
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     if(req.query.compact==='true')return res.json((await pool.query('SELECT id,username,role FROM users ORDER BY created_at')).rows);
     const reveal=req.query.passwords==='true'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date();
-    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,
+    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.locked,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,
       (SELECT count(*)::int FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL) AS account_count,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows;
     res.json(rows.map(u=>{const cipher=u.password_cipher;delete u.password_cipher;return{...u,password_available:!!cipher,password:reveal&&u.role!=='owner'&&cipher?vault.open(cipher,'user-password:'+u.id):undefined,password_access:!!reveal};}));
@@ -222,12 +223,12 @@ async function start() {
   app.post('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     const b=req.body;assert(!b.role||b.role==='user','只能创建 USER ID');
-    const remark=userRemark(b.remark===undefined?'':b.remark);
+    const remark=userRemark(b.remark===undefined?'':b.remark),status=userAccess(b);
     assert(/^[\w.-]{3,40}$/.test(b.username||''),'ID 需要 3–40 位字母、数字、点、横线或下划线');
     assert(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200,'密码需要 12–200 个字符');
     const grants=await grantsFor(req.user,(b.grants||[]).map(g=>({...g,operate:true}))),id=crypto.randomUUID();assert(grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
     await transaction(async db=>{
-      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active,password_cipher,password_changed_at,remark) VALUES($1,$2,$3,'user',$4,$5,$6,now(),$7)",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,b.active!==false,vault.seal(b.password,'user-password:'+id),remark]);
+      await db.query("INSERT INTO users(id,username,password_hash,role,permissions,active,password_cipher,password_changed_at,remark,locked) VALUES($1,$2,$3,'user',$4,$5,$6,now(),$7,$8)",[id,b.username,await bcrypt.hash(b.password,12),PERMISSIONS,status.active,vault.seal(b.password,'user-password:'+id),remark,status.locked]);
       for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[id,g.account_id]);
     });
     await audit(req.user.id,'user.create',id,{username:b.username});res.status(201).json({id});
@@ -242,18 +243,19 @@ async function start() {
   }));
   app.patch('/api/users/:id/status',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
-    const id=uuid(req.params.id),active=req.body.active;assert(typeof active==='boolean','请选择 Active/Inactive');
+    const id=uuid(req.params.id);assert(typeof req.body.active==='boolean','请选择 Active/Inactive');
     const changed=await transaction(async db=>{
-      const previous=(await db.query("SELECT id,active FROM users WHERE id=$1 AND role='user' FOR UPDATE",[id])).rows[0];
+      const previous=(await db.query("SELECT id,active,locked FROM users WHERE id=$1 AND role='user' FOR UPDATE",[id])).rows[0];
       assert(previous,'无权修改此 USER ID',403);
-      if(previous.active===active)return {id,active};
-      await db.query('UPDATE users SET active=$2 WHERE id=$1',[id,active]);
-      if(!active){
+      const {active,locked}=userAccess(req.body,previous);
+      if(previous.active===active&&previous.locked===locked)return {id,active,locked};
+      await db.query('UPDATE users SET active=$2,locked=$3 WHERE id=$1',[id,active,locked]);
+      if(!active||locked){
         await db.query('DELETE FROM sessions WHERE user_id=$1',[id]);
         await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[id]);
       }
-      await db.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,'user.status',$2,$3)",[req.user.id,id,{active}]);
-      return {id,active};
+      await db.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,'user.status',$2,$3)",[req.user.id,id,{active,locked}]);
+      return {id,active,locked};
     });res.json(changed);
   }));
   app.patch('/api/users/:id',route(async(req,res)=>{
@@ -265,16 +267,17 @@ async function start() {
     assert(!b.password||(typeof b.password==='string'&&b.password.length>=12&&b.password.length<=200),'密码需要 12–200 个字符');
     const grants=b.grants===undefined?null:await grantsFor(req.user,b.grants.map(g=>({...g,operate:true})));
     assert(!grants||grants.length<=10,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
-    await transaction(async db=>{
-      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[target.id]);
-      await db.query('UPDATE users SET active=$1,permissions=$2 WHERE id=$3',[b.active,PERMISSIONS,target.id]);
+    const status=await transaction(async db=>{
+      const current=(await db.query('SELECT id,active,locked FROM users WHERE id=$1 FOR UPDATE',[target.id])).rows[0],status=userAccess(b,current);
+      await db.query('UPDATE users SET active=$1,permissions=$2,locked=$4 WHERE id=$3',[status.active,PERMISSIONS,target.id,status.locked]);
       if(remark!==undefined)await db.query('UPDATE users SET remark=$1 WHERE id=$2',[remark,target.id]);
       if(b.password)await db.query('UPDATE users SET password_hash=$1,password_cipher=$3,password_changed_at=now() WHERE id=$2',[await bcrypt.hash(b.password,12),target.id,vault.seal(b.password,'user-password:'+target.id)]);
       if(grants){await db.query('DELETE FROM account_grants WHERE user_id=$1',[target.id]);for(const g of grants)await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[target.id,g.account_id]);}
-      if(!b.active||b.password)await db.query('DELETE FROM sessions WHERE user_id=$1',[target.id]);
-      if(!b.active)await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[target.id]);
+      if(!status.active||status.locked||b.password)await db.query('DELETE FROM sessions WHERE user_id=$1',[target.id]);
+      if(!status.active||status.locked)await db.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE created_by=$1',[target.id]);
+      return status;
     });
-    await audit(req.user.id,'user.update',target.id,{active:b.active,password_changed:!!b.password,grants:grants?.map(g=>g.account_id)});res.json({ok:true});
+    await audit(req.user.id,'user.update',target.id,{...status,password_changed:!!b.password,grants:grants?.map(g=>g.account_id)});res.json({ok:true});
   }));
   app.get('/api/campaigns', route(async (req, res) => {
     const ids = await visibleAccountIds(req.user);

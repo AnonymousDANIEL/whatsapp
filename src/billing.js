@@ -9,15 +9,16 @@ function units(value,positive=false){
   assert(Number.isSafeInteger(n)&&n<=MAX_BALANCE&&(!positive||n>0),'金额超出允许范围');return n;
 }
 async function canPay(userId,db=pool){
-  const u=(await db.query('SELECT role,credit_units FROM users WHERE id=$1',[userId])).rows[0];
+  const u=(await db.query('SELECT role,active,locked,credit_units FROM users WHERE id=$1',[userId])).rows[0];
   if(u?.role==='owner')return;
+  assert(u?.active&&!u.locked,'账号已停用或锁定',403);
   const price=(await db.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0]?.price_units;
   assert(price!==null&&price!==undefined,'管理员尚未设置每条消息价格',402);
   assert(Number(u?.credit_units)>=Number(price),'余额不足，请联系管理员充值',402);
 }
 async function reserveForSend(db,userId,recipientId){
-  const u=(await db.query('SELECT role,active,credit_units FROM users WHERE id=$1 FOR UPDATE',[userId])).rows[0];
-  if(!u?.active)return {ok:false,pause_reason:null,error:'USER_INACTIVE'};if(u.role==='owner')return {ok:true};
+  const u=(await db.query('SELECT role,active,locked,credit_units FROM users WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+  if(!u?.active)return {ok:false,pause_reason:null,error:'USER_INACTIVE'};if(u.locked)return {ok:false,pause_reason:null,error:'USER_LOCKED'};if(u.role==='owner')return {ok:true};
   const existing=(await db.query('SELECT * FROM message_charges WHERE recipient_id=$1 FOR UPDATE',[recipientId])).rows[0];
   if(existing&&existing.state!=='refunded')return {ok:false,pause_reason:'review',error:'BILLING_REVIEW_REQUIRED'}; // never reserve a held/charged send twice
   const p=(await db.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0]?.price_units;
@@ -35,7 +36,7 @@ async function resumeCreditTasks(userId=null,workerGroup=null){
   // A later reserve always rechecks the balance, even if another task spends it first.
   const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL FROM users u,accounts a,billing_settings b
    WHERE c.created_by=u.id AND c.account_id=a.id AND b.id=1 AND c.pause_reason='credit' AND NOT c.enabled
-   AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND a.enabled AND a.deleted_at IS NULL
+   AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND NOT u.locked AND a.enabled AND a.deleted_at IS NULL
    AND ($1::uuid IS NULL OR u.id=$1) AND ($2::text IS NULL OR a.worker_group=$2)
    AND b.price_units IS NOT NULL AND (u.role='owner' OR (u.role='user' AND u.credit_units>=b.price_units
     AND 'tasks.create'=ANY(u.permissions) AND EXISTS(SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=a.id)))
@@ -79,7 +80,7 @@ function routes(app,route,uuid){
  app.get('/api/billing',route(async(req,res)=>{
   const id=req.user.role==='owner'&&req.query.user_id?uuid(req.query.user_id):req.user.id;
   const u=(await pool.query('SELECT id,username,role,credit_units FROM users WHERE id=$1',[id])).rows[0];assert(u,'账号不存在',404);
-  if(req.user.role!=='owner')return res.json({currency:'MYR',scale:SCALE,user:u});
+  if(req.user.role!=='owner'){const ledger=(await pool.query('SELECT id,kind,delta_units,balance_units,recipient_id,created_at FROM credit_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT 100',[id])).rows;return res.json({currency:'MYR',scale:SCALE,user:u,ledger});}
   const settings=(await pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
   const ledger=(await pool.query('SELECT l.*,u.username actor FROM credit_ledger l LEFT JOIN users u ON u.id=l.actor_id WHERE l.user_id=$1 ORDER BY l.id DESC LIMIT 100',[id])).rows;
   const held=(await pool.query("SELECT m.*,r.status FROM message_charges m LEFT JOIN recipients r ON r.id=m.recipient_id WHERE m.user_id=$1 AND m.state='held' ORDER BY m.created_at DESC LIMIT 100",[id])).rows;
@@ -94,7 +95,7 @@ function routes(app,route,uuid){
   assert(req.user.role==='owner','只有 Owner 可以管理余额和定价',403);const b=req.body,id=uuid(b.user_id),amount=units(b.amount,true);
   assert(['add','subtract'].includes(b.direction),'请选择增加或扣减');assert(typeof b.note==='string'&&b.note.trim().length>0&&b.note.length<=200,'请填写调整原因');uuid(b.request_id);
   await transaction(async db=>{
-   const u=(await db.query('SELECT role,credit_units FROM users WHERE id=$1 FOR UPDATE',[id])).rows[0];assert(u&&u.role!=='owner','Owner 余额无限，无需调整');
+   const u=(await db.query('SELECT role,active,locked,credit_units FROM users WHERE id=$1 FOR UPDATE',[id])).rows[0];assert(u&&u.role!=='owner','Owner 余额无限，无需调整');
    const previous=(await db.query('SELECT * FROM credit_ledger WHERE request_id=$1',[b.request_id])).rows[0];
    if(previous){assert(previous.user_id===id&&Number(previous.delta_units)===(b.direction==='add'?amount:-amount)&&previous.note===b.note.trim(),'重复请求内容不一致',409);return;}
    const delta=b.direction==='add'?amount:-amount,balance=Number(u.credit_units)+delta;assert(balance>=0&&balance<=MAX_BALANCE,'调整后余额超出允许范围');

@@ -5,6 +5,10 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+ '锁定状态无效':'Invalid lock status.',
+ '锁定和停用状态不能同时设置':'An account cannot be locked and inactive at the same time.',
+ '账号已停用或锁定':'This account is inactive or locked.',
+ '账号或密码不正确，或账号已停用或锁定':'Incorrect ID or password, or your ID is inactive or locked.',
  '每个 USER 最多连接 10 个 WhatsApp 账号':'Each USER can link up to 10 WhatsApp accounts.',
  '只有 Owner 可以启用或停用 WhatsApp 账号':'Only the Owner can activate or deactivate WhatsApp accounts.',
  'USER 仅可扫码关联，不能查看聊天或操作 WhatsApp':'USERs can link by QR but cannot view or control WhatsApp chats.',

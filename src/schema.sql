@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
  role text NOT NULL CHECK(role IN ('owner','manager','staff')), manager_id uuid REFERENCES users(id),
  permissions text[] NOT NULL DEFAULT '{}', active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS sessions (
  token_hash text PRIMARY KEY, user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  csrf text NOT NULL, expires_at timestamptz NOT NULL

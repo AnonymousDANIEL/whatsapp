@@ -30,8 +30,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/billing/adjust','POST',{...adjustment,request_id:randomUUID(),amount:'101',direction:'subtract'},owner)).status,400);
   for(const session of [user,user2]){
    const mine=(await request('/billing?user_id='+uid,'GET',null,session)).data;
-   assert.deepEqual(Object.keys(mine).sort(),['currency','scale','user']);assert.equal(mine.currency,'MYR');assert.equal(mine.scale,10000);
+   assert.deepEqual(Object.keys(mine).sort(),['currency','ledger','scale','user']);assert.equal(mine.currency,'MYR');assert.equal(mine.scale,10000);
    assert.equal(mine.user.id,session===user?uid:uid2);assert.deepEqual(Object.keys(mine.user).sort(),['credit_units','id','role','username']);
+   assert.equal(mine.ledger.length,session===user?1:0);for(const row of mine.ledger){assert.deepEqual(Object.keys(row).sort(),['balance_units','created_at','delta_units','id','kind','recipient_id']);assert.equal(row.note,undefined);assert.equal(row.actor_id,undefined);}
   }
   const ownerView=(await request('/billing?user_id='+uid,'GET',null,owner)).data;
   assert.equal(ownerView.user.id,uid);assert.equal(Number(ownerView.price_units),1000);assert.equal(Number(ownerView.held_units),0);assert.equal(ownerView.ledger.length,1);assert.deepEqual(ownerView.held,[]);
@@ -175,7 +176,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const rid=reserved[0]?900001:900002;
   await billing.settle(rid,'unknown');
   const heldView=(await request('/billing?user_id='+uid2,'GET',null,owner)).data;assert.equal(Number(heldView.held_units),1000);assert.equal(Number(heldView.held[0].amount_units),1000);
-  for(const key of ['price_units','held_units','held','ledger'])assert.equal((await request('/billing','GET',null,user2)).data[key],undefined);
+  for(const key of ['price_units','held_units','held'])assert.equal((await request('/billing','GET',null,user2)).data[key],undefined);
   await request('/billing/price','PUT',{price:'0.2000'},owner);
   await Promise.all([billing.settle(rid,'failed'),billing.settle(rid,'failed')]);
   assert.equal(Number((await request('/billing','GET',null,user2)).data.user.credit_units),1000);
@@ -402,14 +403,14 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const recipients=(await db.pool.query('SELECT id,status FROM recipients WHERE campaign_id=$1 ORDER BY id',[cid])).rows;
   const other=await login('user2','owner-reset-user-password-123');
   const inactive=await request(path,'PATCH',{active:false,password:'must-not-change-password',remark:'must-not-change-remark',grants:[]},owner);
-  assert.equal(inactive.status,200);assert.deepEqual(inactive.data,{id:uid2,active:false});
+  assert.equal(inactive.status,200);assert.deepEqual(inactive.data,{id:uid2,active:false,locked:false});
   for(const session of [user2,other])assert.equal((await request('/me','GET',null,session)).status,401);
   assert.equal((await request('/login','POST',{username:'user2',password:'owner-reset-user-password-123'})).status,401);
   assert.deepEqual((await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0],before);
   assert.deepEqual((await db.pool.query('SELECT * FROM account_grants WHERE user_id=$1 ORDER BY account_id',[uid2])).rows,grants);
   assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
   assert.deepEqual((await db.pool.query('SELECT id,status FROM recipients WHERE campaign_id=$1 ORDER BY id',[cid])).rows,recipients);
-  const audit=(await db.pool.query("SELECT details FROM audit WHERE action='user.status' AND entity_id=$1 ORDER BY id DESC",[uid2])).rows;assert.equal(audit.length,1);assert.deepEqual(audit[0].details,{active:false});
+  const audit=(await db.pool.query("SELECT details FROM audit WHERE action='user.status' AND entity_id=$1 ORDER BY id DESC",[uid2])).rows;assert.equal(audit.length,1);assert.deepEqual(audit[0].details,{active:false,locked:false});
   assert.equal((await request(path,'PATCH',{active:false},owner)).status,200);
   assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE action='user.status' AND entity_id=$1",[uid2])).rows[0].n,1);
   assert.equal((await request(path,'PATCH',{active:true},owner)).status,200);
@@ -418,6 +419,38 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.deepEqual((await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0],before);
   assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
   assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,200);
+ });
+ await t.test('Locked is distinct from Inactive and blocks login, new sends and credit recovery until Owner unlocks',async()=>{
+  const billing=require('../src/billing'),worker=require('../src/worker'),ownerId=(await request('/me','GET',null,owner)).data.user.id;
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:true},user2)).status,403);
+  assert.equal((await request('/users/'+ownerId,'PATCH',{active:true,locked:true},owner)).status,403);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:'true'},owner)).status,400);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:false,locked:true},owner)).status,400);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:true},{...owner,csrf:'wrong'})).status,403);
+  await request('/billing/adjust','POST',{user_id:uid2,amount:'1',direction:'add',note:'Synthetic lock test credit',request_id:randomUUID()},owner);
+  const created=await request('/campaigns','POST',{...template,account_id:b,title:'Lock test',send_now:true,recipients:'0123456789'},user2);assert.equal(created.status,201);const cid=created.data.id;
+  const before=(await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,credit_units,remark FROM users WHERE id=$1',[uid2])).rows[0];
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:true},owner)).status,200);
+  const managed=(await request('/users','GET',null,owner)).data.find(u=>u.id===uid2);assert.equal(managed.active,true);assert.equal(managed.locked,true);
+  assert.deepEqual((await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,credit_units,remark FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.equal((await request('/me','GET',null,user2)).status,401);
+  assert.equal((await request('/login','POST',{username:'user2',password:'owner-reset-user-password-123'})).status,401);
+  await assert.rejects(billing.canPay(uid2),e=>e.status===403);
+  const blocked=await db.transaction(tx=>billing.reserveForSend(tx,uid2,900005));assert.deepEqual(blocked,{ok:false,pause_reason:null,error:'USER_LOCKED'});
+  assert.equal((await db.pool.query('SELECT 1 FROM message_charges WHERE recipient_id=900005')).rowCount,0);
+  assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
+  await db.pool.query('UPDATE campaigns SET enabled=true WHERE id=$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[b]);let calls=0;
+  await worker.dispatch({id:b},{id:b,ready:true,client:{getNumberId:async()=>{calls++;return null;}}});assert.equal(calls,0);
+  await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit' WHERE id=$1",[cid]);assert.equal(await billing.resumeCreditTasks(uid2),0);
+  await db.migrate();assert.equal((await db.pool.query('SELECT locked FROM users WHERE id=$1',[uid2])).rows[0].locked,true);
+  await db.pool.query('UPDATE campaigns SET pause_reason=NULL WHERE id=$1',[cid]);
+  assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:false},owner)).status,200);
+  Object.assign(user2,await login('user2','owner-reset-user-password-123'));assert.equal((await request('/me','GET',null,user2)).status,200);
+  assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[cid])).rows[0].enabled,false);
+  const fresh=await request('/users','POST',{username:'locked-test',password:'synthetic-locked-password-123',active:true,locked:true},owner);assert.equal(fresh.status,201);
+  assert.equal((await request('/login','POST',{username:'locked-test',password:'synthetic-locked-password-123'})).status,401);
+  assert.equal((await request('/users/'+fresh.data.id+'/status','PATCH',{active:false},owner)).status,200);
+  const inactive=(await request('/users','GET',null,owner)).data.find(u=>u.id===fresh.data.id);assert.equal(inactive.active,false);assert.equal(inactive.locked,false);
  });
  await t.test('Owner can change their own password with current-password verification and revoke every Owner session',async()=>{
   const other=await login('owner','test-owner-password-123');
