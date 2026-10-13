@@ -167,3 +167,10 @@
 - Syntax checks passed; ordinary tests: 30 passed and the database test skipped locally. Chinese/English Owner/USER jsdom checks passed, including integer zero/positive/negative values, ledger display, branded image/title/icon declarations, preserved Owner monetary details, status filters and session cleanup. Existing PostgreSQL tests and both images continue in GitHub Actions; no new backend logic or database migration was introduced.
 - Parsed the SVG, verified embedded PNG bytes against the uploaded logo, and rendered/viewed the full logo and emblem view using Resvg. These are asset/DOM checks, not a real-browser favicon/layout or mobile-device check.
 - No real balances, USER credentials/status, bank payments or live WhatsApp sends were used or changed for testing. Only the company-logo attachment is included as an asset; account screenshots are excluded.
+
+## 2026-10-13 透明 Logo 更新
+
+- 使用本次提供的 918 × 918 透明 PNG，原图字样、形状和颜色不变；SVG 内嵌字节与上传文件完全一致（SHA-256：`c05920c3ae51dd2cb8dfca8b91f73e44e2b03e480ccb2268d229dfc327b1a6ce`）。去掉 Logo 样式白底，登录 / 恢复页、侧栏使用完整 Logo，小图标使用同图的图形部分。Logo 与主样式版本地址更新，避免复用旧白底资源。
+- SVG 结构和透明通道检查通过；图形 / 全图独立渲染后检查裁切、透明背景和现有深色界面效果。源 PNG 由约 1.58 MB 降至 0.38 MB，SVG 约 0.51 MB。本检查是本地图形渲染，未对生产浏览器逐一验收。
+- `npm run check` 通过；普通 `npm test` 为 30 项通过、0 失败、1 项数据库集成跳过（本地未提供 TEST_DATABASE_URL）。临时假 API 的中英文 × Owner / USER 四种 DOM 检查通过，包括 Logo 版本、整数余额 / 流水、状态筛选及权限。后端和资金运算没有改动，未发送真实消息、未操作生产账号。
+- 此提交的原生 PostgreSQL 测试与 API / worker 镜像构建由 GitHub Actions 执行；Railway 部署状态单独检查，以对应提交的最终结果为准。
