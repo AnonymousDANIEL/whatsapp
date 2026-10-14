@@ -40,7 +40,7 @@ test('Process cleanup refuses root and accepts no matching private processes',as
 });
 test('Retiring desktop setup keeps its slot until pending setup has stopped',async()=>{
  let finish;const setup=new Promise(resolve=>finish=resolve),entry={id:'setup',uid:23004,setup,sockets:[],children:[]},entries=new Map([['setup',entry]]),seen=[];
- const stopping=retire(entries,entry,{run:async(_,args)=>seen.push(args[0]),settle:0});
+ const stopping=retire(entries,entry,{run:async(_,args)=>seen.push(args[0]),settle:0,beforeRelease:async()=>{assert.equal(entries.get('setup'),entry);seen.push('saved');}});
  await Promise.resolve();assert.equal(entries.get('setup'),entry);assert.deepEqual(seen,[]);
- finish();await stopping;assert.equal(entries.has('setup'),false);assert.deepEqual(seen,['-TERM','-KILL']);
+ finish();await stopping;assert.equal(entries.has('setup'),false);assert.deepEqual(seen,['-TERM','-KILL','saved']);
 });

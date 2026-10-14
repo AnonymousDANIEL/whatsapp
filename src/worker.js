@@ -56,9 +56,9 @@ async function waitPort(port) {
   }
   throw new Error('DESKTOP_NOT_READY');
 }
-async function stopAccount(id,expected=null) {
+async function stopAccount(id,expected=null,options={}) {
   const entry=entries.get(id);if(!entry||(expected&&entry!==expected))return;
-  return lifecycle.retire(entries,entry);
+  return lifecycle.retire(entries,entry,options);
 }
 let identityWork = Promise.resolve();
 async function desktopIdentity(id) {
@@ -84,10 +84,9 @@ class IsolatedAuth extends LocalAuth {
 async function fail(id, reason, expected=null) {
   const entry = entries.get(id); if (!entry || entry.closing || expected&&entry!==expected) return;
   console.error(describeStartupError(new Error(reason), 'account-browser'));
-  await stopAccount(id,entry);
   const n = (failures.get(id) || 0) + 1; failures.set(id, n);
   retryAt.set(id, Date.now() + Math.min(300000, 10000 * 2 ** Math.min(n, 5)));
-  await state(id, 'error', reason);
+  await stopAccount(id,entry,{beforeRelease:()=>state(id,'error',reason)});
 }
 async function receiveAck(id, messageId, ack) {
   if(!messageId||!validAck(ack)) return;

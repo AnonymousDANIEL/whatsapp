@@ -16,7 +16,7 @@ async function killIdentity(uid,signal,run=execute){
  if(!Number.isInteger(uid)||uid<20000||uid>2147483647)throw Error('UNSAFE_BROWSER_IDENTITY');
  try{await run('pkill',['-'+signal,'-u',String(uid)]);}catch(error){if(error.code!==1)throw error;}
 }
-function retire(entries,entry,{run=execute,timeout=5000,settle=150}={}){
+function retire(entries,entry,{run=execute,timeout=5000,settle=150,beforeRelease=null}={}){
  if(entries.get(entry.id)!==entry)return Promise.resolve();
  if(entry.stopping)return entry.stopping;
  entry.closing=true;entry.ready=false;
@@ -35,7 +35,8 @@ function retire(entries,entry,{run=execute,timeout=5000,settle=150}={}){
    if(settle)await new Promise(resolve=>setTimeout(resolve,settle));
    await killIdentity(entry.uid,'KILL',run);
   }
-  if(entries.get(entry.id)===entry)entries.delete(entry.id);
+  try{if(beforeRelease)await beforeRelease();}
+  finally{if(entries.get(entry.id)===entry)entries.delete(entry.id);}
  })();
  return entry.stopping;
 }
