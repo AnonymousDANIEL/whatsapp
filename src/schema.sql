@@ -199,3 +199,34 @@ CREATE TABLE IF NOT EXISTS bank_feed_events(
  processed boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(bank_id,event_id)
 );
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS deposit_id uuid UNIQUE REFERENCES bank_deposits(id);
+
+-- Owner-linked shared accounts: number records do not register mobile accounts.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS shared_pool boolean NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS registration_phone text;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS shared_state text NOT NULL DEFAULT 'waiting' CHECK(shared_state IN ('connected','waiting','offline','unknown'));
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS shared_checked_at timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS shared_assigned_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS shared_registration_once ON accounts(registration_phone) WHERE shared_pool AND deleted_at IS NULL AND registration_phone IS NOT NULL;
+CREATE INDEX IF NOT EXISTS shared_accounts ON accounts(worker_group,created_at) WHERE shared_pool AND deleted_at IS NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shared_pool boolean NOT NULL DEFAULT false;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shared_request_id uuid UNIQUE;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shared_request_hash text;
+CREATE INDEX IF NOT EXISTS shared_campaigns_user ON campaigns(created_by,created_at DESC) WHERE shared_pool;
+-- Actual sender IDs may outlive Owner-purged app records, like immutable charge recipient IDs.
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS send_account_id uuid;
+CREATE INDEX IF NOT EXISTS recipients_sender ON recipients(send_account_id,message_id) WHERE send_account_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS shared_settings(
+ id integer PRIMARY KEY CHECK(id=1),enabled boolean NOT NULL DEFAULT false,price_units bigint CHECK(price_units>0),
+ interval_ms integer NOT NULL DEFAULT 10000 CHECK(interval_ms BETWEEN 5000 AND 3600000),
+ batch_size integer NOT NULL DEFAULT 1 CHECK(batch_size BETWEEN 1 AND 100),updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO shared_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS shared_hour_prices(hour integer PRIMARY KEY CHECK(hour BETWEEN 0 AND 23),price_units bigint NOT NULL CHECK(price_units>0));
+ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'personal' CHECK(service IN ('personal','shared'));
+ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS price_hour integer CHECK(price_hour BETWEEN 0 AND 23);
+ALTER TABLE worker_health ADD COLUMN IF NOT EXISTS max_accounts integer NOT NULL DEFAULT 5 CHECK(max_accounts BETWEEN 1 AND 10);
+CREATE TABLE IF NOT EXISTS shared_health_hourly(
+ worker_group text NOT NULL,hour_start timestamptz NOT NULL,total integer NOT NULL,connected integer NOT NULL,
+ waiting integer NOT NULL,offline integer NOT NULL,unknown integer NOT NULL,checked_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(worker_group,hour_start)
+);

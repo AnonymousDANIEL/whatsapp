@@ -1,6 +1,7 @@
 'use strict';
 const {pool,transaction}=require('./db');
 const {assert}=require('./domain');
+const {priceSQL}=require('./shared-domain');
 // MYR uses four decimal places; all arithmetic is in integer units.
 const SCALE=10000,MAX_BALANCE=1000000000000;
 function units(value,positive=false){
@@ -20,26 +21,32 @@ async function reserveForSend(db,userId,recipientId){
   const u=(await db.query('SELECT role,active,locked,credit_units FROM users WHERE id=$1 FOR UPDATE',[userId])).rows[0];
   if(!u?.active)return {ok:false,pause_reason:null,error:'USER_INACTIVE'};if(u.locked)return {ok:false,pause_reason:null,error:'USER_LOCKED'};if(u.role==='owner')return {ok:true};
   const existing=(await db.query('SELECT * FROM message_charges WHERE recipient_id=$1 FOR UPDATE',[recipientId])).rows[0];
-  if(existing&&existing.state!=='refunded')return {ok:false,pause_reason:'review',error:'BILLING_REVIEW_REQUIRED'}; // never reserve a held/charged send twice
-  const p=(await db.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0]?.price_units;
+  if(existing&&existing.state!=='refunded')return {ok:false,pause_reason:'review',error:'BILLING_REVIEW_REQUIRED'};
+  if(existing&&existing.user_id!==userId)return {ok:false,pause_reason:'review',error:'BILLING_REVIEW_REQUIRED'};
+  const shared=(await db.query('SELECT c.shared_pool FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE r.id=$1',[recipientId])).rows[0]?.shared_pool===true;
+  const rate=shared?(await db.query(`SELECT CASE WHEN s.enabled THEN ${priceSQL} END AS price_units,
+    EXTRACT(hour FROM statement_timestamp() AT TIME ZONE 'Asia/Kuala_Lumpur')::integer AS hour FROM shared_settings s WHERE id=1`)).rows[0]:
+    (await db.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
+  const p=rate?.price_units;
   if(p==null||Number(u.credit_units)<Number(p))return {ok:false,pause_reason:'credit',error:'CREDIT_REQUIRED'};
   await db.query('UPDATE users SET credit_units=credit_units-$1 WHERE id=$2',[p,userId]);
-  await db.query(`INSERT INTO message_charges(recipient_id,user_id,amount_units,state) VALUES($1,$2,$3,'held')
-    ON CONFLICT(recipient_id) DO UPDATE SET amount_units=excluded.amount_units,state='held',version=message_charges.version+1,updated_at=now()`,[recipientId,userId,p]);
+  await db.query(`INSERT INTO message_charges(recipient_id,user_id,amount_units,state,service,price_hour) VALUES($1,$2,$3,'held',$4,$5)
+    ON CONFLICT(recipient_id) DO UPDATE SET amount_units=excluded.amount_units,state='held',service=excluded.service,price_hour=excluded.price_hour,
+    version=message_charges.version+1,updated_at=now()`,[recipientId,userId,p,shared?'shared':'personal',shared?rate.hour:null]);
   await db.query(`INSERT INTO credit_ledger(user_id,kind,delta_units,balance_units,recipient_id) SELECT id,'hold',-$1::bigint,credit_units,$3 FROM users WHERE id=$2`,[p,userId,recipientId]);
   return {ok:true};
 }
 async function reserve(db,userId,recipientId){return (await reserveForSend(db,userId,recipientId)).ok;}
 async function resumeCreditTasks(userId=null,workerGroup=null){
  return transaction(async db=>{
-  // Run after wallet mutations commit; recovery does not reserve credit or lock wallets.
-  // A later reserve always rechecks the balance, even if another task spends it first.
-  const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL FROM users u,accounts a,billing_settings b
-   WHERE c.created_by=u.id AND c.account_id=a.id AND b.id=1 AND c.pause_reason='credit' AND NOT c.enabled
-   AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND NOT u.locked AND a.enabled AND a.deleted_at IS NULL
+  const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL FROM users u,accounts a,billing_settings b,shared_settings s
+   WHERE c.created_by=u.id AND c.account_id=a.id AND b.id=1 AND s.id=1 AND c.pause_reason='credit' AND NOT c.enabled
+   AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND NOT u.locked AND (a.enabled OR c.shared_pool) AND a.deleted_at IS NULL
    AND ($1::uuid IS NULL OR u.id=$1) AND ($2::text IS NULL OR a.worker_group=$2)
-   AND b.price_units IS NOT NULL AND (u.role='owner' OR (u.role='user' AND u.credit_units>=b.price_units
-    AND 'tasks.create'=ANY(u.permissions) AND EXISTS(SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=a.id)))
+   AND c.shared_pool=a.shared_pool AND (NOT c.shared_pool OR s.enabled)
+   AND (CASE WHEN c.shared_pool THEN ${priceSQL} ELSE b.price_units END) IS NOT NULL
+   AND (u.role='owner' OR (u.role='user' AND u.credit_units>=(CASE WHEN c.shared_pool THEN ${priceSQL} ELSE b.price_units END)
+    AND 'tasks.create'=ANY(u.permissions) AND (c.shared_pool OR EXISTS(SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=a.id))))
    AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending')
    AND NOT EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status IN ('unknown','sending'))
    RETURNING c.id`,[userId,workerGroup])).rows;
@@ -73,7 +80,7 @@ async function reconcile(){
 }
 async function assertNoHolds(db,campaignId=null,accountId=null){
  const r=await db.query(`SELECT 1 FROM message_charges m JOIN recipients r ON r.id=m.recipient_id JOIN campaigns c ON c.id=r.campaign_id
- WHERE m.state='held' AND ($1::uuid IS NULL OR c.id=$1) AND ($2::uuid IS NULL OR c.account_id=$2) LIMIT 1`,[campaignId,accountId]);
+ WHERE m.state='held' AND ($1::uuid IS NULL OR c.id=$1) AND ($2::uuid IS NULL OR c.account_id=$2 OR r.send_account_id=$2) LIMIT 1`,[campaignId,accountId]);
  assert(!r.rowCount,'存在待结算消息，请先在余额管理中核对',409);
 }
 function routes(app,route,uuid){

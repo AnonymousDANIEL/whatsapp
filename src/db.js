@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { assert } = require('./domain');
 assert(process.env.DATABASE_URL, '缺少 DATABASE_URL', 500);
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_SIZE || 15), connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_SIZE || (process.env.SERVICE_ROLE==='worker'?5:15)), connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
 pool.on('error', e => console.error('database pool:', e.code || e.name));
 async function migrate() {
   const client = await pool.connect();

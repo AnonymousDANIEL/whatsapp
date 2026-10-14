@@ -1,6 +1,8 @@
 'use strict';
 const express = require('express');
 const billing=require('./billing');
+const shared=require('./shared');
+const {connectedSQL,linkedPhone}=require('./shared-domain');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -28,8 +30,12 @@ function authorized(req) {
   const value = req.headers.authorization || '', expected = 'Bearer ' + process.env.INTERNAL_SECRET;
   return value.length === expected.length && crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
 }
-async function state(id, status, error = null, phone = null) {
-  await pool.query('UPDATE accounts SET status=$1,last_error=$2,phone=COALESCE($3,phone),heartbeat_at=now() WHERE id=$4 AND worker_group=$5', [status, error, phone, id, group]);
+async function state(id,status,error=null,phone=null){
+ await pool.query(`UPDATE accounts SET status=$1,last_error=$2,phone=COALESCE($3,phone),heartbeat_at=now(),
+  shared_state=CASE WHEN NOT shared_pool THEN shared_state WHEN $1='ready' AND $3 IS NOT NULL AND registration_phone='+'||$3 THEN 'connected' WHEN $1='ready' THEN 'unknown'
+   WHEN $1 IN ('starting','loading','scan_required','capacity_wait','disabled','stopped') THEN 'waiting' ELSE 'offline' END,
+  shared_checked_at=CASE WHEN shared_pool AND (status IS DISTINCT FROM $1 OR $1='ready') THEN now() ELSE shared_checked_at END
+  WHERE id=$4 AND worker_group=$5`,[status,error,phone,id,group]);
 }
 function processChild(entry, executable, args, env) {
   const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
@@ -94,7 +100,7 @@ async function receiveAck(id, messageId, ack) {
   const saved = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [id, messageId])).rows[0].ack;
   await pool.query(`UPDATE message_history SET ack=$1,status=$2,updated_at=now() WHERE account_id=$3 AND message_id=$4 AND (ack IS NULL OR (ack<>-1 AND ($1=-1 OR $1>=ack)))`,[saved,ackStatus(saved),id,messageId]);
   await pool.query(`UPDATE recipients r SET status=$1,ack=$2,error_code=CASE WHEN $2=-1 THEN 'ACK_ERROR' ELSE NULL END,updated_at=now()
-    FROM campaigns c WHERE c.id=r.campaign_id AND c.account_id=$3 AND r.message_id=$4`, [ackStatus(saved), saved, id, messageId]);
+    FROM campaigns c WHERE c.id=r.campaign_id AND COALESCE(r.send_account_id,c.account_id)=$3 AND r.message_id=$4`, [ackStatus(saved), saved, id, messageId]);
 }
 async function startAccount(account) {
   if (entries.has(account.id)) return;
@@ -133,7 +139,7 @@ async function startAccount(account) {
     e.client.on('ready', () => {
       if (e.closing) return;
       e.ready = true; for(const ws of e.sockets)if(ws.scanOnly)ws.close(); failures.delete(account.id); retryAt.delete(account.id);
-      state(account.id, 'ready', null, e.client.info?.wid?.user || null).catch(() => {});
+      state(account.id, 'ready', null, account.shared_pool?linkedPhone(e):(e.client.info?.wid?.user||null)).catch(() => {});
       e.client.pupPage.bringToFront().catch(() => {});
       syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
     });
@@ -157,7 +163,7 @@ async function recordMessage(accountId,message,actorId=null,live=true) {
   await receiveAck(accountId,mid,ack);
 }
 async function reconcileUnknown(accountId,client,snapshot=null) {
-  const rows=(await pool.query(`SELECT r.*,c.body,c.created_by,c.media FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
+  const rows=(await pool.query(`SELECT r.*,c.body,c.created_by,c.media FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE COALESCE(r.send_account_id,c.account_id)=$1 AND c.deleted_at IS NULL AND r.status='unknown' AND r.started_at IS NOT NULL ORDER BY r.started_at DESC LIMIT 100`,[accountId])).rows;
   const chats=new Map();
   for(const row of rows){
     try{
@@ -169,7 +175,7 @@ async function reconcileUnknown(accountId,client,snapshot=null) {
       const message=matches[0],mid=messageId(message);
       // Ambiguous repeated identical sends remain unknown for human review.
       if(rows.filter(other=>other.phone===row.phone&&other.body===row.body&&Math.abs(message.timestamp*1000-+new Date(other.started_at))<=90000).length!==1)continue;
-      if((await pool.query('SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE r.message_id=$1 AND c.account_id=$2',[mid,accountId])).rowCount)continue;
+      if((await pool.query('SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE r.message_id=$1 AND COALESCE(r.send_account_id,c.account_id)=$2',[mid,accountId])).rowCount)continue;
       await pool.query("UPDATE recipients SET status=$1,message_id=$2,ack=$3,error_code=NULL,updated_at=now() WHERE id=$4 AND status='unknown'",[ackStatus(messageAck(message)),mid,messageAck(message),row.id]);
       await recordMessage(accountId,message,row.created_by,false);
       await audit(row.created_by,'message.reconciled',row.campaign_id,{recipient_id:row.id,message_id:mid});
@@ -181,7 +187,7 @@ async function syncHistory(accountId,entry) {
   if(entry.syncing||entry.closing)return;
   entry.syncing=true;entry.nextSync=Date.now()+15000;
   try{
-    const targets=(await pool.query(`SELECT DISTINCT r.phone FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE c.account_id=$1 AND c.deleted_at IS NULL AND r.status IN('unknown','awaiting_ack','submitted','delivered') AND r.started_at>now()-interval '7 days' LIMIT 50`,[accountId])).rows;
+    const targets=(await pool.query(`SELECT DISTINCT r.phone FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE COALESCE(r.send_account_id,c.account_id)=$1 AND c.deleted_at IS NULL AND r.status IN('unknown','awaiting_ack','submitted','delivered') AND r.started_at>now()-interval '7 days' LIMIT 50`,[accountId])).rows;
     const snapshot=await readSnapshot(entry.client,targets.map(r=>r.phone.replace(/^\+/, '')+'@c.us'),Math.floor(Date.now()/1000)-7*86400);
     for(const message of snapshot.messages)await recordMessage(accountId,message,null,false);
     await reconcileUnknown(accountId,entry.client,snapshot.messages);
@@ -193,8 +199,10 @@ async function syncHistory(accountId,entry) {
     console.error('history sync:',err.code||err.name);
   }finally{entry.syncing=false;}
 }
-const eligible = `u.active AND NOT u.locked AND (u.role='owner' OR (u.role='user' AND EXISTS
-  (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id)))`;
+const eligible = `u.active AND NOT u.locked AND c.shared_pool=a.shared_pool
+  AND (NOT c.shared_pool OR (EXISTS(SELECT 1 FROM shared_settings WHERE id=1 AND enabled) AND ${connectedSQL}))
+  AND (u.role='owner' OR (u.role='user' AND (c.shared_pool OR EXISTS
+  (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id))))`;
 async function dispatch(account, entry) {
   if (busy.has(account.id) || !entry.ready || shuttingDown) return;
   busy.add(account.id);
@@ -209,13 +217,13 @@ async function dispatch(account, entry) {
     recipient = await transaction(async db=>{
       await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[campaign.created_by]);
       const current=(await db.query('SELECT * FROM campaigns WHERE id=$1 FOR UPDATE',[campaign.id])).rows[0];
-      if(!current||current.deleted_at||!canDispatch(current))return null;
+      if(!current||current.account_id!==account.id||current.deleted_at||!canDispatch(current))return null;
       const next=(await db.query("SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED",[campaign.id])).rows[0];
       if(!next)return null;
       const reservation=await billing.reserveForSend(db,current.created_by,next.id);
       if(!reservation.ok){await db.query('UPDATE campaigns SET enabled=false,pause_reason=$2 WHERE id=$1',[campaign.id,reservation.pause_reason]);await db.query('UPDATE recipients SET error_code=$2,updated_at=now() WHERE id=$1',[next.id,reservation.error]);return null;}
-      return (await db.query(`UPDATE recipients SET status='sending',started_at=now(),updated_at=now()
-        WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`,[campaign.id])).rows[0];
+      return (await db.query(`UPDATE recipients SET status='sending',started_at=now(),send_account_id=$2,updated_at=now()
+        WHERE id=(SELECT id FROM recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`,[campaign.id,account.id])).rows[0];
     });
     if (!recipient) return;
     // Persist 'sending' before contacting WhatsApp. Crash recovery never blindly resends it.
@@ -283,6 +291,7 @@ async function tick() {
   try {
     await billing.reconcile();
     await billing.recoverCreditTasks(null,group);
+    await shared.rebalance();
     const accounts = (await pool.query('SELECT * FROM accounts WHERE worker_group=$1 ORDER BY created_at', [group])).rows;
     for (const a of accounts) {
       if(a.purge_requested){
@@ -294,7 +303,7 @@ async function tick() {
       }
       if (!a.enabled || a.deleted_at) {
         if (busy.has(a.id)) continue; // in-flight sends can finish; no further sends are dispatched
-        await stopAccount(a.id); await state(a.id, 'disabled'); continue;
+        const running=entries.has(a.id);await stopAccount(a.id);if(running||a.status!=='disabled')await state(a.id, 'disabled');continue;
       }
       if (!entries.has(a.id) && entries.size < maxAccounts && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
       const e = entries.get(a.id);
@@ -304,10 +313,11 @@ async function tick() {
         if (e.client?.pupPage && !e.ready) e.client.pupPage.bringToFront().catch(() => {});
         if(e.ready && Date.now()>=(e.nextSync||0))syncHistory(a.id,e).catch(()=>{});
         if (e.ready) dispatch(a, e).catch(() => {});
-      } else if (entries.size >= maxAccounts) await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
+      } else if (entries.size >= maxAccounts&&a.status!=='capacity_wait') await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
     }
-    await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb) VALUES($1,now(),$2,$3)
-      ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576)]);
+    await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts) VALUES($1,now(),$2,$3,$4)
+      ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb,max_accounts=excluded.max_accounts`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576),maxAccounts]);
+    shared.checkGroup(group,entries).catch(e=>console.error('shared connection check:',e.code||e.name));
   } finally { ticking = false; }
 }
 async function start() {
@@ -320,6 +330,7 @@ async function start() {
   lock.on('error', () => { console.error('Worker ownership lost'); process.exit(1); });
   await pool.query(`UPDATE recipients r SET status='unknown',error_code='WORKER_RESTART_REVIEW_REQUIRED',updated_at=now()
     FROM campaigns c JOIN accounts a ON a.id=c.account_id WHERE r.campaign_id=c.id AND a.worker_group=$1 AND r.status='sending'`, [group]);
+  await shared.recoverInterrupted(group);
   const app = express();
   app.get('/healthz', async (_, res) => { try { await lock.query('SELECT 1'); res.json({ ok: true, role: 'worker', group }); } catch { res.sendStatus(503); } });
   app.use((req, res, next) => authorized(req) ? next() : res.sendStatus(401));

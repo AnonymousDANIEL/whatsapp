@@ -3,6 +3,7 @@ const {validateImage}=require('./media');
 const express = require('express');
 const billing=require('./billing');
 const payments=require('./payments'),vault=require('./secrets'),banks=require('./banks');
+const shared=require('./shared');
 const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -16,6 +17,9 @@ const { createWorkerConnection } = require('./connection');
 
 const SESSION_HOURS = 168;
 const routes = JSON.parse(process.env.WORKER_ROUTES_JSON || '{}');
+const sharedGroups=JSON.parse(process.env.SHARED_WORKER_GROUPS_JSON||'[]');
+assert(Array.isArray(sharedGroups)&&sharedGroups.every(g=>typeof g==='string'&&Object.hasOwn(routes,g)),'共享运行分组配置无效',500);
+const sharedOnly=new Set(sharedGroups),poolRoutes=sharedGroups.length?Object.fromEntries(sharedGroups.map(g=>[g,routes[g]])):routes;
 const browser = createWorkerConnection(routes, process.env.INTERNAL_SECRET);
 const COOKIE = 'wa_session';
 const publicURL = new URL(process.env.PUBLIC_URL || 'http://localhost:3000');
@@ -42,7 +46,7 @@ function userAccess(body,current={active:true,locked:false}){const active=body.a
 async function access(user, id, operate = false) {
   uuid(id);
   const a = (await pool.query(`SELECT a.*,($2='owner') AS operate FROM accounts a
-    WHERE a.id=$1 AND ($2='owner' OR EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$3))`, [id,user.role,user.id])).rows[0];
+    WHERE a.id=$1 AND ($2='owner' OR (NOT a.shared_pool AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$3)))`, [id,user.role,user.id])).rows[0];
   assert(a && (!a.deleted_at || (user.role==='owner'&&!operate)), '无权操作此 WhatsApp 账号',403); return a;
 }
 async function visibleAccounts(user) {
@@ -50,18 +54,21 @@ async function visibleAccounts(user) {
     CASE WHEN $1='owner' THEN COALESCE((SELECT jsonb_agg(jsonb_build_object('id',u.id,'username',u.username,'active',u.active) ORDER BY u.username)
       FROM account_grants g JOIN users u ON u.id=g.user_id WHERE g.account_id=a.id AND u.role='user'),'[]'::jsonb) ELSE NULL END AS assigned_users
     FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
-    WHERE $1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2))
+    WHERE NOT a.shared_pool AND ($1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2)))
     ORDER BY a.created_at`,[user.role,user.id]);
   return rows.map(a=>({...a,status:a.enabled&&(!a.worker_heartbeat_at||Date.now()-+new Date(a.worker_heartbeat_at)>90000)?'worker_offline':a.status}));
 }
 async function visibleAccountIds(user,includeDeleted=true){
- return (await pool.query(`SELECT a.id FROM accounts a WHERE (a.deleted_at IS NULL OR ($1='owner' AND $3))
+ return (await pool.query(`SELECT a.id FROM accounts a WHERE NOT a.shared_pool AND (a.deleted_at IS NULL OR ($1='owner' AND $3))
   AND ($1='owner' OR EXISTS(SELECT 1 FROM account_grants g WHERE g.account_id=a.id AND g.user_id=$2))`,[user.role,user.id,includeDeleted])).rows.map(a=>a.id);
 }
 async function campaignAccess(user, id, modify = false) {
   uuid(id);
   const c = (await pool.query('SELECT * FROM campaigns WHERE id=$1', [id])).rows[0];
   assert(c && (!c.deleted_at || user.role==='owner'), '任务不存在', 404);
+  if(c.shared_pool&&user.role!=='owner'){
+    assert(c.created_by===user.id,'无权查看此共享任务',403);assert(!modify,'只有 Owner 可以管理共享发送任务',403);return c;
+  }
   assert(!modify||user.role==='owner'||c.created_by===user.id,'只能修改自己创建的发送任务',403);
   await access(user, c.account_id, modify);
   assert(!modify || !c.deleted_at, '任务已删除', 409);
@@ -69,7 +76,7 @@ async function campaignAccess(user, id, modify = false) {
 }
 async function grantsFor(actor, grants) {
   assert(Array.isArray(grants) && grants.length <= 200, '账号权限列表无效');
-  for (const g of grants) { assert(typeof g.operate === 'boolean', '账号操作权限无效'); await access(actor, g.account_id, g.operate); }
+  for (const g of grants) { assert(typeof g.operate === 'boolean', '账号操作权限无效'); const a=await access(actor, g.account_id, g.operate);assert(!a.shared_pool,'共享账号不能分配登录权限',403); }
   return [...new Map(grants.map(g => [g.account_id, g])).values()];
 }
 function permissionsFor(actor, values) {
@@ -109,7 +116,7 @@ async function start() {
       next();
     }).catch(next);
   });
-  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur',password_access:!!(req.user.role==='owner'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date()) })));
+  app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes).filter(g=>!sharedOnly.has(g)), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur',password_access:!!(req.user.role==='owner'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date()) })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
   app.post('/api/password', route(async (req, res) => {
     assert(req.user.role === 'owner', '只有 Owner 可以修改密码', 403);
@@ -122,6 +129,7 @@ async function start() {
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
   banks.routes(app,route);
+  shared.routes(app,route,uuid,poolRoutes,workerCommand);
   app.get('/api/notice',route(async(req,res)=>{
     const notice=(await pool.query('SELECT enabled,content_zh,content_en,updated_at FROM workspace_notice WHERE id=1')).rows[0];
     res.json(req.user.role==='owner'||notice.enabled?notice:{enabled:false,content_zh:'',content_en:'',updated_at:null});
@@ -139,7 +147,7 @@ async function start() {
   app.get('/api/accounts', route(async (req, res) => res.json(await visibleAccounts(req.user))));
   app.post('/api/accounts', route(async (req, res) => {
     assert(typeof req.body.label === 'string' && req.body.label.trim().length > 0 && req.body.label.length <= 80, '请输入账号名称');
-    assert(Object.hasOwn(routes, req.body.worker_group), '请选择已配置的浏览器分组');
+    assert(Object.hasOwn(routes, req.body.worker_group)&&!sharedOnly.has(req.body.worker_group), '请选择已配置的浏览器分组');
     const id=crypto.randomUUID();
     await transaction(async db=>{
       if(req.user.role!=='owner'){
@@ -297,6 +305,7 @@ async function start() {
     await billing.canPay(req.user.id);
     const b = req.body; assert(permission(req.user, 'tasks.create'), '没有创建任务权限', 403);
     const a = await access(req.user, b.account_id, true); assert(a.enabled, '账号已停用');
+    assert(!a.shared_pool,'请使用共享 WhatsApp 发送入口');
     assert(typeof b.title === 'string' && b.title.trim().length && b.title.length <= 120, '请输入任务名称');
     const media=validateImage(b.media);
     assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
@@ -318,7 +327,7 @@ async function start() {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
     const c = await campaignAccess(req.user, req.params.id, true);
     const a = await access(req.user, c.account_id, true); assert(a.enabled, '账号已停用');
-    await billing.canPay(c.created_by);
+    await (c.shared_pool?shared:billing).canPay(c.created_by);
     const pending = await transaction(async db => {
       const current = (await db.query('SELECT cancelled FROM campaigns WHERE id=$1 FOR UPDATE', [c.id])).rows[0];
       assert(!current.cancelled, '任务已取消');
@@ -334,7 +343,7 @@ async function start() {
   app.patch('/api/campaigns/:id', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
     const c = await campaignAccess(req.user, req.params.id, true); assert(!c.cancelled, '任务已取消');
-    if(req.body.enabled===true)await billing.canPay(c.created_by);
+    if(req.body.enabled===true)await (c.shared_pool?shared:billing).canPay(c.created_by);
     if(req.body.pacing===true){
       const pace=validatePacing(req.body);
       await pool.query('UPDATE campaigns SET interval_ms=$1,batch_size=$2,send_now=true WHERE id=$3',[pace.interval_ms,pace.batch_size,c.id]);
@@ -363,7 +372,7 @@ async function start() {
     const status = req.query.status || null;
     const rows = (await pool.query('SELECT * FROM recipients WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY id LIMIT 100 OFFSET $3', [c.id, status, (page - 1) * 100])).rows;
     const total = (await pool.query('SELECT count(*)::integer total FROM recipients WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2)', [c.id, status])).rows[0].total;
-    res.json({ rows, total, page });
+    res.json({ rows:c.shared_pool&&req.user.role!=='owner'?rows.map(({send_account_id,...r})=>r):rows, total, page });
   }));
   app.get('/api/campaigns/:id/export', route(async (req, res) => {
     assert(permission(req.user, 'reports.export'), '没有导出权限', 403);
@@ -421,14 +430,15 @@ async function start() {
   }));
   app.delete('/api/campaigns/:id',route(async(req,res)=>{
     const c=await campaignAccess(req.user,req.params.id);
+    assert(!c.shared_pool||req.user.role==='owner','只有 Owner 可以管理共享发送任务',403);
     assert(req.user.role==='owner'||c.created_by===req.user.id,'只能修改自己创建的发送任务',403);
     await transaction(async db=>{
       await db.query('SELECT id FROM campaigns WHERE id=$1 FOR UPDATE',[c.id]);
       assert(!(await db.query("SELECT 1 FROM recipients WHERE campaign_id=$1 AND status='sending'",[c.id])).rowCount,'任务正在发送，请暂停后再删除',409);
       if(req.user.role==='owner'){
-        for(const r of (await db.query('SELECT message_id FROM recipients WHERE campaign_id=$1 AND message_id IS NOT NULL',[c.id])).rows)await db.query('INSERT INTO history_exclusions VALUES($1,$2) ON CONFLICT DO NOTHING',[c.account_id,hash(r.message_id)]);
-        await db.query('DELETE FROM message_history WHERE account_id=$1 AND message_id IN(SELECT message_id FROM recipients WHERE campaign_id=$2)',[c.account_id,c.id]);
-        await db.query('DELETE FROM receipts WHERE account_id=$1 AND message_id IN(SELECT message_id FROM recipients WHERE campaign_id=$2)',[c.account_id,c.id]);
+        for(const r of (await db.query('SELECT message_id,send_account_id FROM recipients WHERE campaign_id=$1 AND message_id IS NOT NULL',[c.id])).rows)await db.query('INSERT INTO history_exclusions VALUES($1,$2) ON CONFLICT DO NOTHING',[r.send_account_id||c.account_id,hash(r.message_id)]);
+        await db.query('DELETE FROM message_history m USING recipients r WHERE r.campaign_id=$1 AND m.account_id=COALESCE(r.send_account_id,$2::uuid) AND m.message_id=r.message_id',[c.id,c.account_id]);
+        await db.query('DELETE FROM receipts m USING recipients r WHERE r.campaign_id=$1 AND m.account_id=COALESCE(r.send_account_id,$2::uuid) AND m.message_id=r.message_id',[c.id,c.account_id]);
         await db.query('DELETE FROM audit WHERE entity_id IN(SELECT message_id FROM recipients WHERE campaign_id=$1)',[c.id]);
         await billing.assertNoHolds(db,c.id);await db.query('DELETE FROM recipients WHERE campaign_id=$1',[c.id]);await db.query('DELETE FROM campaigns WHERE id=$1',[c.id]);await db.query('DELETE FROM audit WHERE entity_id=$1',[c.id]);
       }else{

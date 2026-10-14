@@ -50,6 +50,8 @@ jobs:
         run: npm run check
       - name: Test permissions, schedules and sender results
         run: npm test
+      - name: Shared WhatsApp browser tests
+        run: CHROME_PATH="$(command -v google-chrome)" node test/shared-ui.cjs
 
   containers:
     name: Build ${{ matrix.image }} container
