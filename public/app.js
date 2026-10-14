@@ -3,6 +3,7 @@ let me,csrf,accounts=[],users=[],campaigns=[],overviewData={counts:{},days:[]},p
 if(page==='reports')page='tasks';
 const historyPages={audit:1,messages:1};
 let pageRequest=null,pageRequestVersion=0,lastRenderedPage='',lastRenderSignature='',noticeSignature='';
+let navOpen=new Set(),navStateUser='';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let userStatusFilter=sessionStorage.getItem('wa_user_status_filter')||'active';if(!['active','locked','inactive'].includes(userStatusFilter))userStatusFilter='active';
 const userState=u=>!u.active?'inactive':u.locked?'locked':'active';
@@ -20,7 +21,7 @@ const table=(headers,rows)=>`<div class="table-wrap"><table><thead><tr>${headers
 function toast(text,bad=false){$('#toast').textContent=text;$('#toast').className=bad?'bad':'';$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',6500);}
 async function api(path,options={}){const r=await fetch('/api'+path,{...options,signal:options.signal||AbortSignal.timeout(30000),headers:{'Content-Type':'application/json','X-CSRF-Token':csrf||'',...options.headers}});const data=await r.json().catch(()=>({error:T('服务返回异常','Invalid server response')}));if(!r.ok){if(r.status===401)showLogin();throw Object.assign(new Error(data.code?connectionText(data):translateError(data.error||'Request failed')),{status:r.status});}return data;}
 function staticText(){document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';document.querySelectorAll('[data-zh]').forEach(n=>n.textContent=T(n.dataset.zh,n.dataset.en));$('#language').value=WA_LANG;$('#session-message').textContent=T('正在恢复登录状态…','Restoring your session…');}
-function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
+function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
 function modal(title,html,callback){$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
 function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
@@ -29,15 +30,41 @@ function menuTree(){
  const payments=me.role==='owner'?[node('fpx'),node('banks',[node('bank-deposits'),node('bank-transactions')])]:[...(fpxAvailable()?[node('fpx')]:[]),node('bank-deposits')];
  return [node('overview'),node('billing',payments),node('accounts',[node('tasks'),node('messages')]),...(me.role==='owner'?[node('notices'),node('users',[node('audit'),node('system')])]:[])];
 }
+function menuPath(nodes,target,parents=[]){for(const n of nodes){if(n.page===target)return parents;const path=menuPath(n.children,target,[...parents,n.page]);if(path)return path;}return null;}
+function saveMenuState(){try{sessionStorage.setItem('wa_nav_expanded',JSON.stringify({user_id:me.id,role:me.role,open:[...navOpen]}));}catch{}}
+function restoreMenuState(tree){
+ const scope=me.id+':'+me.role;if(navStateUser===scope)return;navStateUser=scope;navOpen=new Set();let saved;
+ try{saved=JSON.parse(sessionStorage.getItem('wa_nav_expanded'));}catch{}
+ if(saved?.user_id===me.id&&saved.role===me.role&&Array.isArray(saved.open)&&saved.open.length<=20)navOpen=new Set(saved.open.filter(id=>typeof id==='string'));
+ else navOpen=new Set(menuPath(tree,page)||[]);
+}
+function syncMenuState(){
+ document.querySelectorAll('#nav [data-nav-toggle]').forEach(toggle=>{
+  const id=toggle.dataset.navToggle,open=navOpen.has(id),list=document.getElementById('nav-sub-'+id),entry=toggle.previousElementSibling;
+  list.hidden=!open;entry.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-expanded',String(open));
+  const label=entry.querySelector('.nav-label').textContent;toggle.setAttribute('aria-label',T(open?'收起':'展开',open?'Collapse':'Expand')+' '+label);
+ });
+}
+function toggleMenu(id){
+ const open=!navOpen.has(id);if(open)navOpen.add(id);else navOpen.delete(id);saveMenuState();syncMenuState();
+}
 function navigation(){
- const tree=menuTree(),available=[];
- const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{available.push(n.page);const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]);return `<li><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}"><span class="nav-marker" aria-hidden="true">${depth?'↪︎':'⭐'}</span><span class="nav-label">${esc(title)}</span></button>${n.children.length?render(n.children,depth+1):''}</li>`;}).join('')}</ul>`;
- const html=render(tree),signature=JSON.stringify([tree,WA_LANG]);
+ const tree=menuTree(),available=[],branches=[];
+ const collect=nodes=>nodes.forEach(n=>{available.push(n.page);if(n.children.length)branches.push(n.page);collect(n.children);});collect(tree);
  if(!available.includes(page)){page=page==='fpx'?'billing':'overview';sessionStorage.setItem('wa_page',page);}
+ restoreMenuState(tree);navOpen=new Set([...navOpen].filter(id=>branches.includes(id)));saveMenuState();
+ const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]),branch=n.children.length>0,open=navOpen.has(n.page),control='nav-sub-'+n.page;return `<li><div class="nav-row"><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}" ${branch?`aria-expanded="${open}" aria-controls="${control}"`:''}><span class="nav-marker" aria-hidden="true">${depth?'↪︎':'⭐'}</span><span class="nav-label">${esc(title)}</span></button>${branch?`<button type="button" class="nav-toggle" data-nav-toggle="${n.page}" aria-expanded="${open}" aria-controls="${control}" aria-label="${esc(T(open?'收起':'展开',open?'Collapse':'Expand')+' '+title)}"><span class="nav-chevron" aria-hidden="true">›</span></button>`:''}</div>${branch?render(n.children,depth+1).replace('<ul class="nav-children">',`<ul class="nav-children" id="${control}" ${open?'':'hidden'}>`):''}</li>`;}).join('')}</ul>`;
+ const html=render(tree),signature=JSON.stringify([tree,WA_LANG]);
  $('#identity').textContent=me.username;$('#role').textContent=me.role==='owner'?T('Owner · 总管理员','Owner · Administrator'):'USER ID';$('#password-btn').hidden=me.role!=='owner';
  const nav=$('#nav');nav.setAttribute('aria-label',T('主菜单','Main menu'));
- if(nav.dataset.signature!==signature){const scroll=nav.scrollTop;nav.innerHTML=html;nav.dataset.signature=signature;nav.scrollTop=scroll;}
- nav.onclick=e=>{const b=e.target.closest('[data-page]');if(b){page=b.dataset.page;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));}};
+ if(nav.dataset.signature!==signature){const scroll=nav.scrollTop;nav.innerHTML=html;nav.dataset.signature=signature;nav.scrollTop=scroll;}syncMenuState();
+ nav.onclick=e=>{
+  const toggle=e.target.closest('[data-nav-toggle]');if(toggle){toggleMenu(toggle.dataset.navToggle);return;}
+  const b=e.target.closest('[data-page]');if(!b)return;const target=b.dataset.page,branch=branches.includes(target);
+  if(branch)toggleMenu(target);else{for(const id of menuPath(tree,target)||[])navOpen.add(id);saveMenuState();syncMenuState();}
+  if(branch&&page===target)return;page=target;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));
+ };
+ nav.onkeydown=e=>{if(e.key!=='Escape')return;const list=e.target.closest('.nav-children');if(!list)return;const toggle=list.previousElementSibling.querySelector('[data-nav-toggle]');if(toggle&&navOpen.has(toggle.dataset.navToggle)){e.preventDefault();navOpen.delete(toggle.dataset.navToggle);saveMenuState();syncMenuState();toggle.focus();}};
  pageHeader();
 }
 async function boot(){try{const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;showUserPasswords=me.role==='owner'&&r.password_access===true;passwordAccessExpired=false;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;if(me.role!=='owner'){paymentSettings=await api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false};});if(!me)return;}$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}}catch(e){if(e.status===401)return;if(me)toast(e.message,true);else{$('#session-message').textContent=T('暂时无法连接服务器，登录状态尚未确认。','Cannot reach the server. Your session has not been checked yet.');$('#session-retry').hidden=false;}}}
