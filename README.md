@@ -4,6 +4,12 @@
 
 源码仓库：https://github.com/AnonymousDANIEL/whatsapp 。后续更新采用直接提交此仓库的方式，并通过 GitHub Actions 自动运行测试和两个 Docker 镜像构建。完整流程见 [后续更新说明](docs/UPDATE_WORKFLOW.md)。Railway 需要首次连接仓库并配置服务；启用 Autodeploys 和 Wait for CI 后，后续提交可触发自动更新。
 
+## 2026-10-14 侧栏分组
+
+- Owner 的主菜单按 **总览 → 余额 / 充值 → WhatsApp 账号 → 公告管理 → USER ID 管理** 排列。余额下为 Online FPX、银行管理；充值单据和银行流水再嵌套在银行管理下。WhatsApp 下为发送任务 / 发送记录，USER ID 管理下为操作记录 / 服务状态。
+- USER 的主菜单为 **总览 → 余额 / 充值 → WhatsApp 账号**，余额下为可用的 Online FPX / 银行充值，WhatsApp 下为发送任务 / 发送记录。主菜单用 ⭐，下级用 ↪︎ 和缩进，当前页及所属组有提示。
+- Online FPX 设置、充值和订单集中到余额下的独立入口；余额 / 充值保留余额、流水及 Owner 的手动管理。FPX 关闭、配置未完成或 Sandbox 时，USER 入口隐藏；当前正在查看时回到余额。Owner 始终可进入 FPX 设置和核对旧订单。
+
 ## 2026-10-14 银行转账充值、单据与流水
 
 - USER 在 **银行充值** 选择银行和金额，创建充值后查看收款账号 / 二维码，转账后仅上传单据。没有 Langkah、Rujukan、Cara Transfer、Masa Transfer、Nama Pemindah 输入；只能查看自己的订单和单据。

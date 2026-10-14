@@ -7,10 +7,10 @@ const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>
 let userStatusFilter=sessionStorage.getItem('wa_user_status_filter')||'active';if(!['active','locked','inactive'].includes(userStatusFilter))userStatusFilter='active';
 const userState=u=>!u.active?'inactive':u.locked?'locked':'active';
 let billingData=null,billingUser='',showUserPasswords=false,passwordAccessExpired=false,paymentSettings={},paymentOrders=[],noticeData={enabled:false};
-const returnOrder=new URLSearchParams(location.search).get('topup');if(returnOrder)page='billing';
+const returnOrder=new URLSearchParams(location.search).get('topup');if(returnOrder)page='fpx';
 const money=n=>'RM '+(Number(n||0)/10000).toFixed(4);
 const credits=n=>BigInt(n??0).toString();
-const labels={billing:['余额 / 充值','Credit / top-up'],overview:['总览','Overview'],accounts:['WhatsApp 账号','WhatsApp accounts'],tasks:['发送任务','Send tasks'],messages:['发送记录','Message history'],users:['USER ID 管理','USER IDs'],audit:['操作记录','Activity log'],system:['服务状态','Service status'],notices:['公告管理','Notices'],banks:['银行管理','Banks'],'bank-deposits':['银行充值','Bank deposits'],'bank-transactions':['银行流水','Bank transactions']};
+const labels={fpx:['Online FPX','Online FPX'],billing:['余额 / 充值','Credit / top-up'],overview:['总览','Overview'],accounts:['WhatsApp 账号','WhatsApp accounts'],tasks:['发送任务','Send tasks'],messages:['发送记录','Message history'],users:['USER ID 管理','USER IDs'],audit:['操作记录','Activity log'],system:['服务状态','Service status'],notices:['公告管理','Notices'],banks:['银行管理','Banks'],'bank-deposits':['银行充值','Bank deposits'],'bank-transactions':['银行流水','Bank transactions']};
 const states={ready:['已连接','Connected'],scan_required:['待手机扫码','Scan to link'],starting:['启动中','Starting'],loading:['同步中','Syncing'],stopped:['待启动','Not started'],disabled:['停用','Inactive'],error:['连接需恢复','Reconnecting needed'],worker_offline:['服务暂时离线','Service offline'],capacity_wait:['分组已满','Group full'],pending:['等待','Waiting'],sending:['发送中','Sending'],awaiting_ack:['已创建，等待回执','Created · awaiting receipt'],submitted:['发送成功（已提交）','Sent successfully (submitted)'],delivered:['已送达','Delivered'],read:['已读','Read'],failed:['失败','Failed'],invalid:['失败：号码无效','Failed: invalid number'],unknown:['结果待核对','Needs review'],cancelled:['已取消','Cancelled']};
 const state=s=>states[s]?T(...states[s]):s;
 const date=s=>s?new Date(s).toLocaleString(WA_LANG==='en'?'en-GB':'zh-CN',{timeZone:'Asia/Kuala_Lumpur',hourCycle:'h23'}):'—';
@@ -23,10 +23,26 @@ function staticText(){document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';
 function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
 function modal(title,html,callback){$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
-function navigation(){const available=Object.keys(labels).filter(p=>me.role==='owner'||!['users','audit','system','notices','banks','bank-transactions'].includes(p));if(!available.includes(page))page='overview';$('#identity').textContent=me.username;$('#role').textContent=me.role==='owner'?T('Owner · 总管理员','Owner · Administrator'):'USER ID';$('#password-btn').hidden=me.role!=='owner';$('#nav').innerHTML=available.map(p=>`<button data-page="${p}">${p==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[p])}</button>`).join('');$('#nav').onclick=e=>{const b=e.target.closest('[data-page]');if(b){page=b.dataset.page;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));}};}
-async function boot(){try{const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;showUserPasswords=me.role==='owner'&&r.password_access===true;passwordAccessExpired=false;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}}catch(e){if(e.status===401)return;if(me)toast(e.message,true);else{$('#session-message').textContent=T('暂时无法连接服务器，登录状态尚未确认。','Cannot reach the server. Your session has not been checked yet.');$('#session-retry').hidden=false;}}}
+function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
+function menuTree(){
+ const node=(page,children=[])=>({page,children});
+ const payments=me.role==='owner'?[node('fpx'),node('banks',[node('bank-deposits'),node('bank-transactions')])]:[...(fpxAvailable()?[node('fpx')]:[]),node('bank-deposits')];
+ return [node('overview'),node('billing',payments),node('accounts',[node('tasks'),node('messages')]),...(me.role==='owner'?[node('notices'),node('users',[node('audit'),node('system')])]:[])];
+}
+function navigation(){
+ const tree=menuTree(),available=[];
+ const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{available.push(n.page);const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]);return `<li><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}"><span class="nav-marker" aria-hidden="true">${depth?'↪︎':'⭐'}</span><span class="nav-label">${esc(title)}</span></button>${n.children.length?render(n.children,depth+1):''}</li>`;}).join('')}</ul>`;
+ const html=render(tree),signature=JSON.stringify([tree,WA_LANG]);
+ if(!available.includes(page)){page=page==='fpx'?'billing':'overview';sessionStorage.setItem('wa_page',page);}
+ $('#identity').textContent=me.username;$('#role').textContent=me.role==='owner'?T('Owner · 总管理员','Owner · Administrator'):'USER ID';$('#password-btn').hidden=me.role!=='owner';
+ const nav=$('#nav');nav.setAttribute('aria-label',T('主菜单','Main menu'));
+ if(nav.dataset.signature!==signature){const scroll=nav.scrollTop;nav.innerHTML=html;nav.dataset.signature=signature;nav.scrollTop=scroll;}
+ nav.onclick=e=>{const b=e.target.closest('[data-page]');if(b){page=b.dataset.page;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));}};
+ pageHeader();
+}
+async function boot(){try{const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;showUserPasswords=me.role==='owner'&&r.password_access===true;passwordAccessExpired=false;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;if(me.role!=='owner'){paymentSettings=await api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false};});if(!me)return;}$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}}catch(e){if(e.status===401)return;if(me)toast(e.message,true);else{$('#session-message').textContent=T('暂时无法连接服务器，登录状态尚未确认。','Cannot reach the server. Your session has not been checked yet.');$('#session-retry').hidden=false;}}}
 function pageHeader(){
- const title=page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[page]);if($('#page-title').textContent!==title)$('#page-title').textContent=title;document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+ const title=page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[page]);if($('#page-title').textContent!==title)$('#page-title').textContent=title;const current=$('#nav [data-page="'+page+'"]');document.querySelectorAll('#nav [data-page]').forEach(b=>{const active=b===current;b.classList.toggle('active',active);b.classList.toggle('ancestor',!active&&!!current&&b.closest('li').contains(current));if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
 }
 function visiblePageSignature(data){
  const content={...data};delete content.notice;
@@ -41,6 +57,8 @@ async function loadPage(quiet=false){
  const timeout=setTimeout(()=>controller.abort('timeout'),15000),get=path=>api(path,{signal:controller.signal});
  try{
   const jobs={};
+  if(me.role!=='owner'||requested==='fpx')jobs.paymentSettings=get('/payments/settings').catch(e=>{if(e.status===401||controller.signal.aborted||me?.role==='owner')throw e;return{enabled:false};});
+  if(requested==='fpx')jobs.paymentOrders=get('/payments/orders');
   if(requested==='banks')jobs.banks=get('/banks');
   if(requested==='bank-deposits'){jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
   if(requested==='bank-transactions'){jobs.banks=get('/banks');jobs.transactions=get('/bank-transactions?'+bankTransactionQuery());}
@@ -54,22 +72,24 @@ async function loadPage(quiet=false){
   if(requested==='system')jobs.system=get('/health');
   if(requested==='billing'){
    if(me.role==='owner')jobs.users=get('/users?compact=true');
-   jobs.billing=get('/billing'+(billingUser?'?user_id='+encodeURIComponent(billingUser):''));jobs.paymentSettings=get('/payments/settings');jobs.paymentOrders=get('/payments/orders');
+   jobs.billing=get('/billing'+(billingUser?'?user_id='+encodeURIComponent(billingUser):''));
   }
   const entries=Object.entries(jobs),values=await Promise.all(entries.map(([,promise])=>promise));
   if(version!==pageRequestVersion||requested!==page||!me)return;
   const data=Object.fromEntries(entries.map(([key],i)=>[key,values[i]]));
+  if(data.paymentSettings){paymentSettings=data.paymentSettings;navigation();if(page!==requested)return await loadPage();}
+  if(data.paymentOrders)paymentOrders=data.paymentOrders;
   if(data.accounts)accounts=data.accounts;if(data.notice)noticeData=data.notice;renderNotice();
   if(data.overview)overviewData=data.overview;if(data.campaigns)campaigns=data.campaigns;if(data.users)users=data.users;
   if(requested==='users'&&showUserPasswords&&!users.some(u=>u.password_access)){showUserPasswords=false;passwordAccessExpired=true;}
-  if(data.billing){billingData=data.billing;paymentSettings=data.paymentSettings;paymentOrders=data.paymentOrders;}
+  if(data.billing)billingData=data.billing;
   if(requested==='messages')updateHistorySync();
   if(quiet&&requested==='notices'&&$('#notice-form')?.dataset.dirty)return;
   const signature=visiblePageSignature(data);if(quiet&&lastRenderedPage===requested&&signature===lastRenderSignature)return;
   const scrollX=window.scrollX,scrollY=window.scrollY,tableScroll=[...document.querySelectorAll('#content .table-wrap')].map(n=>n.scrollLeft);
   if(['banks','bank-deposits','bank-transactions'].includes(requested))renderBankPage(requested,data);
   if(requested==='overview')overview();if(requested==='accounts')accountPage();if(requested==='tasks')taskPage();if(requested==='users')userPage();
-  if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage();if(requested==='system')systemPage(data.system);if(requested==='notices')noticePage();
+  if(requested==='fpx')fpxPage();if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage();if(requested==='system')systemPage(data.system);if(requested==='notices')noticePage();
   lastRenderedPage=requested;lastRenderSignature=signature;
   if(quiet){document.querySelectorAll('#content .table-wrap').forEach((n,i)=>{n.scrollLeft=tableScroll[i]||0;});window.scrollTo(scrollX,scrollY);}
  }catch(error){
@@ -167,16 +187,16 @@ function creditLedger(rows,format=money){
 function billingPage(){
  const b=billingData,owner=me.role==='owner',u=b.user;
  const balanceCard=`<div class="card"><div class="label">${T('可用余额','Available credit')} · ${esc(u.username)}</div><div class="value">${u.role==='owner'?T('无限','Unlimited'):credits(u.credit_units)}</div></div>`;
- if(!owner){$('#content').innerHTML=`<div class="cards balance-only">${balanceCard}</div>${creditLedger(b.ledger||[],credits)}`;$('#content').insertAdjacentHTML('beforeend',paymentPanel());bindPayments();return;}
+ if(!owner){$('#content').innerHTML=`<div class="cards balance-only">${balanceCard}</div>${creditLedger(b.ledger||[],credits)}`;return;}
 
  $('#content').innerHTML=`${owner?`<div class="panel"><label>USER ID<select id="billing-user">${users.map(x=>`<option value="${x.id}" ${x.id===u.id?'selected':''}>${esc(x.username)}${x.role==='owner'?' · Owner':''}</option>`).join('')}</select></label></div>`:''}<div class="cards">${balanceCard}<div class="card"><div class="label">${T('待结算预扣','On hold')}</div><div class="value">${money(b.held_units)}</div></div><div class="card"><div class="label">${T('每条消息单价','Price per message')}</div><div class="value">${b.price_units==null?T('尚未定价','Not configured'):money(b.price_units)}</div></div></div><div class="toolbar">${owner?`<button id="billing-price">${T('修改统一单价','Set shared rate')}</button>${u.role!=='owner'?`<button id="billing-adjust">${T('充值 / 扣减','Top up / deduct')}</button>`:''}`:''}</div><p class="muted">${T('发送前预扣，成功提交服务器后结算一次。失败或无效号码退回；待回执或结果未知保留预扣。改价只影响之后开始发送的消息，不修改旧账。','Credit is reserved before sending and charged once after server submission. Failed or invalid numbers are refunded; unconfirmed messages stay on hold. Rate changes affect subsequent sends only, never past entries.')}</p>${b.held.length?`<section class="panel"><h3>${T('待结算消息（最近 100 条）','Messages on hold (latest 100)')}</h3>${table([T('消息编号','Message ID'),T('状态','Status'),T('预扣金额','Reserved'),T('操作','Actions')],b.held.map(r=>`<tr><td>#${esc(r.recipient_id)}</td><td>${badge(r.status)}</td><td>${money(r.amount_units)}</td><td>${owner&&r.status==='unknown'?`<button data-resolve="${r.recipient_id}">${T('人工核对','Review')}</button>`:'—'}</td></tr>`))}</section>`:''}${creditLedger(b.ledger)}<p class="muted">${T('删除聊天或任务不会更改余额，也不会删除余额流水。','Deleting chats or tasks does not change credit or erase the credit ledger.')}</p>`;
- $('#content').insertAdjacentHTML('beforeend',paymentPanel());bindPayments();
  if(owner){$('#billing-user').onchange=e=>{billingUser=e.target.value;loadPage().catch(e=>toast(e.message,true));};$('#billing-price').onclick=()=>modal(T('统一每条价格','Shared price per message'),`<form><p>${T('所有 USER 生效；之后开始发送的消息按新价格计算。','Applies to all USERs. Messages that start sending afterward use the new rate.')}</p><label>MYR / ${T('条','message')}<input name="price" type="number" min="0.0001" max="10000" step="0.0001" required value="${b.price_units==null?'':(Number(b.price_units)/10000).toFixed(4)}"></label>${submit()}</form>`,f=>api('/billing/price',{method:'PUT',body:JSON.stringify({price:f.elements.namedItem('price').value})}));
  if($('#billing-adjust'))$('#billing-adjust').onclick=()=>{const request_id=crypto.randomUUID();modal(T('手动充值 / 扣减','Manual top-up / deduction'),`<form><p>USER ID: ${esc(u.username)}</p><label>${T('操作','Action')}<select name="direction"><option value="add">${T('增加余额','Add credit')}</option><option value="subtract">${T('扣减余额','Deduct credit')}</option></select></label><label>RM<input name="amount" type="number" min="0.0001" step="0.0001" max="99999999" required></label><label>${T('原因 / 付款备注','Reason / payment note')}<input name="note" maxlength="200" required></label>${submit()}</form>`,f=>api('/billing/adjust',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),user_id:u.id,request_id})}));};
  document.querySelectorAll('[data-resolve]').forEach(el=>el.onclick=()=>modal(T('核对不确定的发送','Review uncertain send'),`<form><p>${T('请先核对真实聊天记录。结算仅调整余额，不会重发消息或修改消息状态。退款后若收到延迟回执，不会再次自动扣费。','Check the actual chat first. This only settles credit; it neither resends nor changes message status. Late receipts after a manual refund will not charge again.')}</p><label>${T('结算方式','Resolution')}<select name="action"><option value="charge">${T('已确认成功：结算扣费','Confirmed success: charge')}</option><option value="refund">${T('退回预扣余额','Refund reserved credit')}</option></select></label><label>${T('核对说明','Review note')}<input name="note" maxlength="200" required></label>${submit()}</form>`,f=>api('/billing/resolve',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),recipient_id:el.dataset.resolve})})));
  }
 }
 
+function fpxPage(){$('#content').innerHTML=paymentPanel();bindPayments();}
 function paymentPanel(){const owner=me.role==='owner',ready=paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;if(!owner&&!ready)return '';const status=!paymentSettings.enabled?T('关闭','Off'):ready?T('可使用','Available'):paymentSettings.sandbox&&paymentSettings.configured?T('测试模式','Test mode'):T('配置未完成','Setup incomplete');return `<section class="panel"><div class="toolbar"><h3>Online FPX · ${status}</h3>${owner?`<button id="payment-config">${T('在线充值设置 / 开关','Online payment settings / switch')}</button>`:`<button id="online-topup" class="primary" ${ready?'':'disabled'}>${T('Online FPX 充值','Top up with Online FPX')}</button>`}</div>${!ready?`<p class="muted">${T('在线充值暂时不可用，请稍后再试。','Online top-up is currently unavailable. Please try later.')}</p>`:''}${table([T('时间 UTC+8','Time UTC+8'),'USER ID',T('金额','Amount'),T('状态','Status'),T('操作','Actions')],paymentOrders.map(o=>`<tr><td>${date(o.created_at)}</td><td>${esc(o.username)}</td><td>RM ${(o.amount_cents/100).toFixed(2)}${o.sandbox?' · Sandbox':''}</td><td>${esc(({paid:T('已入账','Credited'),pending:T('待付款 / 核对','Awaiting payment / verification'),creating:T('创建中','Creating'),create_failed:T('创建结果待核对','Creation needs review')})[o.state])}</td><td>${o.state!=='paid'?`${o.payment_url&&!owner&&ready?`<a href="${esc(o.payment_url)}" target="_blank" rel="noopener">${T('继续付款','Continue payment')}</a>`:''}<button data-payment-check="${o.id}">${T('核对付款','Check payment')}</button>`:'—'}</td></tr>`))}</section>`;}
 function bindPayments(){
  document.querySelectorAll('[data-payment-check]').forEach(b=>b.onclick=()=>action(b,()=>api('/payments/orders/'+b.dataset.paymentCheck+'/check',{method:'POST',body:'{}'})));
