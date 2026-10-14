@@ -2,7 +2,7 @@
 const {validateImage}=require('./media');
 const express = require('express');
 const billing=require('./billing');
-const payments=require('./payments'),vault=require('./secrets');
+const payments=require('./payments'),vault=require('./secrets'),banks=require('./banks');
 const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -83,7 +83,7 @@ async function start() {
   const app = express();
   app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
   app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], frameSrc: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'self'"] } }, crossOriginEmbedderPolicy: false }));
-  app.use(express.json({ limit: '8mb' }));
+  app.use(express.json({ limit: '8mb',verify(req,res,body){if(req.originalUrl.startsWith('/api/banks/feed/'))req.rawBankBody=Buffer.from(body);} }));
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
@@ -101,6 +101,7 @@ async function start() {
     sessionCookie(res, token); await audit(u.id, 'login', u.id); res.json({ ok: true });
   }));
   payments.callbackRoutes(app,route,uuid);
+  banks.callbackRoutes(app,route);
   app.use('/api', (req, res, next) => {
     getSession(req).then(user => {
       assert(user, '登录已过期，或账号已停用', 401); req.user = user;
@@ -120,6 +121,7 @@ async function start() {
   }));
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
+  banks.routes(app,route);
   app.get('/api/notice',route(async(req,res)=>{
     const notice=(await pool.query('SELECT enabled,content_zh,content_en,updated_at FROM workspace_notice WHERE id=1')).rows[0];
     res.json(req.user.role==='owner'||notice.enabled?notice:{enabled:false,content_zh:'',content_en:'',updated_at:null});
@@ -456,7 +458,8 @@ async function start() {
     if (res.headersSent) return next(err);
     const status = err.status || (err.code === '23505' ? 409 : 500);
     if (status >= 500) console.error('request failed:', err.code || err.name);
-    res.status(status).json({ error: err.code === '23505' ? '账号 ID 已存在' : status >= 500 && !err.publicMessage ? '服务暂时不可用，请查看服务状态' : err.message, ...(err.publicMessage ? { code: err.code } : {}) });
+    const conflict={bank_accounts_account_number_key:'Bank account already exists',bank_transactions_pkey:'Bank transaction ID already exists',bank_receipt_once:'Receipt already used'};
+    res.status(status).json({ error: err.code === '23505' ? conflict[err.constraint]||'账号 ID 已存在' : status >= 500 && !err.publicMessage ? '服务暂时不可用，请查看服务状态' : err.message, ...(err.publicMessage ? { code: err.code } : {}) });
   });
   const server = http.createServer(app), wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
   server.on('upgrade', async (req, socket, head) => {

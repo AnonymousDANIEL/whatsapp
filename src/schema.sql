@@ -131,8 +131,12 @@ CREATE TABLE IF NOT EXISTS topup_orders(
  bill_id text UNIQUE,payment_url text,config_cipher text NOT NULL,sandbox boolean NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now(),paid_at timestamptz,last_checked_at timestamptz
 );
-ALTER TABLE credit_ledger DROP CONSTRAINT IF EXISTS credit_ledger_kind_check;
-ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_kind_check CHECK(kind IN ('hold','charged','refunded','adjustment','online_topup'));
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='credit_ledger'::regclass AND conname='credit_ledger_kind_check' AND pg_get_constraintdef(oid) LIKE '%bank_topup%') THEN
+  ALTER TABLE credit_ledger DROP CONSTRAINT IF EXISTS credit_ledger_kind_check;
+  ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_kind_check CHECK(kind IN ('hold','charged','refunded','adjustment','online_topup','bank_topup'));
+ END IF;
+END $$;
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS order_id uuid UNIQUE REFERENCES topup_orders(id);
 CREATE INDEX IF NOT EXISTS orders_user ON topup_orders(user_id,created_at DESC);
 
@@ -159,3 +163,39 @@ UPDATE campaigns c SET pause_reason='credit' WHERE NOT EXISTS(SELECT 1 FROM app_
  AND NOT EXISTS(SELECT 1 FROM audit a WHERE a.entity_id=c.id::text AND a.action='campaign.enabled' AND a.details->>'enabled'='false'
   AND a.id=(SELECT max(b.id) FROM audit b WHERE b.entity_id=c.id::text AND b.action IN ('campaign.enabled','campaign.send_now')));
 INSERT INTO app_migrations(name) VALUES('credit_auto_resume_v1') ON CONFLICT DO NOTHING;
+
+-- Owner-controlled bank deposits. Receipts alone never authorize credit.
+CREATE TABLE IF NOT EXISTS bank_settings(id integer PRIMARY KEY CHECK(id=1),enabled boolean NOT NULL DEFAULT false);
+INSERT INTO bank_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS bank_accounts(
+ id uuid PRIMARY KEY,bank_name text NOT NULL,account_name text NOT NULL,account_number text UNIQUE NOT NULL,
+ status text NOT NULL DEFAULT 'disabled' CHECK(status IN ('active','maintenance','disabled')),
+ qr jsonb,remark text NOT NULL DEFAULT '',display_order integer NOT NULL DEFAULT 0,
+ feed_key_cipher text,feed_maintenance boolean NOT NULL DEFAULT false,feed_seen_at timestamptz,
+ reported_balance_cents bigint,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS bank_deposits(
+ id uuid PRIMARY KEY,bank_id uuid NOT NULL REFERENCES bank_accounts(id),user_id uuid NOT NULL REFERENCES users(id),
+ request_id uuid UNIQUE NOT NULL,amount_cents integer NOT NULL CHECK(amount_cents BETWEEN 100 AND 1000000),
+ state text NOT NULL DEFAULT 'awaiting_slip' CHECK(state IN ('awaiting_slip','pending','review','credited','rejected')),
+ bank_snapshot jsonb NOT NULL,receipt bytea,receipt_mime text,receipt_sha256 text,
+ reason_code text,created_at timestamptz NOT NULL DEFAULT now(),expires_at timestamptz NOT NULL DEFAULT now()+interval '24 hours',
+ submitted_at timestamptz,checked_at timestamptz,credited_at timestamptz,reviewed_by uuid REFERENCES users(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bank_receipt_once ON bank_deposits(receipt_sha256) WHERE receipt_sha256 IS NOT NULL AND state<>'rejected';
+CREATE INDEX IF NOT EXISTS deposits_user ON bank_deposits(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS deposits_bank_pending ON bank_deposits(bank_id,created_at) WHERE state IN ('pending','review');
+CREATE TABLE IF NOT EXISTS bank_transactions(
+ bank_id uuid NOT NULL REFERENCES bank_accounts(id),transaction_id text NOT NULL,
+ direction text NOT NULL CHECK(direction IN ('in','out')),amount_cents bigint NOT NULL CHECK(amount_cents>0),
+ occurred_at timestamptz NOT NULL,description text NOT NULL DEFAULT '',reference text NOT NULL DEFAULT '',
+ source text NOT NULL DEFAULT 'feed' CHECK(source IN ('feed','owner')),
+ deposit_id uuid UNIQUE REFERENCES bank_deposits(id),created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(bank_id,transaction_id)
+);
+CREATE INDEX IF NOT EXISTS bank_transactions_time ON bank_transactions(bank_id,occurred_at DESC);
+CREATE TABLE IF NOT EXISTS bank_feed_events(
+ bank_id uuid NOT NULL REFERENCES bank_accounts(id),event_id uuid NOT NULL,body_hash text NOT NULL,
+ processed boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(bank_id,event_id)
+);
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS deposit_id uuid UNIQUE REFERENCES bank_deposits(id);
