@@ -73,3 +73,9 @@ jobs:
           persist-credentials: false
       - name: Verify production image builds
         run: docker build --progress=plain --file "${{ matrix.dockerfile }}" --tag "whatsapp-${{ matrix.image }}:ci" .
+      - name: Test isolated worker browser startup and cleanup
+        if: matrix.image == 'worker'
+        run: >-
+          docker run --rm --network none --cpus 2 --memory 2g
+          --mount type=bind,source="$GITHUB_WORKSPACE/test/browser-smoke.cjs",target=/app/test/browser-smoke.cjs,readonly
+          --entrypoint node whatsapp-worker:ci /app/test/browser-smoke.cjs

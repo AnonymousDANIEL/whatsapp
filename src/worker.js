@@ -16,6 +16,7 @@ const { messageId,validAck,messageAck } = require('./messages');
 const {readSnapshot}=require('./history-sync');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
+const lifecycle=require('./browser-lifecycle');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
@@ -38,12 +39,13 @@ async function state(id,status,error=null,phone=null){
   WHERE id=$4 AND worker_group=$5`,[status,error,phone,id,group]);
 }
 function processChild(entry, executable, args, env) {
+  assert(lifecycle.current(entries,entry),'DESKTOP_CLOSED');
   const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
   entry.children.push(child);
   let stderr = '';
   child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-4000); });
-  child.on('error', error => { console.error(describeStartupError(error, 'desktop-' + executable)); fail(entry.id, 'DESKTOP_START_FAILED').catch(() => {}); });
-  child.on('exit', (code, signal) => { if (!entry.closing && !shuttingDown) { console.error(describeStartupError(new Error(executable + ' exit=' + code + ' signal=' + signal + ' ' + stderr), 'desktop')); fail(entry.id, 'DESKTOP_EXITED').catch(() => {}); } });
+  child.on('error', error => { console.error(describeStartupError(error, 'desktop-' + executable)); fail(entry.id, 'DESKTOP_START_FAILED',entry).catch(() => {}); });
+  child.on('exit', (code, signal) => { if (!entry.closing && !shuttingDown) { console.error(describeStartupError(new Error(executable + ' exit=' + code + ' signal=' + signal + ' ' + stderr), 'desktop')); fail(entry.id, 'DESKTOP_EXITED',entry).catch(() => {}); } });
   return child;
 }
 async function waitPort(port) {
@@ -54,14 +56,9 @@ async function waitPort(port) {
   }
   throw new Error('DESKTOP_NOT_READY');
 }
-async function stopAccount(id) {
-  const e = entries.get(id); if (!e || e.closing) return;
-  e.closing = true; e.ready = false;
-  for (const ws of e.sockets) ws.close();
-  try { await Promise.race([e.client?.destroy(), pause(5000)]); } catch {}
-  e.client?.pupBrowser?.process()?.kill('SIGKILL');
-  for (const child of e.children) child.kill('SIGTERM');
-  entries.delete(id);
+async function stopAccount(id,expected=null) {
+  const entry=entries.get(id);if(!entry||(expected&&entry!==expected))return;
+  return lifecycle.retire(entries,entry);
 }
 let identityWork = Promise.resolve();
 async function desktopIdentity(id) {
@@ -84,10 +81,10 @@ class IsolatedAuth extends LocalAuth {
   constructor(options, uid) { super(options); this.uid = uid; }
   async beforeBrowserInitialized() { await super.beforeBrowserInitialized(); if(await clearStaleProfileLock(this.userDataDir))console.log('Removed stale Chromium lock from prior container'); await execute('chown', ['-R', this.uid + ':' + this.uid, this.userDataDir]); await fs.chmod(this.userDataDir, 0o700); }
 }
-async function fail(id, reason) {
-  const entry = entries.get(id); if (!entry || entry.closing) return;
+async function fail(id, reason, expected=null) {
+  const entry = entries.get(id); if (!entry || entry.closing || expected&&entry!==expected) return;
   console.error(describeStartupError(new Error(reason), 'account-browser'));
-  await stopAccount(id);
+  await stopAccount(id,entry);
   const n = (failures.get(id) || 0) + 1; failures.set(id, n);
   retryAt.set(id, Date.now() + Math.min(300000, 10000 * 2 ** Math.min(n, 5)));
   await state(id, 'error', reason);
@@ -104,14 +101,17 @@ async function receiveAck(id, messageId, ack) {
 }
 async function startAccount(account) {
   if (entries.has(account.id)) return;
+  if(lifecycle.starting(entries)){await state(account.id,'starting');return;}
   assert(entries.size < maxAccounts, 'WORKER_CAPACITY_REACHED', 409);
   let slot = 0; while ([...entries.values()].some(e => e.slot === slot)) slot++;
-  const e = { id: account.id, slot, controlPort: 5900 + slot * 2, viewPort: 5901 + slot * 2, children: [], sockets: new Set(), ready: false, closing: false, started: Date.now() };
+  const e = { id: account.id, slot, controlPort: 5900 + slot * 2, viewPort: 5901 + slot * 2, children: [], sockets: new Set(), ready: false, closing: false, launching:true, awaitingScan:false, launchAbort:new AbortController(), started: Date.now() };
   entries.set(account.id, e);
+  e.setup=(async()=>{
   try {
     await state(account.id, 'starting');
     const display = ':' + (100 + slot);
     const identity = await desktopIdentity(account.id); e.uid = identity.uid;
+    assert(lifecycle.current(entries,e),'DESKTOP_CLOSED');
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
     e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
@@ -129,29 +129,39 @@ async function startAccount(account) {
       webVersionCache: { type: 'none' },
       takeoverOnConflict: false,
       puppeteer: { headless: false, executablePath: process.env.CHROMIUM_PATH || '/app/bin/browser', defaultViewport: null,
-        env: { ...e.env, WA_BROWSER_UID: String(e.uid) }, timeout: 60000,
+        env: { ...e.env, WA_BROWSER_UID: String(e.uid) }, signal:e.launchAbort.signal, timeout:90000, protocolTimeout:90000,
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-size=1366,900', '--window-position=0,0', '--disable-session-crashed-bubble', '--no-first-run'] }
     });
-    e.client.on('qr', () => { e.ready=false; state(account.id, 'scan_required').catch(() => {}); });
-    e.client.on('authenticated', () => { e.ready=false; state(account.id, 'loading').catch(() => {}); });
-    e.client.on('auth_failure', () => { fail(account.id, 'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED').catch(() => {}); });
-    e.client.on('disconnected', reason => { fail(account.id, 'DISCONNECTED_' + String(reason).slice(0, 60)).catch(() => {}); });
-    e.client.on('ready', () => {
-      if (e.closing) return;
-      e.ready = true; for(const ws of e.sockets)if(ws.scanOnly)ws.close(); failures.delete(account.id); retryAt.delete(account.id);
-      state(account.id, 'ready', null, account.shared_pool?linkedPhone(e):(e.client.info?.wid?.user||null)).catch(() => {});
-      e.client.pupPage.bringToFront().catch(() => {});
+    const on=(event,callback)=>e.client.on(event,lifecycle.guard(entries,e,callback));
+    on('qr', () => { e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
+    on('authenticated', () => { e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
+    on('auth_failure', () => { fail(account.id,'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED',e).catch(()=>{}); });
+    on('disconnected', reason => { fail(account.id,'DISCONNECTED_'+String(reason).slice(0,60),e).catch(()=>{}); });
+    on('ready', () => {
+      e.ready=true;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();
+      for(const ws of e.sockets)if(ws.scanOnly)ws.close();failures.delete(account.id);retryAt.delete(account.id);
+      state(account.id,'ready',null,account.shared_pool?linkedPhone(e):(e.client.info?.wid?.user||null)).catch(()=>{});
+      e.client.pupPage.bringToFront().catch(()=>{});
       syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
     });
-    e.client.on('message_ack', (message, ack) => { receiveAck(account.id, messageId(message), ack).catch(err => console.error('receipt persistence:', err.code || err.name)); });
-    e.client.on('message_create', message => { recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name)); });
-    e.client.initialize().then(() => {
-      if (!e.closing) {
-        e.client.pupPage?.bringToFront().catch(() => {});
-        e.client.pupBrowser?.on('disconnected', () => { fail(account.id, 'BROWSER_EXITED').catch(() => {}); });
+    on('message_ack',(message,ack)=>{receiveAck(account.id,messageId(message),ack).catch(err=>console.error('receipt persistence:',err.code||err.name));});
+    on('message_create',message=>{recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name));});
+    e.client.initialize().then(async()=>{
+      if(!lifecycle.current(entries,e)){
+        try{await e.client.destroy();}catch{}
+        return;
       }
-    }).catch(error => { console.error(describeStartupError(error, 'chromium-initialize')); fail(account.id, 'WHATSAPP_INITIALIZATION_FAILED').catch(() => {}); });
-  } catch (err) { await fail(account.id, err.message || 'START_FAILED'); }
+      e.launching=false;
+      e.client.pupPage?.bringToFront().catch(()=>{});
+      e.client.pupBrowser?.on('disconnected',lifecycle.guard(entries,e,()=>{fail(account.id,'BROWSER_EXITED',e).catch(()=>{});}));
+    }).catch(error=>{
+      if(!lifecycle.current(entries,e))return;
+      console.error(describeStartupError(error,'chromium-initialize'));
+      fail(account.id,'WHATSAPP_INITIALIZATION_FAILED',e).catch(()=>{});
+    });
+  } catch (err) { fail(account.id,err.message||'START_FAILED',e).catch(error=>console.error('browser cleanup:',error.code||error.name)); }
+  })();
+  await e.setup;
 }
 async function recordMessage(accountId,message,actorId=null,live=true) {
   const mid=messageId(message);if(!mid||!message.fromMe)return;
@@ -305,9 +315,9 @@ async function tick() {
         if (busy.has(a.id)) continue; // in-flight sends can finish; no further sends are dispatched
         const running=entries.has(a.id);await stopAccount(a.id);if(running||a.status!=='disabled')await state(a.id, 'disabled');continue;
       }
-      if (!entries.has(a.id) && entries.size < maxAccounts && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
+      if (!entries.has(a.id) && entries.size < maxAccounts && !lifecycle.starting(entries) && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
       const e = entries.get(a.id);
-      if (e && !e.ready && Date.now() - e.started > 600000) { await fail(a.id, 'LOGIN_TIMEOUT'); continue; }
+      if(e&&lifecycle.expired(e)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
       if (e) {
         await pool.query('UPDATE accounts SET heartbeat_at=now() WHERE id=$1', [a.id]);
         if (e.client?.pupPage && !e.ready) e.client.pupPage.bringToFront().catch(() => {});
@@ -331,6 +341,7 @@ async function start() {
   await pool.query(`UPDATE recipients r SET status='unknown',error_code='WORKER_RESTART_REVIEW_REQUIRED',updated_at=now()
     FROM campaigns c JOIN accounts a ON a.id=c.account_id WHERE r.campaign_id=c.id AND a.worker_group=$1 AND r.status='sending'`, [group]);
   await shared.recoverInterrupted(group);
+  await pool.query("UPDATE accounts SET status='starting',shared_state=CASE WHEN shared_pool THEN 'waiting' ELSE shared_state END,shared_checked_at=CASE WHEN shared_pool THEN NULL ELSE shared_checked_at END WHERE worker_group=$1 AND enabled AND deleted_at IS NULL",[group]);
   const app = express();
   app.get('/healthz', async (_, res) => { try { await lock.query('SELECT 1'); res.json({ ok: true, role: 'worker', group }); } catch { res.sendStatus(503); } });
   app.use((req, res, next) => authorized(req) ? next() : res.sendStatus(401));

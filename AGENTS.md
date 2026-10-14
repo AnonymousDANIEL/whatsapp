@@ -89,3 +89,10 @@ target-environment checks; do not call them tested based on a successful build.
 - Hourly health reads client state without sending messages, checks linked number and worker freshness, bounds concurrent probes and labels uncertainty. Account records and live browser capacity are distinct: each worker still caps at ten and needs a separate persistent profile volume. Do not claim 100+ online load was tested from simulated records.
 - Optional SHARED_WORKER_GROUPS_JSON isolates dedicated shared groups from personal-account creation. Default workers use a five-connection DB pool. Do not change production wallets, USER status, passwords or send live messages as tests.
 - Run the disposable native PostgreSQL shared integration and real headless Chrome Owner / USER tests in both languages, including mobile layout, before deploying.
+
+## Browser reconnect lifecycle (2026-10-15)
+
+- Never restart a healthy QR waiting screen because the user has not scanned it. Keep bounded startup / authentication deadlines and reset them on progress.
+- Bind every asynchronous browser callback and failure to the exact active entry. Late events from a cancelled attempt must not update or stop its replacement.
+- Keep a slot occupied until desktop setup and cleanup finish. Abort launches whose browser handle has not yet been assigned; terminate only the account's verified private UID (>=20000), never root or another account. Preserve all login/profile data.
+- Run the network-disabled worker image smoke test as well as the native database and UI checks. A Railway SUCCESS / healthz response alone does not prove actual WhatsApp login health.
