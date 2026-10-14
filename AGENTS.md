@@ -93,6 +93,6 @@ target-environment checks; do not call them tested based on a successful build.
 ## Browser reconnect lifecycle (2026-10-15)
 
 - Never restart a healthy QR waiting screen because the user has not scanned it. Keep bounded startup / authentication deadlines and reset them on progress.
-- Bind every asynchronous browser callback and failure to the exact active entry. Late events from a cancelled attempt must not update or stop its replacement.
-- Keep a slot occupied until desktop setup and cleanup finish. Abort launches whose browser handle has not yet been assigned; terminate only the account's verified private UID (>=20000), never root or another account. Preserve all login/profile data.
+- Bind every asynchronous connection-state callback and failure to the exact active entry. Late events from a cancelled attempt must not update or stop its replacement.
+- Keep a slot occupied until desktop setup and cleanup finish. Abort launches whose browser handle has not yet been assigned; terminate only the account's verified private UID (>=20000), never root or another account. Preserve all login/profile data. Late message receipts remain valid and must still reconcile against the actual sender across reconnects.
 - Run the network-disabled worker image smoke test as well as the native database and UI checks. A Railway SUCCESS / healthz response alone does not prove actual WhatsApp login health.

@@ -144,8 +144,9 @@ async function startAccount(account) {
       e.client.pupPage.bringToFront().catch(()=>{});
       syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
     });
-    on('message_ack',(message,ack)=>{receiveAck(account.id,messageId(message),ack).catch(err=>console.error('receipt persistence:',err.code||err.name));});
-    on('message_create',message=>{recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name));});
+    // Real receipts remain valid across a reconnect; only connection-state callbacks are generation-bound.
+    e.client.on('message_ack',(message,ack)=>{receiveAck(account.id,messageId(message),ack).catch(err=>console.error('receipt persistence:',err.code||err.name));});
+    e.client.on('message_create',message=>{recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name));});
     e.client.initialize().then(async()=>{
       if(!lifecycle.current(entries,e)){
         try{await e.client.destroy();}catch{}
