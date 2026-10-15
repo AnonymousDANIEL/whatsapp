@@ -130,7 +130,7 @@ async function runCase(browser,base,role,language){
  page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:1440,height:1000});
  await page.evaluateOnNewDocument(lang=>{
-  localStorage.setItem('wa_language',lang);sessionStorage.setItem('wa_page','shared');
+  localStorage.setItem('wa_language',lang);if(!sessionStorage.getItem('wa_page'))sessionStorage.setItem('wa_page','shared');
   window.open=(...args)=>{window.fixturePopup=args;return null;};
  },language);
  await page.goto(base,{waitUntil:'networkidle0'});await waitReady(page);
