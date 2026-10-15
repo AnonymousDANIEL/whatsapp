@@ -66,7 +66,7 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$('#nav [data-page=users]'),null);
   assert.equal(fixture.requests.some(r=>['/shared/accounts','/shared/hourly'].includes(r.path)),false);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/10000000|可用余额|Available credit|Available balance/);
-  assert.equal(await page.$eval('.shared-cards .card',n=>n.length),1);
+  assert.equal(await page.$$eval('.shared-cards .card',n=>n.length),1);
   await page.click('#nav [data-page=billing]');
   await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('10000000'));
   assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
