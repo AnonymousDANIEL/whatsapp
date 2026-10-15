@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs/promises');
-const CPUS_PER_BROWSER=2,PROCESS_RESERVE=120;
+const CPUS_PER_BROWSER=1,PROCESS_RESERVE=120;
 function cpuSetForSlot(status,slot=0){
  const list=status.match(/^Cpus_allowed_list:\s*([^\n]+)$/m)?.[1]?.trim();
  if(!list||!Number.isInteger(slot)||slot<0)throw Error('BROWSER_CPU_AFFINITY_UNAVAILABLE');

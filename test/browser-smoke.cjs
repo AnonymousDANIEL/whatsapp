@@ -12,7 +12,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  for(const folder of [home,profile]){await fs.mkdir(folder,{mode:0o700});await fs.chown(folder,uid,uid);}
  await fs.writeFile(path.join(profile,'keep-session.marker'),'preserved');
  await execute('xauth',['-f',xauth,'add',':99','.',require('node:crypto').randomBytes(16).toString('hex')]);await fs.chown(xauth,uid,uid);
- const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:':99',XAUTHORITY:xauth,WA_BROWSER_UID:String(uid),WA_BROWSER_CPUS:await browserCpuSet(0),LP_NUM_THREADS:'2'};
+ const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:':99',XAUTHORITY:xauth,WA_BROWSER_UID:String(uid),WA_BROWSER_CPUS:await browserCpuSet(0),LP_NUM_THREADS:'1'};
  async function setup(){
   const display=spawn('taskset',['--cpu-list',env.WA_BROWSER_CPUS,'Xvfb',':99','-screen','0','1366x900x24','-nolisten','tcp','-auth',xauth],{env,uid,gid:uid,stdio:'ignore'});
   for(let i=0;i<50;i++){try{await fs.stat('/tmp/.X11-unix/X99');break;}catch{await pause(100);}}
@@ -30,7 +30,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    entry.client={pupBrowser:browser,destroy:()=>browser.close()};
    const page=(await browser.pages())[0];await page.setContent('<title>Isolated browser smoke</title><h1>Local test only</h1>');
    entry.client.pupPage=page;
-   assert.ok(await page.evaluate(()=>navigator.hardwareConcurrency)<=2);
+   assert.equal(await page.evaluate(()=>navigator.hardwareConcurrency),1);
    assert.equal(await page.title(),'Isolated browser smoke');
    if(round===1){
     await page.evaluate(()=>{

@@ -24,6 +24,11 @@ Scan mode rechecks association every 20 seconds, stops when linked, and retries
 recoverable transport failures with a delay capped at 30 seconds. These paths
 only reconnect screens; they never log out WhatsApp, clear profiles or resend
 unknown messages. Browser crashes remain generation-bound and preserve profiles.
+Each browser and its desktop now use one allowed logical CPU, spread across
+worker slots, with software rendering threads capped accordingly. Verify real
+screens and peak task use rather than treating that bound as guaranteed capacity.
+For releases, configure a 90-second worker deployment drain so the existing
+shutdown handler can flush profiles and finish in-flight work before termination.
 
 Before increasing concurrency, check the minute-level Browser capacity logs,
 worker freshness, crash/timeout categories and volume health. At 8 live browsers
