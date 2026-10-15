@@ -44,8 +44,11 @@ test('Retiring one account contains pending frame failures and leaves another ac
  a.page.on('framenavigated',nativeFrameHandler(a.client));b.page.on('framenavigated',nativeFrameHandler(b.client));
  a.page.emit('framenavigated',{url:()=> 'https://web.whatsapp.com/'});
  a.client.beginWorkspaceShutdown();reject(Error('Execution context was destroyed'));
+ a.page.on('framenavigated',async()=>{throw Error('Late initialize callback must not register');});
+ a.page.emit('framenavigated',{url:()=> 'https://web.whatsapp.com/?post_logout=1'});
  b.page.emit('framenavigated',{url:()=> 'https://web.whatsapp.com/'});await new Promise(resolve=>setImmediate(resolve));
  assert.equal(failures,0);assert.equal(other,1);assert.equal(a.page.listenerCount('framenavigated'),0);assert.equal(b.page.listenerCount('framenavigated'),1);
+ a.page.emit('close');assert.equal(a.page.listenerCount('close'),0);
  await a.client.destroy();await b.client.destroy();
 });
 test('Navigation wrappers preserve off/duplicate-listener semantics and release listeners on close',async()=>{

@@ -15,6 +15,7 @@ function guardNavigationEvents(client,page){
  };
  const guardedOn=function(type,listener){
   if(type!=='framenavigated'||typeof listener!=='function')return on.call(this,type,listener);
+  if(client.workspaceClosing)return this;
   let wrapped=wrappers.get(listener);
   if(!wrapped){wrapped=(...args)=>{try{Promise.resolve(listener.apply(page,args)).catch(report);}catch(error){report(error);}};wrappers.set(listener,wrapped);}
   active.set(wrapped,(active.get(wrapped)||0)+1);return on.call(this,type,wrapped);
@@ -26,8 +27,11 @@ function guardNavigationEvents(client,page){
   }
   return off.call(this,type,wrapped);
  };
- const dispose=()=>{
+ const dispose=(retiring=false)=>{
   for(const [wrapped,n] of active)for(let i=0;i<n;i++)off.call(page,'framenavigated',wrapped);active.clear();
+  // initialize() can finish after retirement and register a late frame callback.
+  // Keep the instance guard until Page close so that registration is ignored.
+  if(retiring===true)return;
   off.call(page,'close',dispose);
   if(page.on===guardedOn)page.on=on;if(page.off===guardedOff)page.off=off;
   delete page[navigationGuard];
@@ -37,7 +41,7 @@ function guardNavigationEvents(client,page){
 }
 
 class LiveWebClient extends Client {
- beginWorkspaceShutdown(){this.workspaceClosing=true;this.pupPage?.[navigationGuard]?.();}
+ beginWorkspaceShutdown(){this.workspaceClosing=true;this.pupPage?.[navigationGuard]?.(true);}
  async destroy(){this.beginWorkspaceShutdown();return super.destroy();}
  async inject(){if(this.workspaceClosing)return;return super.inject();}
  async inspectSendRuntime(){
