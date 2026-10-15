@@ -225,3 +225,12 @@
 - 移除号码资料的 1000 条总数上限，保留每批 200 条及列表分页；去重只读取当前批次涉及的号码。未启用的新资料直接标为 disabled，worker 跳过休眠资料，并保留运行中、需清理和状态待更新账号的处理；每小时状态检查不逐条探测未启用的资料。
 - 新增一次性 PostgreSQL 流程覆盖普通号码拒绝导入 / 启用、派发隔离、余额只在账务接口出现、超过 1000 条资料分页和休眠处理。双语 Owner / USER 浏览器流程检查共享页余额移除以及余额 / 充值流水保留。
 - 云手机 / Android 新号注册设备尚未接入。本次提供的是号码资料与 Web 关联能力，不自动生成手机号、不绕过短信 / 电话验证，也不代表无限设备、WhatsApp 注册或 100+ 同时在线已实现。相关平台授权和实际设备能力仍需确定；没有根据视频预置手机号或创建真实账号。
+
+
+## USER navigation and explanatory text (2026-10-15)
+
+USER Credit/top-up now keeps the available balance visible and switches between its ledger, enabled FPX and bank-deposit views inside the same page. USER sidebar has a single Credit/top-up entry; Owner banking and FPX branches are retained. Existing saved FPX/bank pages migrate to the relevant in-page view, and payment-return verification remains active. FPX disappearing during refresh falls back to the ledger. Bank maintenance and the bank-system switch still use the existing bank responses and block deposit creation.
+
+The requested USER-only explanations are omitted from the DOM on accounts, tasks, message history, overview and shared sending in Chinese and English. Owner retains them. Result rows, real status badges, counts and weekly chart remain. An empty shared pool still disables Send even though its USER explanatory note is removed. No API, database, wallet, payment or sending logic was changed.
+
+Release validation uses the existing PostgreSQL 17 workflow and both Docker builds. The four real Chrome Owner/USER × Chinese/English flows now also inspect the personal pages, retained status rows and chart, consolidated USER credit navigation, enabled/disabled FPX, maintenance/disabled banks, refresh, saved-route migration and mobile width. These fixtures never send real messages or create production payments/deposits. Native PostgreSQL and browser execution are performed by CI; local test skips must not be reported as native database passes.

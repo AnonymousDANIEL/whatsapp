@@ -16,7 +16,15 @@ const server=http.createServer(async(req,res)=>{
    s.requests.push({path:p,method:req.method,body,csrf:req.headers['x-csrf-token']});
    let result;
    if(p==='/me')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
-   else if(p==='/payments/settings')result={enabled:false,configured:false,sandbox:false};
+   else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
+   else if(p==='/payments/orders')result=[];
+   else if(p==='/payments/orders/fixture-order/check')result={ok:true};
+   else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'scan_required',history_synced_at:null}];
+   else if(p==='/campaigns')result=[];
+   else if(p==='/overview')result={counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
+   else if(p==='/send-records')result=['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+60123456789',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));
+   else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
+   else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
@@ -45,6 +53,77 @@ const server=http.createServer(async(req,res)=>{
 async function waitReady(page,kind='shared'){
  await page.waitForFunction(kind=>document.querySelector('#shell')?.hidden===false&&document.querySelector('#content')?.querySelector(kind==='shared'?'#shared-send-form':'[data-results]'),{},kind);
 }
+
+async function verifyPersonalPages(page,fixture,role,language){
+ const pages=[
+  ['accounts','#add-account',/画面断开不代表|A disconnected screen does not mean/],
+  ['tasks','#add-task',/USER 发送前须充值|USERs need credit before sending/],
+  ['messages','#history-prev',/按号码显示任务|Shows per-number waiting/],
+  ['overview','.overview-chart',/真实消息数据|Live message data/]
+ ];
+ for(const [target,ready,explanation]of pages){
+  await page.evaluate(target=>{page=target;sessionStorage.setItem('wa_page',target);navigation();return loadPage();},target);
+  await page.waitForSelector(ready);
+  const text=await page.$eval('#content',n=>n.textContent);
+  if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
+  if(target==='tasks'&&role==='user')assert.doesNotMatch(text,/按间隔和每批数量发送|Send by interval and batch size/);
+  if(target==='messages'){
+   assert.equal(!!await page.$('#history-sync-note'),role==='owner');
+   if(role==='user')assert.doesNotMatch(text,/等待连接后核对|Waiting for connection to check/);
+   assert.equal(await page.$$eval('#content tbody .badge',nodes=>nodes.length),5);
+   assert.match(text,language==='en'?/Needs review/:/结果待核对/);
+  }
+  if(target==='overview'){
+   if(role==='user')assert.doesNotMatch(text,/按首次发送日期统计|Grouped by first send date|发送成功包含|Successful includes submitted/);
+   assert.equal(await page.$$eval('.overview-cards .card',nodes=>nodes.length),4);
+   assert.equal(await page.$$eval('.overview-week>div',nodes=>nodes.length),7);
+  }
+ }
+ await page.click('#nav [data-page=shared]');await waitReady(page);
+}
+async function verifyUserBilling(page,fixture,language){
+ assert.equal(await page.$('#nav [data-page=fpx]'),null);
+ assert.equal(await page.$('#nav [data-page=bank-deposits]'),null);
+ assert.equal(await page.$('#nav [data-nav-toggle=billing]'),null);
+ assert.equal(await page.$('[data-billing-view=fpx]'),null);
+ fixture.fpxEnabled=true;await page.click('#refresh');
+ await page.waitForSelector('[data-billing-view=fpx]');
+ await page.click('[data-billing-view=fpx]');await page.waitForSelector('#online-topup');
+ assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Credit / top-up':'余额 / 充值');
+ assert.equal(await page.$eval('#nav [data-page=billing]',n=>n.getAttribute('aria-current')),'page');
+ await page.click('#online-topup');await page.waitForFunction(()=>document.querySelector('#modal').open);
+ assert.ok(await page.$('#modal input[name=amount]'));await page.click('#close-modal');
+ fixture.fpxEnabled=false;await page.click('#refresh');
+ await page.waitForFunction(()=>!document.querySelector('[data-billing-view=fpx]')&&document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
+ assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
+ await page.click('[data-billing-view=bank-deposits]');await page.waitForSelector('#deposit-create');
+ await page.$eval('#deposit-create input[name=amount]',n=>{n.value='123.45';n.dispatchEvent(new Event('input',{bubbles:true}));});
+ await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval('#deposit-create input[name=amount]',n=>n.value),'123.45');
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#deposit-create');
+ assert.equal(await page.$eval('[data-billing-view=bank-deposits]',n=>n.getAttribute('aria-pressed')),'true');
+ fixture.bankMaintenance=true;await page.click('#refresh');
+ await page.waitForFunction(()=>!document.querySelector('#deposit-create')&&document.querySelector('#content').textContent.includes(window.T('银行维护中','Bank maintenance')));
+ fixture.banksOff=true;await page.click('#refresh');
+ await page.waitForFunction(()=>!document.querySelector('#content').textContent.includes('Fixture bank'));
+ await page.setViewport({width:390,height:844});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'USER billing fits a mobile viewport');
+ await page.click('[data-billing-view=ledger]');await page.waitForFunction(()=>document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
+ assert.match(await page.$eval('#content',n=>n.textContent),/10000000/);
+ await page.setViewport({width:1440,height:1000});
+ await page.evaluate(()=>sessionStorage.setItem('wa_page','bank-deposits'));
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-billing-view=bank-deposits][aria-pressed=true]');
+ assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Credit / top-up':'余额 / 充值');
+ await page.click('[data-billing-view=ledger]');await page.waitForFunction(()=>document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
+ fixture.fpxEnabled=true;
+ await page.goto(new URL('/?topup=fixture-order',page.url()).href,{waitUntil:'networkidle0'});
+ await page.waitForSelector('[data-billing-view=fpx][aria-pressed=true]');
+ await page.waitForFunction(()=>!location.search);
+ assert.equal(fixture.requests.filter(r=>r.path==='/payments/orders/fixture-order/check'&&r.method==='POST'&&r.csrf==='fake-ui-csrf').length,1);
+ fixture.fpxEnabled=false;await page.click('#refresh');
+ await page.waitForSelector('[data-billing-view=ledger][aria-pressed=true]');
+}
+
 async function runCase(browser,base,role,language){
  current={role,language,enabled:true,available:2,requests:[],sends:[],failNext:false};
  const fixture=current,context=await browser.createBrowserContext(),page=await context.newPage(),errors=[];
@@ -70,6 +149,7 @@ async function runCase(browser,base,role,language){
   await page.click('#nav [data-page=billing]');
   await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('10000000'));
   assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
+  await verifyUserBilling(page,fixture,language);
   await page.click('#nav [data-page=shared]');await waitReady(page);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Current rate per message|当前每条价格/);
  }else{
@@ -99,6 +179,8 @@ async function runCase(browser,base,role,language){
   assert.equal(fixture.requests.findLast(r=>r.path==='/shared/accounts'&&r.method==='POST').body.groups[0],'fixture-group');
   await page.click('details.panel > summary');
  }
+ await verifyPersonalPages(page,fixture,role,language);
+ if(role==='owner')await page.click('details.panel > summary');
  await page.evaluate(()=>{
   const f=document.querySelector('#shared-send-form');
   for(const [name,value]of Object.entries({title:'fixture shared task',body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
@@ -130,7 +212,10 @@ async function runCase(browser,base,role,language){
  await waitReady(page);fixture.enabled=false;await page.click('#refresh');
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
  fixture.enabled=true;fixture.available=0;await page.click('#refresh');
- await page.waitForFunction(()=>document.querySelector('#content').textContent.includes(window.T('暂时没有可用的共享账号','No shared accounts are available yet')));
+ await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
+ const unavailableText=await page.$eval('#content',n=>n.textContent);
+ if(role==='owner')assert.match(unavailableText,language==='en'?/No shared accounts are available yet/:/暂时没有可用的共享账号/);
+ else assert.doesNotMatch(unavailableText,/暂时没有可用的共享账号|No shared accounts are available yet|系统只选择 Owner|The system selects only separate shared accounts/);
  assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),true);
  await page.setViewport({width:390,height:844});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Shared page fits a mobile viewport');
