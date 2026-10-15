@@ -217,6 +217,7 @@ CREATE INDEX IF NOT EXISTS shared_campaigns_user ON campaigns(created_by,created
 -- Actual sender IDs may outlive Owner-purged app records, like immutable charge recipient IDs.
 ALTER TABLE recipients ADD COLUMN IF NOT EXISTS send_account_id uuid;
 CREATE INDEX IF NOT EXISTS recipients_sender ON recipients(send_account_id,message_id) WHERE send_account_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS recipients_unconfirmed_sender ON recipients(send_account_id,campaign_id) WHERE status IN ('sending','awaiting_ack');
 CREATE TABLE IF NOT EXISTS shared_settings(
  id integer PRIMARY KEY CHECK(id=1),enabled boolean NOT NULL DEFAULT false,price_units bigint CHECK(price_units>0),
  interval_ms integer NOT NULL DEFAULT 10000 CHECK(interval_ms BETWEEN 5000 AND 3600000),

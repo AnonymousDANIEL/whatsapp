@@ -141,6 +141,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    const row=(await db.pool.query("SELECT * FROM recipients WHERE campaign_id=$1 AND status='awaiting_ack'",[cid])).rows[0];
    assert.equal(fixture.sent.length,1);assert.equal(fixture.sent[0].caption,'Photo caption 中文');assert.equal(fixture.sent[0].type,'image');
    assert.equal(row.status,'awaiting_ack');assert.ok(row.message_id);assert.equal(row.media_fingerprint,'synthetic-processed-image-hash');assert.ok(row.send_attempt_id);
+   await db.pool.query("UPDATE message_history SET body='legacy-thumbnail-body' WHERE message_id=$1",[row.message_id]);
+   await worker.recordMessage(a,{id:row.message_id,fromMe:true,to:'60123456789@c.us',body:'Photo caption 中文',type:'image',ack:0},uid,false);
+   assert.equal((await db.pool.query('SELECT body FROM message_history WHERE message_id=$1',[row.message_id])).rows[0].body,'Photo caption 中文');
    assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');
    await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
    await worker.dispatch({id:a},{id:a,ready:true,client});assert.equal(fixture.sent.length,1,'Do not enqueue another message before the real server ACK');
@@ -205,9 +208,17 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const message={id:'synthetic-reconciled-photo',fromMe:true,to:'60123456789@c.us',body:caption,type:'image',filehash:'different-image',timestamp:Math.floor(+new Date(row.started_at)/1000),ack:2};
   await worker.reconcileUnknown(a,null,[message]);assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'unknown');
   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');
-  message.filehash='exact-processed-hash';await worker.reconcileUnknown(a,null,[message]);await require('../src/billing').reconcile();
+  message.filehash='exact-processed-hash';message.body='Another caption';await worker.reconcileUnknown(a,null,[message]);
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'unknown');message.body=caption;
+  await worker.reconcileUnknown(a,null,[message,{...message,id:'synthetic-ambiguous-photo'}]);
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'unknown');
+  await worker.reconcileUnknown(a,null,[message]);await require('../src/billing').reconcile();
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'charged');
+  await db.pool.query("UPDATE recipients SET status='unknown',message_id=NULL,media_fingerprint=NULL WHERE id=$1",[row.id]);
+  message.id='synthetic-legacy-photo';message.filehash=require('node:crypto').createHash('sha256').update(Buffer.from(photo.data,'base64')).digest('base64');
+  await worker.reconcileUnknown(a,null,[message]);
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
  });
  await t.test('interval-only batches persist counts and expose pending/invalid per-number records',async()=>{
   const r=await request('/campaigns','POST',{title:'Batch',account_id:a,body:'batch text',recipients:'0123456789\n0123456790\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);assert.equal(r.status,201);

@@ -184,7 +184,9 @@ async function recordMessage(accountId,message,actorId=null,live=true) {
   if((await pool.query('SELECT 1 FROM history_exclusions WHERE account_id=$1 AND message_hash=$2',[accountId,crypto.createHash('sha256').update(mid).digest('hex')])).rowCount)return;
   if(live&&!actorId) actorId=(await pool.query(`SELECT s.user_id FROM control_leases l JOIN sessions s ON s.token_hash=l.session_hash WHERE l.account_id=$1 AND l.expires_at>now()`,[accountId])).rows[0]?.user_id||null;
   await pool.query(`INSERT INTO message_history(account_id,message_id,actor_id,recipient,body,status,ack,sent_at,message_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-    ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id)`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt,message.type||'chat']);
+    ON CONFLICT(account_id,message_id) DO UPDATE SET actor_id=COALESCE(message_history.actor_id,excluded.actor_id),
+      body=CASE WHEN excluded.message_type='image' THEN excluded.body ELSE message_history.body END,
+      message_type=CASE WHEN excluded.message_type='image' THEN 'image' ELSE message_history.message_type END`,[accountId,mid,actorId,String(message.to||message.id?.remote||''),String(message.body||''),ackStatus(ack),ack,sentAt,message.type||'chat']);
   await receiveAck(accountId,mid,ack);
 }
 async function reconcileUnknown(accountId,client,snapshot=null) {
