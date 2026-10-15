@@ -4,7 +4,7 @@
 
 - Canonical application origin: `https://mywasap.com`. The apex currently reaches the original Railway API and original PostgreSQL. HTTP redirects to HTTPS and the apex certificate is valid.
 - HTTPS production traffic uses the raw Host header to enforce the configured origin. Safe page visits on Railway/www aliases redirect to the canonical origin while preserving the path/query. Other browser mutations and WebSocket upgrades on aliases are refused. Forwarded-Host cannot override this decision.
-- The old `whatsapp.facecustomer.workers.dev` Worker source is versioned in `cloudflare/legacy-domain.mjs`. Pages redirect to the canonical origin. Only exact signed payment/bank callback endpoints, and signed bank-connector queue/receipt reads, are forwarded. Request bodies/signature headers are preserved; cookies, Authorization and Origin are never forwarded or rewritten. All existing server signature, amount, live-payment and one-time-settlement checks remain mandatory.
+- The existing `whatsapp.mywa.workers.dev` Worker source is versioned in `cloudflare/legacy-domain.mjs` (the account API confirms its current subdomain is `mywa`). Pages redirect to the canonical origin. Only exact signed payment/bank callback endpoints, and signed bank-connector queue/receipt reads, are forwarded. Request bodies/signature headers are preserved; cookies, Authorization and Origin are never forwarded or rewritten. All existing server signature, amount, live-payment and one-time-settlement checks remain mandatory.
 - Do not remove the raw Railway domain until all old signed payment/bank callback URLs have expired or been migrated. Do not redirect signed callbacks indiscriminately: a gateway may not follow them.
 
 ## Prepared www connection; DNS still required

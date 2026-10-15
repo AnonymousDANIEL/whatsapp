@@ -1,4 +1,4 @@
-// Migration for the existing whatsapp.facecustomer.workers.dev URL.
+// Migration for the existing whatsapp.mywa.workers.dev URL.
 // Keep the canonical origin fixed; never trust a client-provided Host, Origin or redirect.
 const origin = 'https://mywasap.com';
 const callbackPath = /^\/api\/(?:payments\/callback|banks\/feed)\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;

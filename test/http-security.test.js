@@ -58,7 +58,7 @@ test('Legacy domain redirects retain routes without open redirects or credential
   const {handleRequest}=await import('../cloudflare/legacy-domain.mjs');let calls=0;
   const upstream=async()=>{calls++;throw Error('not expected');};
   for(const path of ['/?payment=123&lang=en','/viewer.html?id=123','//evil.example/path','/%2f%2fevil.example']){
-    const r=await handleRequest(new Request('https://whatsapp.facecustomer.workers.dev'+path),upstream);
+    const r=await handleRequest(new Request('https://whatsapp.mywa.workers.dev'+path),upstream);
     assert.equal(r.status,308);const target=new URL(r.headers.get('location'));assert.equal(target.origin,'https://mywasap.com');assert.equal(target.search,new URL('https://old.example'+path).search);
   }
   const r=await handleRequest(new Request('https://old.example/api/login',{method:'POST',body:'secret',headers:{Origin:'https://evil.example',Cookie:'wa_session=secret',Authorization:'secret'}}),upstream);
