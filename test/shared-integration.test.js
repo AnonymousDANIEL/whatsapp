@@ -140,8 +140,9 @@ await t.test('Personal numbers never enter shared dispatch, and shared pages omi
    await db.pool.query('UPDATE accounts SET enabled=false WHERE id=$1',[a2]);
    assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID()},owner)).status,503);
    for(const session of [owner,user1]){
-    const status=(await request('/shared/status','GET',null,session)).data;
-    assert.equal(Object.hasOwn(status,'balance_units'),false);assert.equal(Object.hasOwn(status,'credit_units'),false);
+    const status=(await request('/shared/status?layout=2','GET',null,session)).data;
+    assert.equal(Object.hasOwn(status,'balance_units'),false);
+    const legacy=(await request('/shared/status','GET',null,session)).data;assert.ok(Object.hasOwn(legacy,'balance_units'));assert.equal(Object.hasOwn(status,'credit_units'),false);
    }
    const wallet=(await request('/billing','GET',null,user1)).data;assert.ok(Object.hasOwn(wallet.user,'credit_units'));assert.ok(Array.isArray(wallet.ledger));
   }finally{await db.pool.query('DELETE FROM accounts WHERE id=$1',[id]);await db.pool.query('UPDATE accounts SET enabled=$2 WHERE id=$1',[a2,was]);}

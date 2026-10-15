@@ -20,7 +20,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/notice')result={enabled:false};
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
-    result={enabled:s.enabled,configured:true,summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
+    result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:['fixture-group'],workers:[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,heartbeat_at:new Date().toISOString()}]});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];

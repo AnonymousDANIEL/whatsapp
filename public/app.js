@@ -90,7 +90,7 @@ async function loadPage(quiet=false){
   if(requested==='banks')jobs.banks=get('/banks');
   if(requested==='bank-deposits'){jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
   if(requested==='bank-transactions'){jobs.banks=get('/banks');jobs.transactions=get('/bank-transactions?'+bankTransactionQuery());}
-  if(requested==='shared'){jobs.sharedStatus=get('/shared/status');if(me.role==='owner'){jobs.sharedAccounts=get('/shared/accounts'+sharedQuery());jobs.sharedHourly=get('/shared/hourly');}}
+  if(requested==='shared'){jobs.sharedStatus=get('/shared/status?layout=2');if(me.role==='owner'){jobs.sharedAccounts=get('/shared/accounts'+sharedQuery());jobs.sharedHourly=get('/shared/hourly');}}
   if(requested==='shared-tasks')jobs.sharedTasks=get('/shared/tasks?page='+sharedUI.tasksPage);
   if(requested==='shared-records')jobs.sharedRecords=get('/shared/records?page='+sharedUI.recordsPage);
   if(['overview','accounts','tasks','messages'].includes(requested))jobs.accounts=get('/accounts');

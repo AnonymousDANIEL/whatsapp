@@ -99,7 +99,7 @@ target-environment checks; do not call them tested based on a successful build.
 
 ## Separate shared-number records and wallet placement (2026-10-15)
 
-- USER shared pages contain connection state and their own send flows; show wallet balance and ledger only in Credit/top-up. Do not include balances in shared status responses or change accounting.
+- USER shared pages contain connection state and their own send flows; show wallet balance and ledger only in Credit/top-up. Current shared status layout=2 omits wallet fields; retain the legacy response for already-open old pages so their balance never becomes a false zero. Do not change accounting.
 - Shared numbers must be independent of active personal-account records. Reject cross-scope phone reuse on registration/connect and exclude it from shared eligibility, even if legacy records overlap.
 - There is no overall shared-number record cap. Keep input batches <=200, pagination, batch-scoped duplicate reads and indexed phone separation. This is a data-storage allowance, not unlimited phone numbers, registrations or live browser capacity.
 - Leave new inactive records disabled without spawning browsers. Skip idle disabled records during worker ticks and hourly probes, but include any running entry, purge request and status needing cleanup.
