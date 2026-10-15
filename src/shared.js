@@ -4,7 +4,7 @@ const {rateLimit}=require('express-rate-limit');
 const {pool,transaction}=require('./db');
 const {assert,hash,parseRecipients,permission}=require('./domain');
 const {validateImage}=require('./media');
-const {priceSQL,connectedSQL,settings,registrationNumbers,inspectClient,linkedPhone}=require('./shared-domain');
+const {priceSQL,personalPhoneSQL,connectedSQL,settings,registrationNumbers,inspectClient,linkedPhone}=require('./shared-domain');
 const PAGE=50;
 function owner(req){assert(req.user.role==='owner','只有 Owner 可以管理共享 WhatsApp',403);}
 function pageNumber(value){const n=Number(value)||1;return Math.max(1,Math.min(10000,Math.trunc(n)));}
@@ -87,7 +87,7 @@ let checking=false;
 async function checkGroup(group,entries){
  if(checking)return;checking=true;
  try{
-  const due=(await pool.query(`SELECT id,enabled,status,registration_phone FROM accounts WHERE shared_pool AND deleted_at IS NULL AND worker_group=$1
+  const due=(await pool.query(`SELECT id,enabled,status,registration_phone FROM accounts WHERE shared_pool AND enabled AND deleted_at IS NULL AND worker_group=$1
    AND (shared_checked_at IS NULL OR shared_checked_at<date_trunc('hour',now()) OR (enabled AND shared_state IN ('unknown','offline') AND shared_checked_at<now()-interval '1 minute'))`,[group])).rows;
   if(!due.length&&(await pool.query("SELECT 1 FROM shared_health_hourly WHERE worker_group=$1 AND hour_start=date_trunc('hour',now())",[group])).rowCount)return;
   let index=0;
@@ -114,8 +114,7 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
    count(*) FILTER(WHERE NOT enabled OR shared_state='waiting')::int waiting,
    count(*) FILTER(WHERE enabled AND shared_state='unknown')::int unknown FROM accounts a WHERE shared_pool AND deleted_at IS NULL`)).rows[0];
   summary.offline=summary.total-summary.connected-summary.waiting-summary.unknown;
-  const wallet=(await pool.query('SELECT credit_units FROM users WHERE id=$1',[req.user.id])).rows[0];
-  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary,balance_units:wallet.credit_units,timezone:'Asia/Kuala_Lumpur'};
+  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary,timezone:'Asia/Kuala_Lumpur'};
   if(req.user.role==='owner'){
    data.settings=s;data.hours=(await pool.query('SELECT hour,price_units FROM shared_hour_prices ORDER BY hour')).rows;
    data.workers=(await pool.query('SELECT worker_group,accounts_running,max_accounts,heartbeat_at FROM worker_health WHERE worker_group=ANY($1::text[]) ORDER BY worker_group',[Object.keys(workerRoutes)])).rows;
@@ -136,7 +135,7 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
   owner(req);const page=pageNumber(req.query.page),search=String(req.query.search||'').slice(0,80);
   const where="a.shared_pool AND a.deleted_at IS NULL AND ($1='' OR a.label ILIKE '%'||$1||'%' OR a.registration_phone ILIKE '%'||$1||'%')";
   const rows=(await pool.query(`SELECT a.id,a.label,a.registration_phone,a.phone,a.worker_group,a.enabled,a.status,a.shared_state,a.shared_checked_at,a.created_at,
-   (${connectedSQL}) AS connected,h.heartbeat_at AS worker_heartbeat_at FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
+   (${connectedSQL}) AS connected,(${personalPhoneSQL}) AS phone_in_personal,h.heartbeat_at AS worker_heartbeat_at FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
    WHERE ${where} ORDER BY a.created_at,a.id LIMIT $2 OFFSET $3`,[search,PAGE,(page-1)*PAGE])).rows;
   const total=(await pool.query(`SELECT count(*)::int n FROM accounts a WHERE ${where}`,[search])).rows[0].n;res.json({rows,total,page,size:PAGE});
  }));
@@ -146,12 +145,15 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
   const selected=[...new Set(groups)],prefix=String(req.body.label||'WhatsApp').trim();assert(prefix.length&&prefix.length<=40,'账号名称最多 40 个字符');
   const result=await transaction(async db=>{
    await db.query('SELECT pg_advisory_xact_lock(194812736)');
-   const all=(await db.query('SELECT registration_phone FROM accounts WHERE shared_pool AND deleted_at IS NULL')).rows,seen=new Set(all.map(a=>a.registration_phone));
-   const fresh=parsed.recipients.filter(r=>!seen.has(r.phone));assert(all.length+fresh.length<=1000,'共享账号池最多管理 1000 个号码');
+   const incoming=parsed.recipients.map(r=>r.phone),digits=incoming.map(p=>p.slice(1));
+   const conflict=await db.query("SELECT 1 FROM accounts WHERE NOT shared_pool AND deleted_at IS NULL AND phone IS NOT NULL AND replace(phone,'+','')=ANY($1::text[]) LIMIT 1",[digits]);
+   assert(!conflict.rowCount,'号码已用于普通 WhatsApp 账号，请使用独立的新共享号码',409);
+   const existing=(await db.query('SELECT registration_phone FROM accounts WHERE shared_pool AND deleted_at IS NULL AND registration_phone=ANY($1::text[])',[incoming])).rows,seen=new Set(existing.map(a=>a.registration_phone));
+   const fresh=parsed.recipients.filter(r=>!seen.has(r.phone));
    const counts=(await db.query('SELECT worker_group,count(*)::int n FROM accounts WHERE deleted_at IS NULL GROUP BY worker_group')).rows;
    const load=new Map(selected.map(g=>[g,counts.find(c=>c.worker_group===g)?.n||0]));
    for(const r of fresh){const group=[...load.keys()].sort((a,b)=>load.get(a)-load.get(b))[0];
-    await db.query('INSERT INTO accounts(id,label,worker_group,enabled,shared_pool,registration_phone) VALUES($1,$2,$3,false,true,$4)',[randomUUID(),prefix+' '+r.phone,group,r.phone]);load.set(group,load.get(group)+1);
+    await db.query("INSERT INTO accounts(id,label,worker_group,enabled,status,shared_pool,registration_phone) VALUES($1,$2,$3,false,'disabled',true,$4)",[randomUUID(),prefix+' '+r.phone,group,r.phone]);load.set(group,load.get(group)+1);
    }
    await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'shared.accounts.create',$2)",[req.user.id,{created:fresh.length,groups:selected}]);
    return {created:fresh.length,duplicates:parsed.duplicates+parsed.recipients.length-fresh.length};
@@ -159,6 +161,8 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
  }));
  app.post('/api/shared/accounts/:id/connect',route(async(req,res)=>{
   owner(req);const id=uuid(req.params.id),a=(await pool.query('SELECT * FROM accounts WHERE id=$1 AND shared_pool AND deleted_at IS NULL',[id])).rows[0];assert(a,'共享账号不存在',404);
+  const conflict=(await pool.query("SELECT 1 FROM accounts WHERE NOT shared_pool AND deleted_at IS NULL AND phone IS NOT NULL AND replace(phone,'+','')=$1 LIMIT 1",[a.registration_phone?.slice(1)])).rowCount;
+  assert(!conflict,'号码已用于普通 WhatsApp 账号，请使用独立的新共享号码',409);
   assert(Object.hasOwn(workerRoutes,a.worker_group),'浏览器分组尚未配置',503);
   await pool.query('UPDATE accounts SET enabled=true WHERE id=$1',[id]);
   await pool.query("INSERT INTO audit(actor_id,action,entity_id) VALUES($1,'shared.account.connect',$2)",[req.user.id,id]);

@@ -230,3 +230,5 @@ CREATE TABLE IF NOT EXISTS shared_health_hourly(
  waiting integer NOT NULL,offline integer NOT NULL,unknown integer NOT NULL,checked_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY(worker_group,hour_start)
 );
+
+CREATE INDEX IF NOT EXISTS accounts_personal_phone_live ON accounts ((replace(phone,'+',''))) WHERE NOT shared_pool AND deleted_at IS NULL AND phone IS NOT NULL;

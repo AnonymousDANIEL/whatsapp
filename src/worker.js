@@ -25,6 +25,7 @@ const group = process.env.WORKER_GROUP;
 const maxAccounts = Number(process.env.MAX_ACCOUNTS_PER_WORKER || 5);
 const dataPath = path.resolve(process.env.DATA_DIR || '/data');
 const entries = new Map(), busy = new Set(), retryAt = new Map(), failures = new Map();
+const accountWorkSQL="SELECT * FROM accounts WHERE worker_group=$1 AND (enabled OR purge_requested OR status<>'disabled' OR id=ANY($2::uuid[])) ORDER BY created_at";
 let shuttingDown = false;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 function authorized(req) {
@@ -302,7 +303,7 @@ async function tick() {
     await billing.reconcile();
     await billing.recoverCreditTasks(null,group);
     await shared.rebalance();
-    const accounts = (await pool.query('SELECT * FROM accounts WHERE worker_group=$1 ORDER BY created_at', [group])).rows;
+    const accounts = (await pool.query(accountWorkSQL,[group,[...entries.keys()]])).rows;
     for (const a of accounts) {
       if(a.purge_requested){
         const current=entries.get(a.id);
@@ -397,4 +398,4 @@ async function start() {
   });
   return server;
 }
-module.exports = { start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };
+module.exports = { accountWorkSQL, start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };

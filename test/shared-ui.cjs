@@ -18,8 +18,9 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/me')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
    else if(p==='/payments/settings')result={enabled:false,configured:false,sandbox:false};
    else if(p==='/notice')result={enabled:false};
+   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
-    result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
+    result={enabled:s.enabled,configured:true,summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:['fixture-group'],workers:[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,heartbeat_at:new Date().toISOString()}]});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
@@ -64,7 +65,12 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$('[data-shared-login]'),null);
   assert.equal(await page.$('#nav [data-page=users]'),null);
   assert.equal(fixture.requests.some(r=>['/shared/accounts','/shared/hourly'].includes(r.path)),false);
-  assert.match(await page.$eval('#content',n=>n.textContent),/10000000/);
+  assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/10000000|可用余额|Available credit|Available balance/);
+  assert.equal(await page.$eval('.shared-cards .card',n=>n.length),1);
+  await page.click('#nav [data-page=billing]');
+  await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('10000000'));
+  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
+  await page.click('#nav [data-page=shared]');await waitReady(page);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Current rate per message|当前每条价格/);
  }else{
   assert.equal(await page.$eval('#content strong',n=>n.textContent),'<img src=x onerror=alert(1)>');
@@ -84,7 +90,7 @@ async function runCase(browser,base,role,language){
   assert.equal(update.body.hours.length,24);assert.equal(update.body.price,'0.2');assert.equal(update.body.hours[8].price,'0.3');assert.equal(update.csrf,'fake-ui-csrf');
   await page.click('#shared-add');
   await page.waitForFunction(()=>document.querySelector('#modal').open);
-  assert.match(await page.$eval('#modal',n=>n.textContent),language==='en'?/does not register a WhatsApp account/:/不会自动注册 WhatsApp/);
+  assert.match(await page.$eval('#modal',n=>n.textContent),language==='en'?/does not create a phone number or register WhatsApp/:/不会自动产生手机号或完成 WhatsApp 注册/);
   await page.evaluate(()=>{
    document.querySelector('#modal textarea[name=phones]').value='+60123456789\n+60123456788';
    document.querySelector('#modal form').requestSubmit();

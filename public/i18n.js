@@ -18,7 +18,7 @@ window.translateError=(message)=>{
  "每次最多录入 200 个号码":"Add up to 200 numbers at a time.",
  "请使用有效的手机号码，包含国家代码":"Use valid mobile phone numbers with country codes.",
  "账号名称最多 40 个字符":"Account name prefixes support up to 40 characters.",
- "共享账号池最多管理 1000 个号码":"The shared pool can manage up to 1000 number records.",
+ "号码已用于普通 WhatsApp 账号，请使用独立的新共享号码":"This number belongs to personal WhatsApp. Use a separate new shared number.",
  "共享账号不存在":"Shared account not found.",
  "浏览器分组尚未配置":"The running group is not configured yet.",
  "无权查看此共享任务":"You do not have access to this shared task.",

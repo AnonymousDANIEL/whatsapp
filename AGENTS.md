@@ -96,3 +96,11 @@ target-environment checks; do not call them tested based on a successful build.
 - Bind every asynchronous connection-state callback and failure to the exact active entry. Late events from a cancelled attempt must not update or stop its replacement.
 - Keep a slot occupied until desktop setup and cleanup finish. Abort launches whose browser handle has not yet been assigned; terminate only the account's verified private UID (>=20000), never root or another account. Preserve all login/profile data. Late message receipts remain valid and must still reconcile against the actual sender across reconnects.
 - Run the network-disabled worker image smoke test as well as the native database and UI checks. A Railway SUCCESS / healthz response alone does not prove actual WhatsApp login health.
+
+## Separate shared-number records and wallet placement (2026-10-15)
+
+- USER shared pages contain connection state and their own send flows; show wallet balance and ledger only in Credit/top-up. Do not include balances in shared status responses or change accounting.
+- Shared numbers must be independent of active personal-account records. Reject cross-scope phone reuse on registration/connect and exclude it from shared eligibility, even if legacy records overlap.
+- There is no overall shared-number record cap. Keep input batches <=200, pagination, batch-scoped duplicate reads and indexed phone separation. This is a data-storage allowance, not unlimited phone numbers, registrations or live browser capacity.
+- Leave new inactive records disabled without spawning browsers. Skip idle disabled records during worker ticks and hourly probes, but include any running entry, purge request and status needing cleanup.
+- Do not present the uploaded Android registration examples as an implemented emulator. Real cloud-phone/Android device integration is not configured; it requires actual platform capability and authorization. Never fabricate device IDs, generated phone numbers, successful verification or working mobile registration.

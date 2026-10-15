@@ -1,8 +1,10 @@
 'use strict';
 const {assert,parseRecipients,validatePacing}=require('./domain');
 const priceSQL="COALESCE((SELECT hp.price_units FROM shared_hour_prices hp WHERE hp.hour=EXTRACT(hour FROM statement_timestamp() AT TIME ZONE 'Asia/Kuala_Lumpur')::integer),s.price_units)";
+const personalPhoneSQL="EXISTS(SELECT 1 FROM accounts personal WHERE NOT personal.shared_pool AND personal.deleted_at IS NULL AND personal.phone IS NOT NULL AND replace(personal.phone,'+','')=replace(a.registration_phone,'+',''))";
 const connectedSQL=`a.shared_pool AND a.enabled AND a.deleted_at IS NULL AND a.status='ready'
  AND a.phone IS NOT NULL AND a.registration_phone='+'||a.phone
+ AND NOT (${personalPhoneSQL})
  AND a.shared_state='connected' AND a.shared_checked_at>now()-interval '65 minutes'
  AND EXISTS(SELECT 1 FROM worker_health wh WHERE wh.worker_group=a.worker_group AND wh.heartbeat_at>now()-interval '90 seconds')`;
 function hourAt(date=new Date()){return (date.getUTCHours()+8)%24;}
@@ -35,4 +37,4 @@ async function inspectClient(entry,timeoutMs=8000){
   if(state==='CONNECTED')return 'connected';return state==null?'unknown':'offline';
  }catch{return 'unknown';}finally{clearTimeout(timer);}
 }
-module.exports={priceSQL,connectedSQL,hourAt,priceUnits,settings,registrationNumbers,inspectClient,linkedPhone};
+module.exports={priceSQL,personalPhoneSQL,connectedSQL,hourAt,priceUnits,settings,registrationNumbers,inspectClient,linkedPhone};

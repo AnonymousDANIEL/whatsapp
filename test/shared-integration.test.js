@@ -127,4 +127,37 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
   const balances=(await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows,prices=await shared.config(),charges=(await db.pool.query('SELECT * FROM message_charges ORDER BY recipient_id')).rows;await db.migrate();
   assert.deepEqual((await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows,balances);assert.equal((await shared.config()).current_price_units,prices.current_price_units);assert.deepEqual((await db.pool.query('SELECT * FROM message_charges ORDER BY recipient_id')).rows,charges);assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts WHERE shared_pool')).rows[0].n,120);
  });
+await t.test('Personal numbers never enter shared dispatch, and shared pages omit wallet fields',async()=>{
+  await quiet();const id=randomUUID(),source=(await db.pool.query('SELECT phone FROM accounts WHERE id=$1',[a1])).rows[0].phone;
+  const was=(await db.pool.query('SELECT enabled FROM accounts WHERE id=$1',[a2])).rows[0].enabled;
+  try{
+   await db.pool.query("INSERT INTO accounts(id,label,worker_group,phone,status) VALUES($1,'Personal isolation fixture','group-a',$2,'ready')",[id,source]);
+   const regular=(await request('/accounts','GET',null,owner)).data;assert.ok(regular.some(a=>a.id===id));assert.ok(regular.every(a=>!a.shared_pool));
+   const list=(await request('/shared/accounts','GET',null,owner)).data;assert.equal(list.total,120);assert.ok(list.rows.every(a=>a.id!==id));
+   const rejected=await request('/shared/accounts','POST',{phones:'+'+source,label:'Do not import',groups:['group-a']},owner);assert.equal(rejected.status,409);assert.match(rejected.data.error,/普通 WhatsApp/);
+   assert.equal((await request('/shared/accounts/'+a1+'/connect','POST',{},owner)).status,409);
+   const candidate=await shared.chooseAccount(db.pool);assert.notEqual(candidate?.id,a1);assert.notEqual(candidate?.id,id);
+   await db.pool.query('UPDATE accounts SET enabled=false WHERE id=$1',[a2]);
+   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID()},owner)).status,503);
+   for(const session of [owner,user1]){
+    const status=(await request('/shared/status','GET',null,session)).data;
+    assert.equal(Object.hasOwn(status,'balance_units'),false);assert.equal(Object.hasOwn(status,'credit_units'),false);
+   }
+   const wallet=(await request('/billing','GET',null,user1)).data;assert.ok(Object.hasOwn(wallet.user,'credit_units'));assert.ok(Array.isArray(wallet.ledger));
+  }finally{await db.pool.query('DELETE FROM accounts WHERE id=$1',[id]);await db.pool.query('UPDATE accounts SET enabled=$2 WHERE id=$1',[a2,was]);}
+ });
+ await t.test('More than 1000 records stay paginated and inactive records do not enter background work',async()=>{
+  const seeds=Array.from({length:1001},(_,i)=>({id:randomUUID(),phone:'+6019900'+String(i).padStart(4,'0')})),phone='+60195555555';let created;
+  try{
+   await db.pool.query("INSERT INTO accounts(id,label,worker_group,enabled,status,shared_pool,registration_phone) SELECT r.id,'Large record fixture','group-a',false,'disabled',true,r.phone FROM jsonb_to_recordset($1::jsonb) r(id uuid,phone text)",[JSON.stringify(seeds)]);
+   const response=await request('/shared/accounts','POST',{phones:phone,label:'Beyond old limit',groups:['group-a']},owner);assert.equal(response.status,201,JSON.stringify(response));assert.equal(response.data.created,1);
+   created=(await db.pool.query('SELECT id FROM accounts WHERE shared_pool AND registration_phone=$1 AND deleted_at IS NULL',[phone])).rows[0].id;
+   const last=(await request('/shared/accounts?page=23','GET',null,owner)).data;assert.equal(last.total,1122);assert.equal(last.rows.length,22);
+   const idle=(await db.pool.query(worker.accountWorkSQL,['group-a',[]])).rows;assert.ok(idle.every(a=>!seeds.some(s=>s.id===a.id)&&a.id!==created));
+   const running=(await db.pool.query(worker.accountWorkSQL,['group-a',[seeds[0].id]])).rows;assert.ok(running.some(a=>a.id===seeds[0].id));
+   await db.pool.query('UPDATE accounts SET purge_requested=true WHERE id=$1',[seeds[1].id]);assert.ok((await db.pool.query(worker.accountWorkSQL,['group-a',[]])).rows.some(a=>a.id===seeds[1].id));
+   await db.pool.query("DELETE FROM shared_health_hourly WHERE worker_group='group-a'");await shared.checkGroup('group-a',new Map());
+   assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts WHERE id=ANY($1::uuid[]) AND shared_checked_at IS NOT NULL',[seeds.map(s=>s.id)])).rows[0].n,0);
+  }finally{await db.pool.query('DELETE FROM accounts WHERE id=ANY($1::uuid[])',[[...seeds.map(s=>s.id),...(created?[created]:[])]]);}
+ });
 });
