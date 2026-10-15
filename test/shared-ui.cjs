@@ -211,7 +211,7 @@ async function runCase(browser,base,role,language){
  await page.click('#nav [data-page=shared]');
  await waitReady(page);fixture.enabled=false;await page.click('#refresh');
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
- fixture.enabled=true;fixture.available=0;await page.click('#refresh');
+ fixture.enabled=true;fixture.available=0;await page.evaluate(()=>loadPage());
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
  const unavailableText=await page.$eval('#content',n=>n.textContent);
  if(role==='owner')assert.match(unavailableText,language==='en'?/No shared accounts are available yet/:/暂时没有可用的共享账号/);
