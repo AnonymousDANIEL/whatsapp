@@ -1,7 +1,7 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),puppeteer=require('puppeteer');
 const root=path.resolve(__dirname,'../public'),id='11111111-1111-4111-8111-111111111111';let fixture;
-const fakeRFB=`export default class RFB extends EventTarget{constructor(screen){super();window.fixtureRfb=this;window.fixtureRfbCount=(window.fixtureRfbCount||0)+1;screen.textContent='Local RFB test fixture';setTimeout(()=>this.dispatchEvent(new Event('connect')),0);}disconnect(){this.dispatchEvent(new Event('disconnect'));}}`;
+const fakeRFB=`export default class RFB extends EventTarget{constructor(screen){super();window.fixtureRfb=this;window.fixtureRfbCount=(window.fixtureRfbCount||0)+1;screen.textContent='Local RFB test fixture';if(window.fixtureHangNext){window.fixtureHangNext=false;}else setTimeout(()=>this.dispatchEvent(new Event('connect')),0);}disconnect(){this.dispatchEvent(new Event('disconnect'));}}`;
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');
@@ -32,12 +32,13 @@ const server=http.createServer(async(req,res)=>{
    fixture.phase='ready';await page.waitForFunction(()=>window.fixtureRfbCount===1);
    fixture.phase='recovering';await page.evaluate(()=>window.fixtureRfb.disconnect());
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'正在恢复':'is recovering'),{},lang);
-   fixture.phase='ready';await page.waitForFunction(()=>window.fixtureRfbCount===2);
-   fixture.phase='linked';await page.evaluate(()=>window.fixtureRfb.disconnect());
+   await page.evaluate(()=>window.fixtureHangNext=true);fixture.phase='ready';await page.waitForFunction(()=>window.fixtureRfbCount===3);
+   await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'画面已连接':'Screen connected'),{},lang);
+   fixture.phase='linked'; // A missing disconnect event must not leave a linked scan window open.
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'无需再次扫码':'No further QR scan'),{},lang);
-   const checks=fixture.checks;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(fixture.checks,checks);assert.equal(await page.evaluate(()=>window.fixtureRfbCount),2);assert.deepEqual(errors,[]);
+   const checks=fixture.checks;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(fixture.checks,checks);assert.equal(await page.evaluate(()=>window.fixtureRfbCount),3);assert.deepEqual(errors,[]);
    assert.ok(await page.evaluate(()=>window.fixtureReconnectDelays.every(ms=>ms<=30000)));
-   console.log('QR viewer PASS: '+lang+' resource wait, automatic reconnect after crash, stop polling after successful link');await page.close();
+   console.log('QR viewer PASS: '+lang+' resource wait, automatic reconnect after crash and stuck RFB handshake, passive link detection, stop polling after successful link');await page.close();
   }
  }finally{if(browser)await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

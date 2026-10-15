@@ -1,5 +1,12 @@
 # Project instructions
 
+## Long-lived QR screens and honest capacity (2026-10-15)
+
+- Repeated QR viewing has no application scan-count cap, but USER account_limit stays 10, each worker accepts at most 10 desktops, and cgroup admission still limits actual simultaneous capacity. Owner account records are not unlimited live browsers. Scale with distinct groups and profile volumes; never clone a worker against the same group/profile or remove resource guards to claim unlimited connections.
+- Monitor protocol pong responses on both screen bridge legs independently of database authorization checks. Retire a half-open screen connection after 60 seconds without a pong; quiet healthy QR screens must stay open. Clear all monitor listeners/timers on close. Prevent overlapping periodic permission queries and keep token, origin, USER scan-only and lease checks intact.
+- Bound VNC greeting and browser RFB handshake waits. Scan viewers periodically recheck linking without interrupting a healthy screen, stop once linked/unauthorized, and keep generation guards, bounded reconnect backoff and pagehide cleanup. Screen recovery must never restart/logout the WhatsApp client, delete profiles or resend messages.
+- Test actual WebSocket auto-pong versus silent peers, virtual-time quiet-screen longevity, both bridge legs, stale callbacks and real Chrome stalled-handshake/passive-link cases in both languages. A short soak is evidence for its observed duration, not a permanent-uptime certification. WhatsApp may revoke sessions and requires primary-phone activity under its own rules.
+
 ## QR browser resource recovery (2026-10-15)
 
 - Production hit the cgroup limit of 1000 processes/threads despite spare memory. Launch Chromium through bin/browser with a generated allowed CPU list (two logical CPUs per independent browser, distributed by slot), then drop to the existing private UID. Preserve custom CHROMIUM_PATH as the underlying executable without bypassing affinity or UID isolation. Never use single-process/no-zygote or weaken web security to reduce process counts.

@@ -4,6 +4,7 @@ const billing=require('./billing');
 const shared=require('./shared');
 const {connectedSQL,linkedPhone}=require('./shared-domain');
 const http = require('node:http');
+const {monitorSockets}=require('./socket-health');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs/promises');
@@ -398,10 +399,12 @@ async function start() {
       const port = req.headers['x-control-mode'] === 'operate' ? entry.controlPort : entry.viewPort;
       wss.handleUpgrade(req, socket, head, ws => {
         const tcp = net.connect(port, '127.0.0.1');ws.scanOnly=requireUnlinked;entry.sockets.add(ws);
+        const greeting=setTimeout(()=>ws.terminate(),15000);greeting.unref();tcp.once('data',()=>clearTimeout(greeting));
         ws.on('message', data => { if (!tcp.destroyed) tcp.write(data); });
         tcp.on('data', data => { if(requireReady&&!entry.ready||requireUnlinked&&entry.ready)return ws.close();if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
         tcp.on('error', () => ws.close()); tcp.on('close', () => ws.close());
-        ws.on('close', () => { tcp.destroy(); entry.sockets.delete(ws); }); ws.on('error', () => tcp.destroy());
+        const heartbeat=monitorSockets([ws],()=>tcp.destroy());
+        ws.on('close', () => { clearTimeout(greeting);heartbeat.stop();tcp.destroy(); entry.sockets.delete(ws); }); ws.on('error', () => {clearTimeout(greeting);heartbeat.stop();tcp.destroy();});
       });
     } catch (err) { socket.write('HTTP/1.1 ' + (err.status || 403) + ' Rejected\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
