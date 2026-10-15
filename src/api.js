@@ -500,21 +500,22 @@ async function start() {
       const target = new URL('/screen/' + accountId, routes[a.worker_group]); target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
       wss.handleUpgrade(req, socket, head, ws => {
         const upstream = new WebSocket(target, { headers: { Authorization: 'Bearer ' + process.env.INTERNAL_SECRET, 'X-Control-Mode': operate ? 'operate' : 'view', 'X-Require-Ready':user.role==='owner'||scan?'false':'true','X-Require-Unlinked':scan?'true':'false' }, handshakeTimeout: 10000 });
-        const pending = []; let pendingSize = 0, stopped = false,checking=false,heartbeat;
-        ws.on('message', data => { if (upstream.readyState === WebSocket.OPEN) upstream.send(data); else { pendingSize += data.length; if (pendingSize > 1024 * 1024) return ws.close(1009); pending.push(data); } });
+        const pending = []; let pendingSize = 0, stopped = false,checking=false,heartbeat,verifiedAt=Date.now();
+        ws.on('message', data => { if(stopped)return;if (upstream.readyState === WebSocket.OPEN) upstream.send(data); else { pendingSize += data.length; if (pendingSize > 1024 * 1024) return ws.close(1009); pending.push(data); } });
         upstream.on('open', () => { for (const data of pending) upstream.send(data); pending.length = 0; });
-        upstream.on('message', data => { if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
-        const close = () => { if (stopped) return; stopped = true; clearInterval(timer);heartbeat?.stop(); ws.close(); upstream.close(); /* lease expires in at most 30 seconds */ };
+        upstream.on('message', data => { if(stopped)return;if (ws.readyState === WebSocket.OPEN) { if (ws.bufferedAmount > 16 * 1024 * 1024) return ws.close(1009); ws.send(data); } });
+        const close = hard => { if (stopped) return; stopped = true; clearInterval(timer);heartbeat?.stop();if(hard===true){ws.terminate();upstream.terminate();}else{ws.close();upstream.close();} /* lease expires in at most 30 seconds */ };
         ws.on('close', close); ws.on('error', close); upstream.on('close', close); upstream.on('error', close);
         heartbeat=monitorSockets([ws,upstream],close);
         const timer = setInterval(async () => {
-          if(stopped||checking)return;checking=true;
+          if(stopped)return;if(Date.now()-verifiedAt>=30000)return close(true);if(checking)return;checking=true;
           try {
             const current = await getSession(req); assert(current, 'Expired'); const currentAccount = await access(current, accountId, operate); assert(currentAccount.enabled, 'Disabled');assert(current.role==='owner'||(!operate&&scan&&currentAccount.status!=='ready'),'View unavailable');
             if(stopped)return;
             if (lease) {
               const changed = await pool.query("UPDATE control_leases SET expires_at=now()+interval '30 seconds' WHERE account_id=$1 AND session_hash=$2 RETURNING account_id", [accountId, current.token_hash]); assert(changed.rowCount, 'Lease lost');
             }
+            if(!stopped)verifiedAt=Date.now();
           } catch { close(); }finally{checking=false;}
         }, 10000);
         audit(user.id, operate ? 'chat.operate' : 'chat.view', accountId).catch(() => {});
