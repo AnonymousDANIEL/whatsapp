@@ -1,5 +1,13 @@
 # Project instructions
 
+## Real media-ID regression and preallocated keys (2026-10-15 evening)
+
+- Production reached preparation and failed on submission. The old fixture omitted enumerable MediaData.__x_id, masking the known September 2026 Msg initialization collision (wwebjs issue 201922). Keep a negative control that reproduces it with the pinned upstream sender and a model that actually applies the private ID. Never remove that field from the fixture to make tests green.
+- The individual-chat adapter constructs its native MsgKey during non-sending preparation, prefers fromMe/remote with a validated legacy fallback, and normalizes _serialized / $1 / intact components. Remove media __x_id and public media id, then assert the real message identity after media fields. Do not return to the pinned WWebJS.sendMessage final lookup or globally patch its functions/prototypes. Channels/groups/status stories are outside this adapter.
+- Persist the exact prepared ID and attempt before enqueue. Preserve it on uncertain results; early actual ACKs cannot be downgraded or cause an erroneous review pause. ACK zero stays held; no raw prepared object may fabricate success when a local model is missing.
+- Startup readiness builds against an existing private chat and creates only unregistered models, without collection add, upload or enqueue. Confirm clean model initialization and whether an undefined private ID reproduces the live collision. Return only booleans, format/version tags and fixed error categories; never log the generated IDs, chats, bodies or raw errors. The probe must not reserve the live preparation slot.
+- A task with only unknown recipients opens Review uncertain results instead of Send now. Keep unknowns and their holds intact; do not reset, resend or refund them on the assumption that this was their original failure. Old API callers receive a clear review-required error. Retain Owner/USER language and scope checks.
+
 ## Image-caption sending and reliable results (2026-10-15)
 
 - Preserve one inline photo with its exact caption, including Unicode and line breaks. Do not split it into two sends or silently convert it to a document. LiveWebClient prepares media without enqueueing, then commits the single-use page token after worker permission/deadline checks. Use the pinned upstream preparation and enqueue APIs; never patch the official UI or globally replace its send functions.

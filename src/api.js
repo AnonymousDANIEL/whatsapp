@@ -337,7 +337,9 @@ async function start() {
     const pending = await transaction(async db => {
       const current = (await db.query('SELECT cancelled FROM campaigns WHERE id=$1 FOR UPDATE', [c.id])).rows[0];
       assert(!current.cancelled, '任务已取消');
-      const count = (await db.query("SELECT count(*)::integer n FROM recipients WHERE campaign_id=$1 AND status='pending'", [c.id])).rows[0].n;
+      const counts=(await db.query("SELECT count(*) FILTER(WHERE status='pending')::integer n,count(*) FILTER(WHERE status='unknown')::integer review FROM recipients WHERE campaign_id=$1",[c.id])).rows[0];
+      const count=counts.n;
+      assert(count>0||!counts.review,'任务存在待核对号码，请先查看明细核对，系统不会自动重发。');
       assert(count > 0, '任务没有待发送的号码');
       // Never reset recipients: submitted, unknown and other finished results stay intact.
       await db.query('UPDATE campaigns SET enabled=true,send_now=true,pause_reason=NULL WHERE id=$1', [c.id]);

@@ -110,6 +110,7 @@ window.translateError=(message)=>{
  '任务已删除':'This task has been deleted.',
  '任务已取消':'This task has been cancelled.',
  '任务没有待发送的号码':'This task has no pending recipients.',
+ '任务存在待核对号码，请先查看明细核对，系统不会自动重发。':'This task has recipients that need review. Check the details first; the system will not resend them automatically.',
  '任务正在发送，请暂停后再删除':'A message is being sent. Pause the task and wait before deleting.',
  '请输入 DELETE HISTORY 确认':'Type DELETE HISTORY to confirm.',
  '请输入任务名称':'Enter a task title.',

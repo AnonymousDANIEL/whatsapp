@@ -159,7 +159,7 @@ async function startAccount(account) {
       syncHistory(account.id,e).then(async()=>{
         if(!lifecycle.current(entries,e))return;
         const report=await e.client.inspectSendRuntime();
-        console.log('Send runtime readiness:',JSON.stringify({account:crypto.createHash('sha256').update(account.id).digest('hex').slice(0,12),...report}));
+        console[report.ok===false?'error':'log']('Send runtime readiness:',JSON.stringify({account:crypto.createHash('sha256').update(account.id).digest('hex').slice(0,12),...report}));
       }).catch(err=>console.error('history/readiness sync:',err.code||err.name));
     });
     // Real receipts remain valid across a reconnect; only connection-state callbacks are generation-bound.
@@ -276,17 +276,18 @@ async function dispatch(account, entry) {
     if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); await billing.settle(recipient.id,'pending'); return; }
     const result = await send(entry, recipient, campaign);
     // A late completion may already have replaced sending with its real result.
-    await pool.query("UPDATE recipients SET status=$1,error_code=$2,message_id=$3,ack=$4,updated_at=now() WHERE id=$5 AND status='sending'", [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
+    await pool.query("UPDATE recipients SET status=$1,error_code=$2,message_id=COALESCE($3,message_id),ack=$4,updated_at=now() WHERE id=$5 AND status='sending'", [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
     if (result.messageId) {
       const receipt = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [account.id, result.messageId])).rows[0];
       if (receipt) await receiveAck(account.id, result.messageId, receipt.ack);
     }
-    await billing.settle(recipient.id,(await pool.query('SELECT status FROM recipients WHERE id=$1',[recipient.id])).rows[0]?.status);
+    const savedStatus=(await pool.query('SELECT status FROM recipients WHERE id=$1',[recipient.id])).rows[0]?.status;
+    await billing.settle(recipient.id,savedStatus);
     if(result.status!=='pending')await pool.query(`UPDATE accounts SET
       next_send_at=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN now()+($1::integer*interval '1 millisecond') ELSE now() END,
       batch_sent=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN 0 ELSE (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 END,
       batch_campaign_id=$3 WHERE id=$2`,[campaign.interval_ms,account.id,campaign.id,campaign.batch_size||1]);
-    if (result.quarantine) {
+    if (result.quarantine&&!['submitted','delivered','read'].includes(savedStatus)) {
       await pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[campaign.id]);
       await audit(campaign.created_by,'campaign.review_required',campaign.id,{recipient_id:recipient.id,reason:result.error});
     }
@@ -322,7 +323,7 @@ async function send(entry, recipient, campaign, {timeoutMs=60000}={}) {
         if(!await permitted())return {status:'pending',error:null};
       }
       if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
-      await pool.query('UPDATE recipients SET media_fingerprint=$1,send_attempt_id=$2,started_at=now() WHERE id=$3',[prepared?.filehash||null,attempt,recipient.id]);
+      await pool.query('UPDATE recipients SET media_fingerprint=$1,send_attempt_id=$2,started_at=now(),message_id=$4,ack=NULL WHERE id=$3',[prepared?.filehash||null,attempt,recipient.id,prepared?.id||null]);
       if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
       stage='send';
       startedSend = true;

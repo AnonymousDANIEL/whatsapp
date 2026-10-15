@@ -91,6 +91,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal(calls,1);assert.equal(destroyed,false);assert.equal(e.ready,true);
   assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[cid])).rows[0].enabled,false);
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[cid])).rows[0].status,'unknown');
+  const blocked=await request('/campaigns/'+cid+'/send-now','POST',{},user);assert.equal(blocked.status,400);assert.match(blocked.data.error,/待核对/);assert.equal(calls,1);
   // Read-only reconciliation recovers a unique existing message without sending.
   const rr=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
   const partial={id:'partial-history-fixture',fromMe:true,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(+new Date(rr.started_at)/1000),ack:2};
@@ -137,6 +138,10 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   global.window={atob:global.atob};LoadUtils();const fixture=installSendFixture();
   try{
    const client=new LiveWebClient();client.pupPage={evaluate:async(fn,...args)=>fn(...args)};client.getNumberId=async phone=>({_serialized:phone+'@c.us'});
+   const enqueue=client.sendWorkspaceMessage.bind(client);client.sendWorkspaceMessage=async token=>{
+    const saved=(await db.pool.query("SELECT message_id,send_attempt_id FROM recipients WHERE campaign_id=$1 AND status='sending'",[cid])).rows[0];
+    assert.ok(saved.message_id,'The real message ID must be durable before enqueue');assert.equal(saved.send_attempt_id,token);return enqueue(token);
+   };
    await worker.dispatch({id:a},{id:a,ready:true,client});
    const row=(await db.pool.query("SELECT * FROM recipients WHERE campaign_id=$1 AND status='awaiting_ack'",[cid])).rows[0];
    assert.equal(fixture.sent.length,1);assert.equal(fixture.sent[0].caption,'Photo caption 中文');assert.equal(fixture.sent[0].type,'image');
@@ -153,6 +158,25 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    assert.equal(Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units),before-1000);
    assert.equal(fixture.serializations,0);assert.equal(fixture.seen,0);
   }finally{global.window=previous;}
+ });
+ await t.test('preallocated image IDs survive submission exceptions and early real ACKs cannot be overwritten',async()=>{
+  const photo={data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',mimetype:'image/png'};
+  for(const early of [false,true]){
+   const cid=(await request('/campaigns','POST',{...template,body:early?'Early image receipt':'Known image identity',media:photo,recipients:'0123456789',send_now:true},user)).data.id;
+   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
+   const mid=early?'synthetic-early-image':'synthetic-known-image';let calls=0;
+   const client={getNumberId:async()=>({_serialized:'60123456789@c.us'}),prepareWorkspaceMessage:async()=>({id:mid,filehash:'synthetic-known-fingerprint'}),discardWorkspaceMessage:async()=>{},sendWorkspaceMessage:async()=>{
+    calls++;assert.equal((await db.pool.query('SELECT message_id FROM recipients WHERE campaign_id=$1',[cid])).rows[0].message_id,mid);
+    if(early)await worker.receiveAck(a,mid,2);throw Error('Synthetic exception after enqueue boundary');
+   }};
+   await worker.dispatch({id:a},{id:a,ready:true,client});
+   let row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];assert.equal(row.message_id,mid);assert.equal(calls,1);
+   if(!early){assert.equal(row.status,'unknown');assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');await worker.receiveAck(a,mid,2);}
+   else{assert.equal(row.status,'delivered');assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[cid])).rows[0].enabled,true);}
+   await require('../src/billing').reconcile();await require('../src/billing').reconcile();
+   row=(await db.pool.query('SELECT * FROM recipients WHERE id=$1',[row.id])).rows[0];assert.equal(row.status,'delivered');
+   assert.equal((await db.pool.query("SELECT * FROM credit_ledger WHERE recipient_id=$1 AND kind='charged'",[row.id])).rowCount,1);
+  }
  });
  await t.test('preparation failure never sends, pauses the task and refunds exactly once',async()=>{
   const cid=(await request('/campaigns','POST',{...template,recipients:'0123456789',send_now:true,title:'Preparation failure'},user)).data.id;

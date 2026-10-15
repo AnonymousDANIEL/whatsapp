@@ -20,7 +20,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
    else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'scan_required',history_synced_at:null}];
-   else if(p==='/campaigns')result=[];
+   else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,counts:{unknown:1}}]:[];
    else if(p==='/overview')result={counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
    else if(p==='/send-records')result=['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+60123456789',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
@@ -39,7 +39,7 @@ const server=http.createServer(async(req,res)=>{
     if(s.failNext){s.failNext=false;res.statusCode=503;result={error:'Fixture retry'};}else result={id:taskId,count:2,duplicates:1};
    }else if(p==='/shared/tasks')result={rows:[{id:taskId,title:'<script>fixture</script>',body:'fake UI message',created_at:'2026-10-14T14:00:00Z',enabled:true,creator:'fixture-'+s.role,counts:{pending:1,submitted:1}}],page:1,size:100};
    else if(p==='/shared/records')result={rows:[{id:1,title:'fixture task',body:'fake UI message',creator:'fixture-'+s.role,phone:'+60123456789',status:'submitted',updated_at:'2026-10-14T14:00:00Z'}],page:1,size:100};
-   else if(p==='/campaigns/'+taskId+'/results')result={rows:[{phone:'+60123456789',status:'submitted',updated_at:'2026-10-14T14:00:00Z'}],total:1};
+   else if(p==='/campaigns/'+taskId+'/results')result={rows:[{phone:'+60123456789',status:s.taskReview?'unknown':'submitted',updated_at:'2026-10-14T14:00:00Z'}],total:1};
    else if(p==='/logout')result={ok:true};
    else {res.statusCode=404;result={error:'Unexpected fixture request: '+p};}
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
@@ -62,11 +62,20 @@ async function verifyPersonalPages(page,fixture,role,language){
   ['overview','.overview-chart',/真实消息数据|Live message data/]
  ];
  for(const [target,ready,explanation]of pages){
+  if(target==='tasks')fixture.taskReview=true;
   await page.evaluate(target=>{page=target;sessionStorage.setItem('wa_page',target);navigation();return loadPage();},target);
   await page.waitForSelector(ready);
   const text=await page.$eval('#content',n=>n.textContent);
   if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
   if(target==='tasks'&&role==='user')assert.doesNotMatch(text,/按间隔和每批数量发送|Send by interval and batch size/);
+  if(target==='tasks'){
+   assert.equal(await page.$$eval('[data-now]',nodes=>nodes.length),0);
+   assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
+   const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
+   await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+   assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Needs review/:/结果待核对/);
+   assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');fixture.taskReview=false;
+  }
   if(target==='messages'){
    assert.equal(!!await page.$('#history-sync-note'),role==='owner');
    if(role==='user')assert.doesNotMatch(text,/等待连接后核对|Waiting for connection to check/);
@@ -250,3 +259,4 @@ async function runCase(browser,base,role,language){
   for(const role of ['owner','user'])for(const language of ['zh','en'])await runCase(browser,base,role,language);
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+

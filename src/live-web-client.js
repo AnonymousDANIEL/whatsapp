@@ -1,9 +1,17 @@
 'use strict';
 const {Client}=require('whatsapp-web.js');
-const {browserPrepareSend,browserCommitSend,browserDiscardSend,browserSendReadiness}=require('./workspace-send');
+const {randomUUID}=require('node:crypto');
+const {browserPrepareSend,browserCommitSend,browserDiscardSend,sendFailureCode}=require('./workspace-send');
 
 class LiveWebClient extends Client {
- async inspectSendRuntime(){return this.pupPage.evaluate(browserSendReadiness);}
+ async inspectSendRuntime(){
+  try{
+   // Builds a key against an already-loaded chat, without upload/enqueue or a
+   // shared preparation slot. Do not return the generated ID or private chat.
+   const prepared=await this.pupPage.evaluate(browserPrepareSend,randomUUID(),null,'',null,Date.now()+10000,true);
+   return {ok:true,stage:'prepared-without-enqueue',...prepared.inspection};
+  }catch(error){const code=sendFailureCode(error,'prepare');return code==='SEND_CHAT_UNAVAILABLE'?{ok:null,stage:'not-checked',code:'NO_LOADED_PRIVATE_CHAT'}:{ok:false,stage:'preparation',code};}
+ }
  async prepareWorkspaceMessage(token,chatId,body,media,deadline){
   return this.pupPage.evaluate(browserPrepareSend,token,chatId,body,media,deadline);
  }
