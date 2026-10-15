@@ -2,6 +2,8 @@
 
 ## Long-lived QR screens and honest capacity (2026-10-15)
 
+- Worker ENTRYPOINT must use tini -s -- so it adopts/reaps orphaned browser descendants even beneath Railway's PID-1 wrapper. Do not add -g: retain Node's coordinated graceful shutdown. Keep the image smoke that reads the declared entrypoint and proves a private-UID orphan is adopted and reaped while Tini is not PID 1.
+
 - Repeated QR viewing has no application scan-count cap, but USER account_limit stays 10, each worker accepts at most 10 desktops, and cgroup admission still limits actual simultaneous capacity. Owner account records are not unlimited live browsers. Scale with distinct groups and profile volumes; never clone a worker against the same group/profile or remove resource guards to claim unlimited connections.
 - Monitor protocol pong responses on both screen bridge legs independently of database authorization checks. Retire a half-open screen connection after 60 seconds without a pong; quiet healthy QR screens must stay open. Clear all monitor listeners/timers on close. Prevent overlapping periodic permission queries and keep token, origin, USER scan-only and lease checks intact.
 - Bound VNC greeting and browser RFB handshake waits. Scan viewers periodically recheck linking without interrupting a healthy screen, stop once linked/unauthorized, and keep generation guards, bounded reconnect backoff and pagehide cleanup. Screen recovery must never restart/logout the WhatsApp client, delete profiles or resend messages.

@@ -9,5 +9,6 @@ COPY src ./src
 COPY bin ./bin
 RUN chmod 755 /app/bin/browser
 EXPOSE 8080
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
 CMD ["node", "src/main.js"]
+

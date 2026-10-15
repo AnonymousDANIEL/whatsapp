@@ -29,6 +29,10 @@ worker slots, with software rendering threads capped accordingly. Verify real
 screens and peak task use rather than treating that bound as guaranteed capacity.
 For releases, configure a 90-second worker deployment drain so the existing
 shutdown handler can flush profiles and finish in-flight work before termination.
+The worker entrypoint must enable Tini subreaping (-s) even when Railway inserts
+its own PID-1 wrapper. Otherwise exited orphan descendants may remain as zombies
+and consume the task budget. The image regression tests the actual entrypoint
+under another init and verifies a private-UID orphan is adopted and reaped.
 
 Before increasing concurrency, check the minute-level Browser capacity logs,
 worker freshness, crash/timeout categories and volume health. At 8 live browsers
