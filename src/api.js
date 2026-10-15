@@ -14,6 +14,7 @@ const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, validatePacing, permission, manageUser, csvCell } = require('./domain');
 const { createWorkerConnection } = require('./connection');
+const security = require('./http-security');
 
 const SESSION_HOURS = 168;
 const routes = JSON.parse(process.env.WORKER_ROUTES_JSON || '{}');
@@ -22,7 +23,7 @@ assert(Array.isArray(sharedGroups)&&sharedGroups.every(g=>typeof g==='string'&&O
 const sharedOnly=new Set(sharedGroups),poolRoutes=sharedGroups.length?Object.fromEntries(sharedGroups.map(g=>[g,routes[g]])):routes;
 const browser = createWorkerConnection(routes, process.env.INTERNAL_SECRET);
 const COOKIE = 'wa_session';
-const publicURL = new URL(process.env.PUBLIC_URL || 'http://localhost:3000');
+const publicURL = security.publicAddress(process.env.PUBLIC_URL);
 const secure = publicURL.protocol === 'https:';
 const uuid = value => { assert(/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(value), 'ID 无效'); return value; };
 function cookieToken(req) {
@@ -88,14 +89,17 @@ async function workerCommand(account, command) {
 }
 async function start() {
   const app = express();
-  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
+  app.set('trust proxy', security.proxyHops(process.env.TRUST_PROXY_HOPS));
   app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], frameSrc: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'self'"] } }, crossOriginEmbedderPolicy: false }));
-  app.use(express.json({ limit: '8mb',verify(req,res,body){if(req.originalUrl.startsWith('/api/banks/feed/'))req.rawBankBody=Buffer.from(body);} }));
+  app.use((req,res,next)=>{res.set('Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()');next();});
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use(security.requireCanonicalHost(publicURL));
+  app.use(['/api/login','/api/password','/api/users/password-access'],express.json({limit:'4kb'}));
+  app.use(express.json({ limit: '8mb',verify(req,res,body){if(req.originalUrl.startsWith('/api/banks/feed/'))req.rawBankBody=Buffer.from(body);} }));
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
   const dummyHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
-  app.post('/api/login', limiter, route(async (req, res) => {
+  app.post('/api/login', limiter, (req,res,next)=>req.headers.origin===publicURL.origin?next():res.status(403).json({error:'来源不正确'}), security.validLoginBody, security.loginAccountLimiter(), route(async (req, res) => {
     assert(req.headers.origin === publicURL.origin, '来源不正确', 403);
     const { username, password } = req.body;
     assert(typeof username === 'string' && typeof password === 'string' && password.length <= 200, '账号或密码不正确', 401);
@@ -118,11 +122,11 @@ async function start() {
   });
   app.get('/api/me', route(async (req, res) => res.json({ user: publicUser(req.user), csrf: req.user.csrf, permissions: PERMISSIONS, worker_groups: Object.keys(routes).filter(g=>!sharedOnly.has(g)), server_time: new Date().toISOString(), timezone:'Asia/Kuala_Lumpur',password_access:!!(req.user.role==='owner'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date()) })));
   app.post('/api/logout', route(async (req, res) => { await pool.query('DELETE FROM sessions WHERE token_hash=$1', [req.user.token_hash]); res.clearCookie(COOKIE, { path: '/', secure, sameSite: 'strict' }); res.json({ ok: true }); }));
-  app.post('/api/password', route(async (req, res) => {
+  app.post('/api/password', security.passwordChangeLimiter(), route(async (req, res) => {
     assert(req.user.role === 'owner', '只有 Owner 可以修改密码', 403);
     assert(typeof req.body.password === 'string' && req.body.password.length >= 12 && req.body.password.length <= 200, '新密码需要 12–200 个字符');
     const row = (await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id])).rows[0];
-    assert(await bcrypt.compare(req.body.current_password || '', row.password_hash), '原密码不正确', 403);
+    assert(typeof req.body.current_password==='string'&&req.body.current_password.length<=200&&await bcrypt.compare(req.body.current_password, row.password_hash), '原密码不正确', 403);
     await transaction(async c => { await c.query('UPDATE users SET password_hash=$1,password_cipher=NULL,password_changed_at=now() WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
     await audit(req.user.id, 'password.change', req.user.id); res.json({ ok: true });
   }));
@@ -466,6 +470,8 @@ async function start() {
   app.use(express.static(path.join(__dirname, '../public'), { etag: true }));
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
+    if(err.type==='entity.too.large')return res.status(413).json({error:'提交内容过大'});
+    if(err.type==='entity.parse.failed')return res.status(400).json({error:'提交格式无效'});
     const status = err.status || (err.code === '23505' ? 409 : 500);
     if (status >= 500) console.error('request failed:', err.code || err.name);
     const conflict={bank_accounts_account_number_key:'Bank account already exists',bank_transactions_pkey:'Bank transaction ID already exists',bank_receipt_once:'Receipt already used'};
@@ -475,6 +481,7 @@ async function start() {
   server.on('upgrade', async (req, socket, head) => {
     let lease = false, accountId, user;
     try {
+      assert(security.canonicalHost(req,publicURL), 'Wrong host', 421);
       assert(req.headers.origin === publicURL.origin, 'Wrong origin', 403);
       const url = new URL(req.url, publicURL); const match = url.pathname.match(/^\/screen\/([a-f0-9-]+)$/);
       assert(match, 'Wrong endpoint', 404); accountId = uuid(match[1]);
@@ -517,3 +524,4 @@ async function start() {
   return server;
 }
 module.exports = { start, getSession, access };
+

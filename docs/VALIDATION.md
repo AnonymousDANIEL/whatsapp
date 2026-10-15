@@ -1,5 +1,14 @@
 # 验证范围 · 2026-10-01
 
+## 2026-10-15 新域名和安全检查
+
+- 已验证 mywasap.com 的首页、HTTP→HTTPS、有效证书和原数据库健康检查；未登录的 me/users/billing 接口拒绝访问，.env/.git 不可下载。新域名登录来源检查接受正式 origin，拒绝外部及旧 Cloudflare origin；没有使用真实用户密码或发送消息。
+- 修复正式域名/旧地址迁移、限制凭据输入、按账号增加失败登录限流、Owner 修改自身密码限流和安全配置校验。签名付款及银行回调、银行连接器的签名读取保留；没有放宽来源、CSRF 或结算验证。
+- basic-ftp 定向更新至 6.2.1，干净锁定安装后的生产依赖扫描为 0 项已知漏洞，保留 whatsapp-web.js 1.34.7。Cloudflare Worker 通过 2026-10-15 最新官方 Workers 类型 5.20261015.1 检查。
+- 本地 npm run check 通过，npm test 共 57 项：54 通过、0 失败、3 个 PostgreSQL 父用例因本地未提供测试数据库跳过。完整原生数据库、Chrome、两个镜像和 worker 实机冒烟以本次提交 CI 结果为准。
+- 已发现生产浏览器进程 EAGAIN/历史核对 ProtocolError；新增进程不足时无需 fork 的私有 UID 清理和 cgroup 诊断。不得用部署 SUCCESS 代替真实 WhatsApp 登录验收。
+- www 已在 Railway 配好，但 Namecheap DNS 仍待添加，详细记录及检查边界见 DOMAIN_SECURITY.md。没有变更主域 DNS、MX、密码、余额或生产账号状态。
+
 本版本是可部署开发源码，不是已经上线并验收的生产系统。
 
 ## 已完成
@@ -254,3 +263,4 @@ USER Credit/top-up now directly displays its balance, Bank top-up, Online FPX, d
 Bank global-off/no active receiving banks, unavailable live FPX and disabled shared sending show Coming soon to USER. Maintenance keeps the existing bank-maintenance detail; Owner sees actual status/switches. FPX configuration read failures use a retry message rather than a false Coming soon. Closed methods retain the USER's own past deposits, receipt actions, pending-order checks and verified payment-return handling while exposing no new-payment action or current bank details. No API, payment arithmetic, sender, profile or worker changes are included.
 
 The existing four real Chrome Owner/USER × Chinese/English desktop/mobile flows now inspect simultaneous sections, exact order with the ledger last, USER-only heading text, no switches, closed-method Coming soon, live FPX restoration, closed pending-order checks, bank maintenance/off, legacy saved destinations and verified payment returns. A changing FPX order refresh also checks bank amount and retry-request-ID preservation. The existing PostgreSQL 17 tests, API/worker Docker builds and network-disabled headful smoke remain required release checks. Fixtures never send real messages or create production payments/deposits.
+

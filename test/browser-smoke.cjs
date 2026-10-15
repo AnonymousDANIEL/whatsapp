@@ -28,10 +28,12 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    entry.client={pupBrowser:browser,destroy:()=>browser.close()};
    const page=(await browser.pages())[0];await page.setContent('<title>Isolated browser smoke</title><h1>Local test only</h1>');
    assert.equal(await page.title(),'Isolated browser smoke');
-   await retire(entries,entry);
+   // Simulate a process-limit failure: cleanup must also work when pkill cannot fork.
+   if(round===0){entry.client.destroy=()=>new Promise(()=>{});await retire(entries,entry,{timeout:30,run:async()=>{throw Object.assign(Error('simulated fork limit'),{code:'EAGAIN'});}});}
+   else await retire(entries,entry);
    assert.equal(entries.size,0);
    assert.equal(await fs.readFile(path.join(profile,'keep-session.marker'),'utf8'),'preserved');
   }
-  console.log('Worker browser smoke PASS: cancelled launch, isolated headful Chromium, cleanup, same profile reused; network disabled');
+  console.log('Worker browser smoke PASS: cancelled launch, isolated headful Chromium, fork-free cleanup, same profile reused; network disabled');
  }finally{for(const entry of [...entries.values()])await retire(entries,entry);await fs.rm(base,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

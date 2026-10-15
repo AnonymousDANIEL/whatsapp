@@ -86,6 +86,7 @@ class IsolatedAuth extends LocalAuth {
 async function fail(id, reason, expected=null) {
   const entry = entries.get(id); if (!entry || entry.closing || expected&&entry!==expected) return;
   console.error(describeStartupError(new Error(reason), 'account-browser'));
+  lifecycle.resourceSummary().then(info=>console.error('Browser resources:',JSON.stringify(info))).catch(()=>{});
   const n = (failures.get(id) || 0) + 1; failures.set(id, n);
   retryAt.set(id, Date.now() + Math.min(300000, 10000 * 2 ** Math.min(n, 5)));
   await stopAccount(id,entry,{beforeRelease:()=>state(id,'error',reason)});
@@ -161,7 +162,7 @@ async function startAccount(account) {
       console.error(describeStartupError(error,'chromium-initialize'));
       fail(account.id,'WHATSAPP_INITIALIZATION_FAILED',e).catch(()=>{});
     });
-  } catch (err) { fail(account.id,err.message||'START_FAILED',e).catch(error=>console.error('browser cleanup:',error.code||error.name)); }
+  } catch (err) { console.error(describeStartupError(err,'desktop-setup'));fail(account.id,err.message||'START_FAILED',e).catch(error=>console.error('browser cleanup:',error.code||error.name)); }
   })();
   await e.setup;
 }
@@ -390,6 +391,7 @@ async function start() {
   tick().catch(e => console.error('worker startup:', e.code || e.name));
   await new Promise(resolve => server.listen(Number(process.env.PORT || 8080), '::', resolve));
   console.log('Browser worker ready:', group);
+  console.log('Browser resources:',JSON.stringify(await lifecycle.resourceSummary()));
   process.on('SIGTERM', async () => {
     shuttingDown = true; clearInterval(interval); server.close();
     const hardStop = setTimeout(() => process.exit(0), 90000); hardStop.unref();
@@ -400,3 +402,4 @@ async function start() {
   return server;
 }
 module.exports = { accountWorkSQL, start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };
+

@@ -1,5 +1,13 @@
 # Project instructions
 
+## Canonical domain and security (2026-10-15)
+
+- Production origin is https://mywasap.com. Preserve exact Origin/CSRF checks and enforce the raw production Host on HTTP and WebSockets. Safe aliases redirect to the configured origin without allowing open redirects; only health checks and exact independently signed payment/bank endpoints bypass the host gate. Preserve raw signed request bodies and existing gateway settlement verification.
+- Keep cloudflare/legacy-domain.mjs as the old workers.dev migration. Never forward browser cookies/Authorization or rewrite Origin. Preserve signed connector queue/receipt reads as well as existing payment callbacks; do not replace all legacy traffic with an unconditional redirect.
+- Keep 4 KB credential-body limits, hashed account-failure plus IP login throttles, Owner verification limits and bounded proxy trust. Multi-replica APIs need a shared limiter store. Do not silently change production credentials, APP_VAULT_KEY, INTERNAL_SECRET or database settings as a security test.
+- Preserve private UID browser isolation and profile data. At EAGAIN/ENOMEM cleanup must work without spawning pkill; never signal root/system identities, PID 1 or the running Node PID. Run the real network-disabled image smoke including this fallback.
+- www DNS is prepared in docs/DOMAIN_SECURITY.md and needs the existing DNS account. Do not change nameservers or working MX records blindly, or claim WAF/security certification without verified configuration.
+
 This is the user's WhatsApp workspace backend. The repository is
 https://github.com/AnonymousDANIEL/whatsapp and its working branch is main.
 
@@ -122,3 +130,4 @@ target-environment checks; do not call them tested based on a successful build.
 - USER Credit/top-up has no tabs or section-switch buttons. Keep the balance, then Bank top-up and Online FPX, deposit history, and the credit ledger last. Remove only the USER ledger title suffix (latest 100); retain bounded queries and all stored ledger records. Owner retains their title and controls.
 - Closed bank top-up, unavailable live FPX and disabled shared sending show Coming soon to USER. Keep Owner real configuration status, bank-maintenance detail and server-side checks. Never enable a payment/send just to display its section; do not label failed configuration reads as Coming soon.
 - Closed methods retain the USER's own historical deposits and FPX order checks/verified settlement. Global/per-bank-off still hides current receiving details and QR, prevents new deposits and does not create credit. Preserve unsent bank form amount, selected bank and retry request ID during combined-page refresh.
+

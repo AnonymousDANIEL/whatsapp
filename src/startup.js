@@ -12,6 +12,10 @@ function validateStartupEnvironment(env) {
     }
   }
   if (!['api', 'worker'].includes(env.SERVICE_ROLE)) issues.push('SERVICE_ROLE 必须为 api 或 worker');
+  if (env.SERVICE_ROLE === 'api') {
+    try { const security=require('./http-security');security.publicAddress(env.PUBLIC_URL);security.proxyHops(env.TRUST_PROXY_HOPS); }
+    catch(error) { issues.push(error.message); }
+  }
   if ((env.INTERNAL_SECRET || '').length < 32) issues.push('INTERNAL_SECRET 至少需要 32 位；API 与 worker 使用同一个随机密钥');
   if (issues.length) throw Object.assign(new Error(issues.join('；')), { code: 'STARTUP_CONFIG_INVALID' });
 }
@@ -48,6 +52,10 @@ function describeStartupError(error, stage, env = process.env) {
     ? '检查 PostgreSQL 服务是否运行，以及 DATABASE_URL 是否引用同一项目和环境的数据库。'
     : '检查当前服务的环境变量和部署日志。';
   if (has('STARTUP_CONFIG_INVALID')) hint = '在 whatsapp 服务的 Variables 补齐配置，保存后部署；不要把密码或密钥提交到 GitHub。';
+  else if (has('EAGAIN','ENOMEM') && stage !== 'database') {
+    reason = '浏览器启动所需的进程或内存资源暂时不足';
+    hint = '检查 Browser resources 的进程数量及上限；保留扫码资料，清理失败进程或分配独立 worker。';
+  }
   else if (has('ECONNREFUSED')) {
     reason = 'PostgreSQL 连接被拒绝';
     hint = '确认 PostgreSQL 已启动，并引用它的 DATABASE_URL；应用容器的 localhost 不是独立的数据库服务。';
@@ -76,3 +84,4 @@ function describeStartupError(error, stage, env = process.env) {
 }
 
 module.exports = { validateStartupEnvironment, describeStartupError };
+

@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {EventEmitter}=require('node:events');
-const {current,guard,starting,expired,retire,killIdentity}=require('../src/browser-lifecycle');
+const {current,guard,starting,expired,retire,killIdentity,killProcIdentity}=require('../src/browser-lifecycle');
 test('Late browser events cannot change or fail a replacement connection',()=>{
  const client=new EventEmitter(),old={id:'same',started:0,launching:true},entries=new Map([['same',old]]),seen=[];
  client.on('ready',guard(entries,old,()=>seen.push('ready')));
@@ -43,4 +43,14 @@ test('Retiring desktop setup keeps its slot until pending setup has stopped',asy
  const stopping=retire(entries,entry,{run:async(_,args)=>seen.push(args[0]),settle:0,beforeRelease:async()=>{assert.equal(entries.get('setup'),entry);seen.push('saved');}});
  await Promise.resolve();assert.equal(entries.get('setup'),entry);assert.deepEqual(seen,[]);
  finish();await stopping;assert.equal(entries.has('setup'),false);assert.deepEqual(seen,['-TERM','-KILL','saved']);
+});
+test('Fork-free cleanup at a process limit targets only the verified private browser UID',async()=>{
+ const killed=[],io={readdir:async()=>['self','1','12','13','14','15','16','0','not-a-pid'],readFile:async file=>{
+  if(file.includes('/16/'))throw Object.assign(Error('exited'),{code:'ENOENT'});
+  const uid=file.includes('/12/')?23001:file.includes('/13/')?23002:file.includes('/14/')?0:23001;
+  return 'Name:\tprivate\nUid:\t'+uid+'\t'+(file.includes('/15/')?0:uid)+'\t'+uid+'\t'+uid+'\n';
+ }};
+ await killProcIdentity(23001,'KILL',io,(pid,signal)=>killed.push([pid,signal]));
+ assert.deepEqual(killed,[[12,'SIGKILL']]);
+ for(const uid of [0,19999,'23001',NaN])await assert.rejects(killProcIdentity(uid,'TERM',io,()=>assert.fail('unsafe UID')),/UNSAFE_BROWSER_IDENTITY/);
 });
