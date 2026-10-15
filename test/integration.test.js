@@ -93,6 +93,12 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[cid])).rows[0].status,'unknown');
   // Read-only reconciliation recovers a unique existing message without sending.
   const rr=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+  const partial={id:'partial-history-fixture',fromMe:true,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(+new Date(rr.started_at)/1000),ack:2};
+  await worker.syncHistory(a,{client:{pupPage:{evaluate:async()=>({messages:[partial],chatErrors:1})}}});
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[rr.id])).rows[0].status,'unknown');
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[rr.id])).rows[0].state,'held');assert.equal(calls,1);
+  assert.equal((await db.pool.query('SELECT history_sync_error FROM accounts WHERE id=$1',[a])).rows[0].history_sync_error,'PARTIAL_CHAT_HISTORY');
+  await db.pool.query("DELETE FROM message_history WHERE message_id='partial-history-fixture'");await db.pool.query("DELETE FROM receipts WHERE message_id='partial-history-fixture'");
   await worker.reconcileUnknown(a,{getChatById:async()=>({fetchMessages:async()=>[{id:'recovered-id',fromMe:true,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(+new Date(rr.started_at)/1000),ack:2}]})});
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[rr.id])).rows[0].status,'delivered');assert.equal(calls,1);
  });
@@ -472,3 +478,4 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/accounts','GET',null,owner)).data.length,2);
  });
 });
+

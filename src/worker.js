@@ -204,7 +204,8 @@ async function syncHistory(accountId,entry) {
     const targets=(await pool.query(`SELECT DISTINCT r.phone FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE COALESCE(r.send_account_id,c.account_id)=$1 AND c.deleted_at IS NULL AND r.status IN('unknown','awaiting_ack','submitted','delivered') AND r.started_at>now()-interval '7 days' LIMIT 50`,[accountId])).rows;
     const snapshot=await readSnapshot(entry.client,targets.map(r=>r.phone.replace(/^\+/, '')+'@c.us'),Math.floor(Date.now()/1000)-7*86400);
     for(const message of snapshot.messages)await recordMessage(accountId,message,null,false);
-    await reconcileUnknown(accountId,entry.client,snapshot.messages);
+    // Incomplete history cannot establish a unique match for an uncertain send.
+    if(!snapshot.chatErrors)await reconcileUnknown(accountId,entry.client,snapshot.messages);
     await pool.query('UPDATE accounts SET history_synced_at=now(),history_sync_error=$2 WHERE id=$1',[accountId,snapshot.chatErrors?'PARTIAL_CHAT_HISTORY':null]);
     entry.syncFailures=0;
     if(!entry.syncReported){console.log('History sync ready:',JSON.stringify({messages:snapshot.messages.length,chatErrors:snapshot.chatErrors}));entry.syncReported=true;}
