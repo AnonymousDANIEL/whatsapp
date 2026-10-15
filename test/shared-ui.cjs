@@ -17,7 +17,7 @@ const server=http.createServer(async(req,res)=>{
    let result;
    if(p==='/me')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
    else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
-   else if(p==='/payments/orders')result=[];
+   else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
    else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'scan_required',history_synced_at:null}];
    else if(p==='/campaigns')result=[];
@@ -82,46 +82,55 @@ async function verifyPersonalPages(page,fixture,role,language){
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 async function verifyUserBilling(page,fixture,language){
- assert.equal(await page.$('#nav [data-page=fpx]'),null);
- assert.equal(await page.$('#nav [data-page=bank-deposits]'),null);
- assert.equal(await page.$('#nav [data-nav-toggle=billing]'),null);
- assert.equal(await page.$('[data-billing-view=fpx]'),null);
- fixture.fpxEnabled=true;await page.click('#refresh');
- await page.waitForSelector('[data-billing-view=fpx]');
- await page.click('[data-billing-view=fpx]');await page.waitForSelector('#online-topup');
+ const heading=language==='en'?'Credit ledger':'余额流水';
+ async function sections(){
+  assert.equal(await page.$('#nav [data-page=fpx]'),null);
+  assert.equal(await page.$('#nav [data-page=bank-deposits]'),null);
+  assert.equal(await page.$('#nav [data-nav-toggle=billing]'),null);
+  assert.equal(await page.$('[data-billing-view]'),null);
+  assert.equal(await page.$eval('.credit-ledger h3',n=>n.textContent),heading);
+  assert.equal(await page.$eval('#content',n=>n.lastElementChild.matches('.credit-ledger')),true);
+  assert.equal(await page.$eval('#bank-topup',n=>!!(n.compareDocumentPosition(document.querySelector('#online-fpx'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
+  assert.equal(await page.$eval('#online-fpx',n=>!!(n.compareDocumentPosition(document.querySelector('.credit-ledger'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
+  assert.match(await page.$eval('.balance-only',n=>n.textContent),/10000000/);
+ }
+ await sections();
+ assert.equal(await page.$eval('#online-fpx .service-coming-soon',n=>n.textContent),'Coming soon');
+ assert.equal(await page.$('#online-topup'),null);assert.ok(await page.$('#deposit-create'));
+ fixture.fpxEnabled=true;await page.evaluate(()=>loadPage());
+ await page.waitForSelector('#online-topup');await sections();
  assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Credit / top-up':'余额 / 充值');
  assert.equal(await page.$eval('#nav [data-page=billing]',n=>n.getAttribute('aria-current')),'page');
  await page.click('#online-topup');await page.waitForFunction(()=>document.querySelector('#modal').open);
  assert.ok(await page.$('#modal input[name=amount]'));await page.click('#close-modal');
- fixture.fpxEnabled=false;await page.click('#refresh');
- await page.waitForFunction(()=>!document.querySelector('[data-billing-view=fpx]')&&document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
- assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
- await page.click('[data-billing-view=bank-deposits]');await page.waitForSelector('#deposit-create');
- await page.$eval('#deposit-create input[name=amount]',n=>{n.value='123.45';n.dispatchEvent(new Event('input',{bubbles:true}));});
- await page.evaluate(()=>loadPage(true));
+ await page.$eval('#deposit-create',f=>{f.elements.namedItem('amount').value='123.45';f.dataset.requestId='fixture-deposit-retry';});
+ fixture.paymentPending=true;await page.evaluate(()=>loadPage(true));
  assert.equal(await page.$eval('#deposit-create input[name=amount]',n=>n.value),'123.45');
- await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#deposit-create');
- assert.equal(await page.$eval('[data-billing-view=bank-deposits]',n=>n.getAttribute('aria-pressed')),'true');
- fixture.bankMaintenance=true;await page.click('#refresh');
- await page.waitForFunction(()=>!document.querySelector('#deposit-create')&&document.querySelector('#content').textContent.includes(window.T('银行维护中','Bank maintenance')));
- fixture.banksOff=true;await page.click('#refresh');
- await page.waitForFunction(()=>!document.querySelector('#content').textContent.includes('Fixture bank'));
+ assert.equal(await page.$eval('#deposit-create',n=>n.dataset.requestId),'fixture-deposit-retry');
+ fixture.fpxEnabled=false;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('#online-fpx .service-coming-soon',n=>n.textContent),'Coming soon');
+ assert.equal(await page.$('#online-topup'),null);
+ assert.equal(await page.$('#online-fpx a'),null);
+ const check=page.waitForResponse(r=>r.url().endsWith('/api/payments/orders/fixture-order/check')&&r.request().method()==='POST');
+ await page.click('[data-payment-check="fixture-order"]');await check;await page.waitForFunction(()=>!loading);
+ assert.equal(fixture.requests.filter(r=>r.path==='/payments/orders/fixture-order/check'&&r.method==='POST'&&r.csrf==='fake-ui-csrf').length,1);
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#deposit-create');await sections();
+ fixture.bankMaintenance=true;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$('#deposit-create'),null);
+ assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Bank maintenance/:/银行维护中/);
+ fixture.banksOff=true;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('#bank-topup .service-coming-soon',n=>n.textContent),'Coming soon');
+ assert.doesNotMatch(await page.$eval('#bank-topup',n=>n.textContent),/Fixture bank/);
+ await sections();
  await page.setViewport({width:390,height:844});
- assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'USER billing fits a mobile viewport');
- await page.click('[data-billing-view=ledger]');await page.waitForFunction(()=>document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
- assert.match(await page.$eval('#content',n=>n.textContent),/10000000/);
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Expanded USER billing fits a mobile viewport');
  await page.setViewport({width:1440,height:1000});
  await page.evaluate(()=>sessionStorage.setItem('wa_page','bank-deposits'));
- await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-billing-view=bank-deposits][aria-pressed=true]');
- assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Credit / top-up':'余额 / 充值');
- await page.click('[data-billing-view=ledger]');await page.waitForFunction(()=>document.querySelector('[data-billing-view=ledger][aria-pressed=true]'));
- fixture.fpxEnabled=true;
- await page.goto(new URL('/?topup=fixture-order',page.url()).href,{waitUntil:'networkidle0'});
- await page.waitForSelector('[data-billing-view=fpx][aria-pressed=true]');
- await page.waitForFunction(()=>!location.search);
- assert.equal(fixture.requests.filter(r=>r.path==='/payments/orders/fixture-order/check'&&r.method==='POST'&&r.csrf==='fake-ui-csrf').length,1);
- fixture.fpxEnabled=false;await page.click('#refresh');
- await page.waitForSelector('[data-billing-view=ledger][aria-pressed=true]');
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.credit-ledger');await sections();
+ fixture.fpxEnabled=true;await page.goto(new URL('/?topup=fixture-order',page.url()).href,{waitUntil:'networkidle0'});
+ await page.waitForSelector('#online-topup');await page.waitForFunction(()=>!location.search);await sections();
+ assert.equal(fixture.requests.filter(r=>r.path==='/payments/orders/fixture-order/check'&&r.method==='POST'&&r.csrf==='fake-ui-csrf').length,2);
+ fixture.fpxEnabled=false;await page.evaluate(()=>loadPage());await sections();
 }
 
 async function runCase(browser,base,role,language){
@@ -210,6 +219,8 @@ async function runCase(browser,base,role,language){
  await page.click('#nav [data-page=shared]');
  await waitReady(page);fixture.enabled=false;await page.click('#refresh');
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
+ if(role==='user')assert.match(await page.$eval('#content',n=>n.textContent),/Coming soon/);
+ else assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Shared service is currently closed/:/共享服务暂未开启/);
  fixture.enabled=true;fixture.available=0;await page.evaluate(()=>loadPage());
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
  const unavailableText=await page.$eval('#content',n=>n.textContent);

@@ -4,7 +4,6 @@ if(page==='reports')page='tasks';
 const historyPages={audit:1,messages:1};
 let pageRequest=null,pageRequestVersion=0,lastRenderedPage='',lastRenderSignature='',noticeSignature='';
 let navOpen=new Set(),navStateUser='';
-let billingView=sessionStorage.getItem('wa_billing_view')||'ledger';if(!['ledger','fpx','bank-deposits'].includes(billingView))billingView='ledger';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let userStatusFilter=sessionStorage.getItem('wa_user_status_filter')||'active';if(!['active','locked','inactive'].includes(userStatusFilter))userStatusFilter='active';
 const userState=u=>!u.active?'inactive':u.locked?'locked':'active';
@@ -24,7 +23,7 @@ const table=(headers,rows)=>`<div class="table-wrap"><table><thead><tr>${headers
 function toast(text,bad=false){$('#toast').textContent=text;$('#toast').className=bad?'bad':'';$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',6500);}
 async function api(path,options={}){const r=await fetch('/api'+path,{...options,signal:options.signal||AbortSignal.timeout(30000),headers:{'Content-Type':'application/json','X-CSRF-Token':csrf||'',...options.headers}});const data=await r.json().catch(()=>({error:T('服务返回异常','Invalid server response')}));if(!r.ok){if(r.status===401)showLogin();throw Object.assign(new Error(data.code?connectionText(data):translateError(data.error||'Request failed')),{status:r.status});}return data;}
 function staticText(){document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';document.querySelectorAll('[data-zh]').forEach(n=>n.textContent=T(n.dataset.zh,n.dataset.en));$('#language').value=WA_LANG;$('#session-message').textContent=T('正在恢复登录状态…','Restoring your session…');}
-function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;billingView='ledger';sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
+function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
 function modal(title,html,callback){$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
 function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
@@ -53,9 +52,8 @@ function toggleMenu(id){
 }
 function navigation(){
  if(me.role!=='owner'){
-  if(['fpx','banks','bank-deposits'].includes(page)){billingView=page==='fpx'?'fpx':'bank-deposits';page='billing';sessionStorage.setItem('wa_page',page);}
-  if(billingView==='fpx'&&!fpxAvailable())billingView='ledger';
-  sessionStorage.setItem('wa_billing_view',billingView);
+  if(['fpx','banks','bank-deposits'].includes(page)){page='billing';sessionStorage.setItem('wa_page',page);}
+  sessionStorage.removeItem('wa_billing_view');
  }
  const tree=menuTree(),available=[],branches=[];
  const collect=nodes=>nodes.forEach(n=>{available.push(n.page);if(n.children.length)branches.push(n.page);collect(n.children);});collect(tree);
@@ -75,14 +73,14 @@ function navigation(){
  nav.onkeydown=e=>{if(e.key!=='Escape')return;const list=e.target.closest('.nav-children');if(!list)return;const toggle=list.previousElementSibling.querySelector('[data-nav-toggle]');if(toggle&&navOpen.has(toggle.dataset.navToggle)){e.preventDefault();navOpen.delete(toggle.dataset.navToggle);saveMenuState();syncMenuState();toggle.focus();}};
  pageHeader();
 }
-async function boot(){try{const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;showUserPasswords=me.role==='owner'&&r.password_access===true;passwordAccessExpired=false;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;if(me.role!=='owner'){paymentSettings=await api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false};});if(!me)return;}$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}}catch(e){if(e.status===401)return;if(me)toast(e.message,true);else{$('#session-message').textContent=T('暂时无法连接服务器，登录状态尚未确认。','Cannot reach the server. Your session has not been checked yet.');$('#session-retry').hidden=false;}}}
+async function boot(){try{const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;showUserPasswords=me.role==='owner'&&r.password_access===true;passwordAccessExpired=false;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;if(me.role!=='owner'){paymentSettings=await api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false,unavailable:true};});if(!me)return;}$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}}catch(e){if(e.status===401)return;if(me)toast(e.message,true);else{$('#session-message').textContent=T('暂时无法连接服务器，登录状态尚未确认。','Cannot reach the server. Your session has not been checked yet.');$('#session-retry').hidden=false;}}}
 function pageHeader(){
  const title=page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[page]);if($('#page-title').textContent!==title)$('#page-title').textContent=title;const current=$('#nav [data-page="'+page+'"]');document.querySelectorAll('#nav [data-page]').forEach(b=>{const active=b===current;b.classList.toggle('active',active);b.classList.toggle('ancestor',!active&&!!current&&b.closest('li').contains(current));if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
 }
 function visiblePageSignature(data){
  const content={...data};delete content.notice;
  if(content.accounts)content.accounts=content.accounts.map(({heartbeat_at,worker_heartbeat_at,history_synced_at,next_send_at,batch_sent,batch_campaign_id,...a})=>a);
- return JSON.stringify([content,showUserPasswords,passwordAccessExpired,page==='users'?userStatusFilter:null,page==='billing'&&me.role!=='owner'?billingView:null]);
+ return JSON.stringify([content,showUserPasswords,passwordAccessExpired,page==='users'?userStatusFilter:null]);
 }
 async function loadPage(quiet=false){
  if(!me||quiet&&(loading||$('#modal').open||$('#content form[data-busy="1"]')||document.activeElement?.matches('#content input,#content textarea,#content select')))return;
@@ -92,7 +90,7 @@ async function loadPage(quiet=false){
  const timeout=setTimeout(()=>controller.abort('timeout'),15000),get=path=>api(path,{signal:controller.signal});
  try{
   const jobs={};
-  if(me.role!=='owner'||requested==='fpx')jobs.paymentSettings=get('/payments/settings').catch(e=>{if(e.status===401||controller.signal.aborted||me?.role==='owner')throw e;return{enabled:false};});
+  if(me.role!=='owner'||requested==='fpx')jobs.paymentSettings=get('/payments/settings').catch(e=>{if(e.status===401||controller.signal.aborted||me?.role==='owner')throw e;return{enabled:false,unavailable:true};});
   if(requested==='fpx')jobs.paymentOrders=get('/payments/orders');
   if(requested==='banks')jobs.banks=get('/banks');
   if(requested==='bank-deposits'){jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
@@ -111,8 +109,7 @@ async function loadPage(quiet=false){
   if(requested==='billing'){
    if(me.role==='owner')jobs.users=get('/users?compact=true');
    jobs.billing=get('/billing'+(billingUser?'?user_id='+encodeURIComponent(billingUser):''));
-   if(me.role!=='owner'&&billingView==='fpx')jobs.paymentOrders=get('/payments/orders');
-   if(me.role!=='owner'&&billingView==='bank-deposits'){jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
+   if(me.role!=='owner'){jobs.paymentOrders=get('/payments/orders');jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
   }
   const entries=Object.entries(jobs),values=await Promise.all(entries.map(([,promise])=>promise));
   if(version!==pageRequestVersion||requested!==page||!me)return;
@@ -223,19 +220,18 @@ setInterval(()=>$('#clock').textContent=date(new Date(Date.now()+clockOffset))+'
 
 function creditLedger(rows,format=money){
  const kinds={hold:T('发送预扣','Send hold'),charged:T('确认扣费','Charge confirmed'),refunded:T('退回余额','Refund'),adjustment:T('手动调整','Manual adjustment'),online_topup:T('FPX 充值','FPX top-up'),bank_topup:T('银行充值','Bank top-up')};
- return `<section class="panel"><h3>${T('余额流水（最近 100 条）','Credit ledger (latest 100)')}</h3>${table([T('时间 UTC+8','Time UTC+8'),T('类型','Type'),T('余额变动','Change'),T('可用余额','Available balance')],rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${kinds[r.kind]||esc(r.kind)}${r.recipient_id?' #'+esc(r.recipient_id):''}</td><td>${Number(r.delta_units)>0?'+':''}${format(r.delta_units)}</td><td>${format(r.balance_units)}</td></tr>`))}</section>`;
+ return `<section class="panel credit-ledger"><h3>${me.role==='owner'?T('余额流水（最近 100 条）','Credit ledger (latest 100)'):T('余额流水','Credit ledger')}</h3>${table([T('时间 UTC+8','Time UTC+8'),T('类型','Type'),T('余额变动','Change'),T('可用余额','Available balance')],rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${kinds[r.kind]||esc(r.kind)}${r.recipient_id?' #'+esc(r.recipient_id):''}</td><td>${Number(r.delta_units)>0?'+':''}${format(r.delta_units)}</td><td>${format(r.balance_units)}</td></tr>`))}</section>`;
 }
 
 function billingPage(data){
  const b=billingData,owner=me.role==='owner',u=b.user;
  const balanceCard=`<div class="card"><div class="label">${T('可用余额','Available credit')} · ${esc(u.username)}</div><div class="value">${u.role==='owner'?T('无限','Unlimited'):credits(u.credit_units)}</div></div>`;
  if(!owner){
-  const views=[['ledger',T('余额流水','Credit ledger')],...(fpxAvailable()?[['fpx','Online FPX']]:[]),['bank-deposits',T('银行充值','Bank top-up')]];
-  const header=`<div class="cards balance-only">${balanceCard}</div><div class="toolbar toolbar-wrap billing-views" role="group" aria-label="${T('余额与充值方式','Balance and top-up methods')}">${views.map(([id,label])=>`<button type="button" data-billing-view="${id}" class="${billingView===id?'primary':'secondary'}" aria-pressed="${billingView===id}">${label}</button>`).join('')}</div>`;
-  if(billingView==='bank-deposits'){bankData=data.banks;depositData=data.deposits;depositPage();$('#content').insertAdjacentHTML('afterbegin',header);}
-  else{$('#content').innerHTML=header+(billingView==='fpx'?paymentPanel():creditLedger(b.ledger||[],credits));if(billingView==='fpx')bindPayments();}
-  document.querySelectorAll('[data-billing-view]').forEach(button=>button.onclick=()=>{billingView=button.dataset.billingView;sessionStorage.setItem('wa_billing_view',billingView);loadPage().catch(e=>toast(e.message,true));});
-  return;
+  bankData=data.banks;depositData=data.deposits;depositPage();
+  $('#content').insertAdjacentHTML('afterbegin',`<div class="cards balance-only">${balanceCard}</div>`);
+  $('#bank-topup').insertAdjacentHTML('afterend',paymentPanel());
+  $('#content').insertAdjacentHTML('beforeend',creditLedger(b.ledger||[],credits));
+  bindPayments();return;
  }
 
  $('#content').innerHTML=`${owner?`<div class="panel"><label>USER ID<select id="billing-user">${users.map(x=>`<option value="${x.id}" ${x.id===u.id?'selected':''}>${esc(x.username)}${x.role==='owner'?' · Owner':''}</option>`).join('')}</select></label></div>`:''}<div class="cards">${balanceCard}<div class="card"><div class="label">${T('待结算预扣','On hold')}</div><div class="value">${money(b.held_units)}</div></div><div class="card"><div class="label">${T('普通发送单价','Standard sending rate')}</div><div class="value">${b.price_units==null?T('尚未定价','Not configured'):money(b.price_units)}</div></div></div><div class="toolbar">${owner?`<button id="billing-price">${T('修改普通发送单价','Set standard rate')}</button>${u.role!=='owner'?`<button id="billing-adjust">${T('充值 / 扣减','Top up / deduct')}</button>`:''}`:''}</div><p class="muted">${T('发送前预扣，成功提交服务器后结算一次。失败或无效号码退回；待回执或结果未知保留预扣。改价只影响之后开始发送的消息，不修改旧账。','Credit is reserved before sending and charged once after server submission. Failed or invalid numbers are refunded; unconfirmed messages stay on hold. Rate changes affect subsequent sends only, never past entries.')}</p>${b.held.length?`<section class="panel"><h3>${T('待结算消息（最近 100 条）','Messages on hold (latest 100)')}</h3>${table([T('消息编号','Message ID'),T('服务类型','Service'),T('状态','Status'),T('预扣金额','Reserved'),T('操作','Actions')],b.held.map(r=>`<tr><td>#${esc(r.recipient_id)}</td><td>${r.service==='shared'?T('共享发送','Shared sending'):T('普通发送','Standard sending')}</td><td>${badge(r.status)}</td><td>${money(r.amount_units)}</td><td>${owner&&r.status==='unknown'?`<button data-resolve="${r.recipient_id}">${T('人工核对','Review')}</button>`:'—'}</td></tr>`))}</section>`:''}${creditLedger(b.ledger)}<p class="muted">${T('删除聊天或任务不会更改余额，也不会删除余额流水。','Deleting chats or tasks does not change credit or erase the credit ledger.')}</p>`;
@@ -246,7 +242,13 @@ function billingPage(data){
 }
 
 function fpxPage(){$('#content').innerHTML=paymentPanel();bindPayments();}
-function paymentPanel(){const owner=me.role==='owner',ready=paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;if(!owner&&!ready)return '';const status=!paymentSettings.enabled?T('关闭','Off'):ready?T('可使用','Available'):paymentSettings.sandbox&&paymentSettings.configured?T('测试模式','Test mode'):T('配置未完成','Setup incomplete');return `<section class="panel"><div class="toolbar"><h3>Online FPX · ${status}</h3>${owner?`<button id="payment-config">${T('在线充值设置 / 开关','Online payment settings / switch')}</button>`:`<button id="online-topup" class="primary" ${ready?'':'disabled'}>${T('Online FPX 充值','Top up with Online FPX')}</button>`}</div>${!ready?`<p class="muted">${T('在线充值暂时不可用，请稍后再试。','Online top-up is currently unavailable. Please try later.')}</p>`:''}${table([T('时间 UTC+8','Time UTC+8'),'USER ID',T('金额','Amount'),T('状态','Status'),T('操作','Actions')],paymentOrders.map(o=>`<tr><td>${date(o.created_at)}</td><td>${esc(o.username)}</td><td>RM ${(o.amount_cents/100).toFixed(2)}${o.sandbox?' · Sandbox':''}</td><td>${esc(({paid:T('已入账','Credited'),pending:T('待付款 / 核对','Awaiting payment / verification'),creating:T('创建中','Creating'),create_failed:T('创建结果待核对','Creation needs review')})[o.state])}</td><td>${o.state!=='paid'?`${o.payment_url&&!owner&&ready?`<a href="${esc(o.payment_url)}" target="_blank" rel="noopener">${T('继续付款','Continue payment')}</a>`:''}<button data-payment-check="${o.id}">${T('核对付款','Check payment')}</button>`:'—'}</td></tr>`))}</section>`;}
+function paymentPanel(){
+ const owner=me.role==='owner',ready=fpxAvailable();
+ const orders=table([T('时间 UTC+8','Time UTC+8'),'USER ID',T('金额','Amount'),T('状态','Status'),T('操作','Actions')],paymentOrders.map(o=>`<tr><td>${date(o.created_at)}</td><td>${esc(o.username)}</td><td>RM ${(o.amount_cents/100).toFixed(2)}${o.sandbox?' · Sandbox':''}</td><td>${esc(({paid:T('已入账','Credited'),pending:T('待付款 / 核对','Awaiting payment / verification'),creating:T('创建中','Creating'),create_failed:T('创建结果待核对','Creation needs review')})[o.state])}</td><td>${o.state!=='paid'?`${o.payment_url&&!owner&&ready?`<a href="${esc(o.payment_url)}" target="_blank" rel="noopener">${T('继续付款','Continue payment')}</a>`:''}<button data-payment-check="${o.id}">${T('核对付款','Check payment')}</button>`:'—'}</td></tr>`));
+ if(!owner&&!ready)return `<section class="panel" id="online-fpx"><h2>Online FPX</h2><p class="muted ${paymentSettings.unavailable?'':'service-coming-soon'}">${paymentSettings.unavailable?T('暂时无法加载在线充值，请刷新重试。','Cannot load online top-up. Refresh to retry.'):'Coming soon'}</p>${paymentOrders.length?orders:''}</section>`;
+ const status=!paymentSettings.enabled?T('关闭','Off'):ready?T('可使用','Available'):paymentSettings.sandbox&&paymentSettings.configured?T('测试模式','Test mode'):T('配置未完成','Setup incomplete');
+ return `<section class="panel" id="online-fpx"><div class="toolbar"><h3>Online FPX · ${status}</h3>${owner?`<button id="payment-config">${T('在线充值设置 / 开关','Online payment settings / switch')}</button>`:`<button id="online-topup" class="primary" ${ready?'':'disabled'}>${T('Online FPX 充值','Top up with Online FPX')}</button>`}</div>${!ready?`<p class="muted">${T('在线充值暂时不可用，请稍后再试。','Online top-up is currently unavailable. Please try later.')}</p>`:''}${orders}</section>`;
+}
 function bindPayments(){
  document.querySelectorAll('[data-payment-check]').forEach(b=>b.onclick=()=>action(b,()=>api('/payments/orders/'+b.dataset.paymentCheck+'/check',{method:'POST',body:'{}'})));
  if($('#online-topup'))$('#online-topup').onclick=()=>{const request_id=crypto.randomUUID();modal(T('Online FPX 充值','Online FPX top-up'),`<form><label>${T('充值金额 MYR','Top-up amount MYR')}<input name="amount" type="number" step="0.01" min="2" max="10000" required value="50"></label><label>${T('付款邮箱','Payer email')}<input name="email" type="email" maxlength="200" required autocomplete="email"></label><p>${T('付款确认后自动加入余额。','Credit is added automatically after payment is confirmed.')}</p><button type="submit" class="primary">${T('前往 FPX 付款','Proceed to FPX payment')}</button></form>`,async f=>{const r=await api('/payments/orders',{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),request_id})});location.assign(r.url);});};
