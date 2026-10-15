@@ -1,8 +1,9 @@
 'use strict';
 const {Client}=require('whatsapp-web.js');
-const {browserPrepareSend,browserCommitSend,browserDiscardSend}=require('./workspace-send');
+const {browserPrepareSend,browserCommitSend,browserDiscardSend,browserSendReadiness}=require('./workspace-send');
 
 class LiveWebClient extends Client {
+ async inspectSendRuntime(){return this.pupPage.evaluate(browserSendReadiness);}
  async prepareWorkspaceMessage(token,chatId,body,media,deadline){
   return this.pupPage.evaluate(browserPrepareSend,token,chatId,body,media,deadline);
  }

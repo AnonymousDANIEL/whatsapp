@@ -50,6 +50,38 @@ async function browserCommitSend(token) {
  }
 }
 function browserDiscardSend(token){window.__mywasapPreparedSends?.delete(token);}
+async function browserSendReadiness(){
+ // Read-only production compatibility check. A lexical facade stops a COPY of
+ // the injected builder before enqueue; it never patches live modules or sends.
+ const names=['WAWebChatGetters','WALinkify','WAWebUserPrefsMeUser','WAWebMsgKey','WAWebGetEphemeralFieldsMsgActionsUtils','WAWebSendMsgChatAction'];
+ const modules={},exports={};let stage='modules';
+ const fault=error=>{
+  const text=String(error?.message||'');
+  const symbol=text.match(/(?:reading ['"]([A-Za-z_$][\w$]*)['"]|([A-Za-z_$][\w.$]*) is not (?:a function|a constructor)|([A-Za-z_$][\w$]*) is not defined)/);
+  return {kind:['TypeError','ReferenceError','SyntaxError','EvalError'].includes(error?.name)?error.name:'Error',symbol:(symbol?.[1]||symbol?.[2]||symbol?.[3]||'unknown').slice(0,80)};
+ };
+ try{
+  for(const name of names){try{const value=window.require(name);modules[name]=value;exports[name]={type:typeof value,keys:Object.keys(value||{}).sort().slice(0,50),arity:name==='WAWebSendMsgChatAction'?value?.addAndSendMsgToChat?.length:undefined};}catch{exports[name]={type:'unavailable'};}}
+  stage='existing-private-chat';
+  const chat=window.require('WAWebCollections').Chat.getModelsArray().find(c=>/@(?:c\.us|lid)$/.test(c.id?._serialized||c.id?.$1||''));
+  if(!chat)return {ok:false,stage,code:'NO_LOADED_PRIVATE_CHAT',exports};
+  const boundary={};let shape;
+  const facade={WWebJS:Object.freeze({}),require:name=>{
+   stage=name;
+   if(name==='WAWebSendMsgChatAction')return {addAndSendMsgToChat:(_chat,message)=>{
+    shape={type:message.type,hasId:typeof message.id?._serialized==='string',fromMe:message.id?.fromMe===true,hasRemote:Boolean(message.id?.remote)};
+    throw boundary;
+   }};
+   if(!names.includes(name)||!modules[name])throw Error('READ_ONLY_MODULE_BLOCKED');
+   return modules[name];
+  }};
+  stage='isolated-builder';
+  const copy=Function('window','return ('+window.WWebJS.sendMessage.toString()+')')(facade);
+  try{await copy(chat,'',{waitUntilMsgSent:false,linkPreview:false,parseVCards:false});}
+  catch(error){if(error===boundary)return {ok:true,stage:'enqueue-boundary',shape,exports,webVersion:/^[\d.]{1,50}$/.test(window.Debug?.VERSION||'')?window.Debug.VERSION:null};throw error;}
+  return {ok:false,stage,code:'ENQUEUE_BOUNDARY_NOT_REACHED',exports};
+ }catch(error){return {ok:false,stage,code:'SEND_RUNTIME_INCOMPATIBLE',fault:fault(error),exports};}
+}
 function sendFailureCode(error,stage){
  const text=String(error?.message||'');
  if(/^SEND_(PREPARATION_BUSY|CHAT_UNAVAILABLE|PREPARATION_EXPIRED|IMAGE_PREPARATION_INVALID)$/.test(text))return text;
@@ -58,4 +90,4 @@ function sendFailureCode(error,stage){
  if(/timed?\s*out|timeout/i.test(text))return stage==='prepare'?'MEDIA_PREPARATION_TIMEOUT':'SEND_API_TIMEOUT_REVIEW_REQUIRED';
  return stage==='prepare'?'MEDIA_PREPARATION_FAILED':'SEND_EXCEPTION_REVIEW_REQUIRED';
 }
-module.exports={browserPrepareSend,browserCommitSend,browserDiscardSend,sendFailureCode};
+module.exports={browserPrepareSend,browserCommitSend,browserDiscardSend,browserSendReadiness,sendFailureCode};

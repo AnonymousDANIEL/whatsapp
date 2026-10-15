@@ -156,7 +156,11 @@ async function startAccount(account) {
       for(const ws of e.sockets)if(ws.scanOnly)ws.close();failures.delete(account.id);retryAt.delete(account.id);
       state(account.id,'ready',null,account.shared_pool?linkedPhone(e):(e.client.info?.wid?.user||null)).catch(()=>{});
       e.client.pupPage.bringToFront().catch(()=>{});
-      syncHistory(account.id,e).catch(err=>console.error('history sync:',err.code||err.name));
+      syncHistory(account.id,e).then(async()=>{
+        if(!lifecycle.current(entries,e))return;
+        const report=await e.client.inspectSendRuntime();
+        console.log('Send runtime readiness:',JSON.stringify({account:crypto.createHash('sha256').update(account.id).digest('hex').slice(0,12),...report}));
+      }).catch(err=>console.error('history/readiness sync:',err.code||err.name));
     });
     // Real receipts remain valid across a reconnect; only connection-state callbacks are generation-bound.
     e.client.on('message_ack',(message,ack)=>{receiveAck(account.id,messageId(message),ack).catch(err=>console.error('receipt persistence:',err.code||err.name));});

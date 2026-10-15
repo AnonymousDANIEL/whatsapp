@@ -37,9 +37,9 @@ function installSendFixture(){
    // Waiting for a server response used to hide the already-created message ID.
    return [Promise.resolve(model),new Promise(()=>{})];
   }},
-  WAWebCollections:{Msg:{get:id=>models.get(id)}}
+  WAWebCollections:{Msg:{get:id=>models.get(id)},Chat:{getModelsArray:()=>[{id:wid('60000000000@c.us')}]}}
  };
- window.require=name=>{if(!(name in modules))throw Error('Unexpected fixture module '+name);return modules[name];};
+ fixture.overrides={};window.require=name=>{if(name in fixture.overrides)return fixture.overrides[name];if(!(name in modules))throw Error('Unexpected fixture module '+name);return modules[name];};
  window.WWebJS.getChat=async chatId=>({id:wid(chatId)});
  window.WWebJS.sendSeen=async()=>{fixture.seen++;throw Error('Synthetic broken unread-state API');};
  return fixture;

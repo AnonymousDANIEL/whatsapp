@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {LoadUtils}=require('whatsapp-web.js/src/util/Injected/Utils');
 const {installSendFixture}=require('./send-fixture.cjs');
-const {browserPrepareSend,browserCommitSend,browserDiscardSend,sendFailureCode}=require('../src/workspace-send');
+const {browserPrepareSend,browserCommitSend,browserDiscardSend,browserSendReadiness,sendFailureCode}=require('../src/workspace-send');
 const image={mimetype:'image/png',filename:'photo.png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII='};
 function fixture(t){const previous=global.window;global.window={atob:global.atob};LoadUtils();const f=installSendFixture();t.after(()=>{global.window=previous;});return f;}
 test('Pinned sender enqueues one inline image with the exact caption, gets its ID without server wait or full serialization',async t=>{
@@ -40,4 +40,14 @@ test('An uncertain enqueue consumes its token and cannot duplicate the send',asy
  await browserPrepareSend('once','60000000000@c.us','caption',image,Date.now()+5000);
  assert.equal((await browserCommitSend('once')).code,'SEND_API_ERROR_REVIEW_REQUIRED');
  assert.equal((await browserCommitSend('once')).notSent,true);
+});
+test('Read-only runtime probe reaches the real builder boundary without invoking send/upload or changing live APIs',async t=>{
+ const f=fixture(t),sender=window.WWebJS.sendMessage,action=window.require('WAWebSendMsgChatAction').addAndSendMsgToChat;
+ const report=await browserSendReadiness();assert.equal(report.ok,true);assert.equal(report.shape.hasId,true);assert.equal(report.stage,'enqueue-boundary');
+ assert.equal(f.sent.length,0);assert.equal(f.uploads,0);assert.equal(window.WWebJS.sendMessage,sender);assert.equal(window.require('WAWebSendMsgChatAction').addAndSendMsgToChat,action);
+});
+test('Read-only runtime probe identifies an incompatible module without exposing error text or sending',async t=>{
+ const f=fixture(t);f.overrides.WAWebGetEphemeralFieldsMsgActionsUtils={getEphemeralFields(){throw TypeError("Cannot read properties of undefined (reading 'remote') private caption +60000000000");}};
+ const report=await browserSendReadiness();assert.equal(report.ok,false);assert.equal(report.stage,'WAWebGetEphemeralFieldsMsgActionsUtils');assert.equal(report.fault.symbol,'remote');
+ assert.ok(!JSON.stringify(report).includes('private caption'));assert.ok(!JSON.stringify(report).includes('60000000000'));assert.equal(f.sent.length,0);
 });
