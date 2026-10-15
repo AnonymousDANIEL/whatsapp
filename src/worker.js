@@ -63,6 +63,7 @@ async function waitPort(port) {
 }
 async function stopAccount(id,expected=null,options={}) {
   const entry=entries.get(id);if(!entry||(expected&&entry!==expected))return;
+  entry.client?.beginWorkspaceShutdown?.();
   return lifecycle.retire(entries,entry,options);
 }
 let identityWork = Promise.resolve();
@@ -88,7 +89,7 @@ class IsolatedAuth extends LocalAuth {
   async afterBrowserInitialized(){await super.afterBrowserInitialized();this.onBrowser?.();}
 }
 async function fail(id, reason, expected=null) {
-  const entry = entries.get(id); if (!entry || entry.closing || expected&&entry!==expected) return;
+  const entry = entries.get(id); if (shuttingDown || !entry || entry.closing || expected&&entry!==expected) return;
   console.error(describeStartupError(new Error(reason), 'account-browser'));
   lifecycle.resourceSummary().then(info=>console.error('Browser resources:',JSON.stringify(info))).catch(()=>{});
   const n = (failures.get(id) || 0) + 1; failures.set(id, n);
@@ -151,6 +152,7 @@ async function startAccount(account) {
     on('authenticated', () => { e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
     on('auth_failure', () => { fail(account.id,'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED',e).catch(()=>{}); });
     on('disconnected', reason => { fail(account.id,'DISCONNECTED_'+String(reason).slice(0,60),e).catch(()=>{}); });
+    on('workspace_navigation_error', reason => { fail(account.id,reason,e).catch(()=>{}); });
     on('ready', () => {
       e.ready=true;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();
       for(const ws of e.sockets)if(ws.scanOnly)ws.close();failures.delete(account.id);retryAt.delete(account.id);

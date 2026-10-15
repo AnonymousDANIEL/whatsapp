@@ -1,5 +1,11 @@
 # Project instructions
 
+## Account-scoped navigation recovery (2026-10-15 night)
+
+- A real post_logout navigation caused the pinned Client's async framenavigated callback to reject outside initialize and terminate the entire worker. Install the private Page event guard before the native callback is registered, contain both synchronous throws and rejected promises, and route safe fixed categories through the current account's existing lifecycle recovery. Do not suppress all process-wide unhandled rejections or patch global prototypes.
+- Mark a client as closing before retiring its entry, remove its guarded listeners on close/shutdown, and ignore late failures from retired clients. Preserve Page on/off identity and duplicate-listener behavior. Initial startup injection failures must still reject normally. Planned worker shutdown must not be reported as a fresh browser failure.
+- Keep the regression using the actual pinned upstream post-logout callback under strict unhandled-rejection mode, another unaffected account, listener cleanup, and real network-blocked Puppeteer navigation. A genuine WhatsApp LOGOUT can require the phone to scan again; do not manufacture an authenticated state, copy profiles or reset uncertain sends to hide it.
+
 ## Real media-ID regression and preallocated keys (2026-10-15 evening)
 
 - Production reached preparation and failed on submission. The old fixture omitted enumerable MediaData.__x_id, masking the known September 2026 Msg initialization collision (wwebjs issue 201922). Keep a negative control that reproduces it with the pinned upstream sender and a model that actually applies the private ID. Never remove that field from the fixture to make tests green.

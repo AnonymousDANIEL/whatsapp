@@ -10,7 +10,7 @@ const image={mimetype:'image/png',filename:'photo.png',data:'iVBORw0KGgoAAAANSUh
  try{
   const page=await browser.newPage();await page.setRequestInterception(true);page.on('request',request=>request.abort());
   await page.evaluate(LoadUtils);await page.evaluate(installSendFixture);
-  const client=new LiveWebClient();client.pupPage=page;
+  const client=new LiveWebClient({webVersionCache:{type:'none'}});client.pupPage=page;await client.initWebVersionCache();
   const readiness=await client.inspectSendRuntime();assert.equal(readiness.ok,true);assert.equal(readiness.model_initialized,true);assert.equal(readiness.private_id_collision_reproduced,true);assert.equal(await page.evaluate(()=>window.sendFixture.sent.length),0);
   for(const [token,caption,media] of [['zh','图片说明 🎉\n第二行',image],['en','Photo caption\nSecond line',image],['photo-only','',image],['text','Plain text',null]]){
    const prepared=await page.evaluate(browserPrepareSend,token,'60000000000@c.us',caption,media,Date.now()+5000);
@@ -24,5 +24,13 @@ const image={mimetype:'image/png',filename:'photo.png',data:'iVBORw0KGgoAAAANSUh
   assert.equal(modern.inspection.key_format,'$1');assert.equal((await page.evaluate(browserCommitSend,'modern')).message.id,modern.id);
   assert.equal(await page.evaluate(()=>window.sendFixture.sent.some(m=>Object.hasOwn(m,'__x_id'))),false);
   console.log('Image-caption browser PASS: media private-ID collision guard, prepared ID retained, modern $1/LID keys, zh/en captions, no duplicate; network blocked');
+  const failures=[];client.on('workspace_navigation_error',code=>failures.push(code));
+  const frameFailure=async()=>{throw Error('Execution context was destroyed');};page.on('framenavigated',frameFailure);
+  await page.evaluate(()=>{location.hash='navigation-guard';});
+  for(let n=0;n<100&&!failures.length;n++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.deepEqual(failures,['WHATSAPP_NAVIGATION_CONTEXT_CHANGED']);page.off('framenavigated',frameFailure);
+  await page.evaluate(()=>{location.hash='navigation-off';});await new Promise(resolve=>setTimeout(resolve,100));assert.equal(failures.length,1);
+  client.beginWorkspaceShutdown();
+  console.log('Navigation browser PASS: real Puppeteer Page frame event is contained per client; listener removal and shutdown cleanup preserved');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
