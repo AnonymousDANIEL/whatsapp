@@ -131,17 +131,19 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  await t.test('image captions use the pinned enqueue path and settle only from the real message ACK',async()=>{
   const {LiveWebClient}=require('../src/live-web-client'),{LoadUtils}=require('whatsapp-web.js/src/util/Injected/Utils'),{installSendFixture}=require('./send-fixture.cjs');
   const photo={data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',mimetype:'image/png'};
-  const cid=(await request('/campaigns','POST',{...template,body:'Photo caption 中文',media:photo,recipients:'0123456789',send_now:true},user)).data.id;
+  const cid=(await request('/campaigns','POST',{...template,body:'Photo caption 中文',media:photo,recipients:'0123456789\n0123456790',send_now:true},user)).data.id;
   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
   const before=Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units),previous=global.window;
   global.window={atob:global.atob};LoadUtils();const fixture=installSendFixture();
   try{
    const client=new LiveWebClient();client.pupPage={evaluate:async(fn,...args)=>fn(...args)};client.getNumberId=async phone=>({_serialized:phone+'@c.us'});
    await worker.dispatch({id:a},{id:a,ready:true,client});
-   const row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+   const row=(await db.pool.query("SELECT * FROM recipients WHERE campaign_id=$1 AND status='awaiting_ack'",[cid])).rows[0];
    assert.equal(fixture.sent.length,1);assert.equal(fixture.sent[0].caption,'Photo caption 中文');assert.equal(fixture.sent[0].type,'image');
    assert.equal(row.status,'awaiting_ack');assert.ok(row.message_id);assert.equal(row.media_fingerprint,'synthetic-processed-image-hash');assert.ok(row.send_attempt_id);
    assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');
+   await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
+   await worker.dispatch({id:a},{id:a,ready:true,client});assert.equal(fixture.sent.length,1,'Do not enqueue another message before the real server ACK');
    await worker.receiveAck(a,row.message_id,2);await require('../src/billing').reconcile();await require('../src/billing').reconcile();
    assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
    assert.equal((await db.pool.query("SELECT * FROM credit_ledger WHERE recipient_id=$1 AND kind='charged'",[row.id])).rowCount,1);

@@ -241,6 +241,10 @@ async function dispatch(account, entry) {
   busy.add(account.id);
   let recipient;
   try {
+    // Save a local ID promptly, but retain the old one-at-a-time server-ACK gate.
+    // A slow/offline upload channel must not accumulate unconfirmed submissions.
+    if((await pool.query(`SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id
+      WHERE COALESCE(r.send_account_id,c.account_id)=$1 AND r.status IN ('sending','awaiting_ack') LIMIT 1`,[account.id])).rowCount)return;
     const candidates = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
       WHERE c.account_id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND (c.send_now OR (c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()))) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())
