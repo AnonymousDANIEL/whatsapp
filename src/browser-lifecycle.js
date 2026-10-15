@@ -7,13 +7,21 @@ function current(entries,entry){return entries.get(entry.id)===entry&&!entry.clo
 function guard(entries,entry,callback){return (...args)=>current(entries,entry)?callback(...args):undefined;}
 function browserClosed(entry){
  const browser=entry.client?.pupBrowser,page=entry.client?.pupPage;
- return browser?.connected===false||typeof browser?.isConnected==='function'&&!browser.isConnected()||typeof page?.isClosed==='function'&&page.isClosed();
+ return !!entry.rendererCrashed||browser?.connected===false||typeof browser?.isConnected==='function'&&!browser.isConnected()||typeof page?.isClosed==='function'&&page.isClosed();
 }
 function observeBrowser(entries,entry,onClose){
- const browser=entry.client?.pupBrowser;
- if(!browser||entry.observedBrowser===browser)return;
- entry.observedBrowser=browser;
- browser.once('disconnected',guard(entries,entry,onClose));
+ const browser=entry.client?.pupBrowser,page=entry.client?.pupPage;
+ if(browser&&entry.observedBrowser!==browser){
+  entry.observedBrowser=browser;
+  browser.once('disconnected',guard(entries,entry,()=>onClose('BROWSER_EXITED')));
+ }
+ if(page&&entry.observedPage!==page){
+  entry.observedPage=page;
+  // A crashed renderer can leave the browser connected and the page open on Aw, Snap!
+  // pageerror is an ordinary script exception; only error represents a renderer crash.
+  page.once?.('error',guard(entries,entry,()=>{entry.rendererCrashed=true;entry.ready=false;onClose('BROWSER_PAGE_CRASHED');}));
+  page.once?.('close',guard(entries,entry,()=>onClose('BROWSER_PAGE_CLOSED')));
+ }
 }
 function starting(entries){return [...entries.values()].some(e=>!e.closing&&e.launching);}
 function expired(entry,now=Date.now(),timeout=600000){
@@ -73,3 +81,4 @@ function retire(entries,entry,{run=execute,timeout=5000,settle=150,beforeRelease
  return entry.stopping;
 }
 module.exports={current,guard,browserClosed,observeBrowser,starting,expired,retire,killIdentity,killProcIdentity,resourceSummary};
+

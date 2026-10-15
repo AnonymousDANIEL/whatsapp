@@ -1,5 +1,12 @@
 # Project instructions
 
+## QR browser resource recovery (2026-10-15)
+
+- Production hit the cgroup limit of 1000 processes/threads despite spare memory. Launch Chromium through bin/browser with a generated allowed CPU list (two logical CPUs per independent browser, distributed by slot), then drop to the existing private UID. Preserve custom CHROMIUM_PATH as the underlying executable without bypassing affinity or UID isolation. Never use single-process/no-zygote or weaken web security to reduce process counts.
+- Keep 120 process slots in reserve before starting a desktop, and recheck account/launch/capacity guards after asynchronous resource reads. Resource pressure waits without disabling accounts or deleting sessions. Record aggregate running/ready/scan/PID capacity once a minute, without phone numbers/chats.
+- Observe browser and renderer events from AuthStrategy.afterBrowserInitialized before navigation/QR, as well as later progress events. A renderer crash is Page error; ordinary pageerror must not restart a healthy account. Bind all events to the current entry, preserve profiles, and never resend unknown messages or release their holds as crash recovery.
+- QR viewer reconnects on an unexpected screen loss and stops when the API confirms ALREADY_LINKED. Keep USER scan-only permission checks on HTTP/WebSockets and bilingual resource/recovery messages. Run actual renderer-crash recovery and six concurrent private-UID/Xvfb/VNC/Chromium smoke tests under --pids-limit 1000 with networking disabled; these do not prove real phone linking or large fleets.
+
 ## Canonical domain and security (2026-10-15)
 
 - Production origin is https://mywasap.com. Preserve exact Origin/CSRF checks and enforce the raw production Host on HTTP and WebSockets. Safe aliases redirect to the configured origin without allowing open redirects; only health checks and exact independently signed payment/bank endpoints bypass the host gate. Preserve raw signed request bodies and existing gateway settlement verification.
@@ -130,4 +137,5 @@ target-environment checks; do not call them tested based on a successful build.
 - USER Credit/top-up has no tabs or section-switch buttons. Keep the balance, then Bank top-up and Online FPX, deposit history, and the credit ledger last. Remove only the USER ledger title suffix (latest 100); retain bounded queries and all stored ledger records. Owner retains their title and controls.
 - Closed bank top-up, unavailable live FPX and disabled shared sending show Coming soon to USER. Keep Owner real configuration status, bank-maintenance detail and server-side checks. Never enable a payment/send just to display its section; do not label failed configuration reads as Coming soon.
 - Closed methods retain the USER's own historical deposits and FPX order checks/verified settlement. Global/per-bank-off still hides current receiving details and QR, prevents new deposits and does not create credit. Preserve unsent bank form amount, selected bank and retry request ID during combined-page refresh.
+
 

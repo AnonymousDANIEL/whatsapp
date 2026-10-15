@@ -1,7 +1,8 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {spawn,execFile}=require('node:child_process'),{promisify}=require('node:util');
-const execute=promisify(execFile),puppeteer=require('puppeteer'),{retire}=require('../src/browser-lifecycle');
+const execute=promisify(execFile),puppeteer=require('puppeteer'),{retire,observeBrowser,browserClosed}=require('../src/browser-lifecycle');
+const {browserCpuSet}=require('../src/browser-runtime');
 const {browserSnapshot}=require('../src/history-sync');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{
@@ -11,7 +12,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  for(const folder of [home,profile]){await fs.mkdir(folder,{mode:0o700});await fs.chown(folder,uid,uid);}
  await fs.writeFile(path.join(profile,'keep-session.marker'),'preserved');
  await execute('xauth',['-f',xauth,'add',':99','.',require('node:crypto').randomBytes(16).toString('hex')]);await fs.chown(xauth,uid,uid);
- const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:':99',XAUTHORITY:xauth,WA_BROWSER_UID:String(uid)};
+ const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:':99',XAUTHORITY:xauth,WA_BROWSER_UID:String(uid),WA_BROWSER_CPUS:await browserCpuSet(0)};
  async function setup(){
   const display=spawn('Xvfb',[':99','-screen','0','1366x900x24','-nolisten','tcp','-auth',xauth],{env,uid,gid:uid,stdio:'ignore'});
   for(let i=0;i<50;i++){try{await fs.stat('/tmp/.X11-unix/X99');break;}catch{await pause(100);}}
@@ -28,6 +29,8 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    const entry=await setup(),browser=await puppeteer.launch(options(entry));
    entry.client={pupBrowser:browser,destroy:()=>browser.close()};
    const page=(await browser.pages())[0];await page.setContent('<title>Isolated browser smoke</title><h1>Local test only</h1>');
+   entry.client.pupPage=page;
+   assert.ok(await page.evaluate(()=>navigator.hardwareConcurrency)<=2);
    assert.equal(await page.title(),'Isolated browser smoke');
    if(round===1){
     await page.evaluate(()=>{
@@ -41,6 +44,11 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     }
     assert.equal(await page.evaluate(()=>window.__historyTestCalls),1);
     await page.evaluate(()=>window.__historyTestRelease({msgs:{getModelsArray:()=>[]}}));
+    let crashed;
+    const observed=new Promise(resolve=>{crashed=resolve;});observeBrowser(entries,entry,crashed);
+    const cdp=await page.createCDPSession();cdp.send('Page.crash').catch(()=>{});
+    let timer;try{assert.equal(await Promise.race([observed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Renderer crash was not observed')),10000);})]),'BROWSER_PAGE_CRASHED');}finally{clearTimeout(timer);}
+    assert.equal(browserClosed(entry),true);assert.equal(browser.connected,true);
    }
    // Simulate a process-limit failure: cleanup must also work when pkill cannot fork.
    if(round===0){entry.client.destroy=()=>new Promise(()=>{});await retire(entries,entry,{timeout:30,run:async()=>{throw Object.assign(Error('simulated fork limit'),{code:'EAGAIN'});}});}
@@ -48,6 +56,7 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    assert.equal(entries.size,0);
    assert.equal(await fs.readFile(path.join(profile,'keep-session.marker'),'utf8'),'preserved');
   }
-  console.log('Worker browser smoke PASS: cancelled launch, isolated headful Chromium, bounded partial history, fork-free cleanup, same profile reused; network disabled');
+  console.log('Worker browser smoke PASS: CPU affinity, real renderer crash observed, cancelled launch, bounded history, fork-free cleanup, profile reused; network disabled');
  }finally{for(const entry of [...entries.values()])await retire(entries,entry);await fs.rm(base,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+

@@ -54,6 +54,8 @@ jobs:
         run: npm test
       - name: Shared WhatsApp browser tests
         run: CHROME_PATH="$(command -v google-chrome)" node test/shared-ui.cjs
+      - name: QR viewer recovery browser tests
+        run: CHROME_PATH="$(command -v google-chrome)" node test/viewer-ui.cjs
 
   containers:
     name: Build ${{ matrix.image }} container
@@ -78,6 +80,13 @@ jobs:
       - name: Test isolated worker browser startup and cleanup
         if: matrix.image == 'worker'
         run: >-
-          docker run --rm --network none --cpus 2 --memory 2g
+          docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1000
           --mount type=bind,source="$GITHUB_WORKSPACE/test/browser-smoke.cjs",target=/app/test/browser-smoke.cjs,readonly
           --entrypoint node whatsapp-worker:ci /app/test/browser-smoke.cjs
+      - name: Test six concurrent QR browser desktops under the production task limit
+        if: matrix.image == 'worker'
+        run: >-
+          docker run --rm --network none --cpus 2 --memory 3g --pids-limit 1000
+          --mount type=bind,source="$GITHUB_WORKSPACE/test/browser-fleet-smoke.cjs",target=/app/test/browser-fleet-smoke.cjs,readonly
+          --entrypoint node whatsapp-worker:ci /app/test/browser-fleet-smoke.cjs
+

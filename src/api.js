@@ -177,7 +177,8 @@ async function start() {
     }
     try {
       const connection = await browser.status(a);
-      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||scan&&!connection.connected||!scan&&connection.connected), code: scan&&connection.connected?'ALREADY_LINKED':connection.screen_ready ? 'SCREEN_READY' : 'BROWSER_NOT_READY', message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart });
+      const issue=['BROWSER_RESOURCE_WAIT','BROWSER_RECOVERING'].includes(connection.code)?connection.code:'BROWSER_NOT_READY';
+      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||scan&&!connection.connected||!scan&&connection.connected), code: scan&&connection.connected?'ALREADY_LINKED':connection.screen_ready ? 'SCREEN_READY' : issue, message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart&&issue!=='BROWSER_RESOURCE_WAIT' });
     } catch (error) {
       if (!error.publicMessage) throw error;
       res.json({ ok: false, code: error.code, message: error.message, can_start: false });
@@ -524,4 +525,5 @@ async function start() {
   return server;
 }
 module.exports = { start, getSession, access };
+
 

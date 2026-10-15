@@ -63,3 +63,12 @@ test('Browser transport is observed before client initialization finishes, and o
  entries.set(entry.id,{id:entry.id});nextBrowser.emit('disconnected');assert.equal(closed,1);
  assert.equal(browserClosed({client:{pupPage:{isClosed:()=>true}}}),true);assert.equal(browserClosed({}),false);
 });
+test('A crashed renderer is unavailable even when Chrome stays connected; page script errors and stale events cannot restart it',()=>{
+ const browser=new EventEmitter(),page=new EventEmitter(),entry={id:'renderer',ready:true,client:{pupBrowser:browser,pupPage:page}},entries=new Map([[entry.id,entry]]),failures=[];
+ browser.connected=true;page.isClosed=()=>false;
+ observeBrowser(entries,entry,reason=>failures.push(reason));observeBrowser(entries,entry,reason=>failures.push(reason));
+ assert.equal(page.listenerCount('error'),1);page.emit('pageerror',Error('ordinary site exception'));assert.equal(browserClosed(entry),false);
+ page.emit('error',Error('Page crashed!'));assert.deepEqual(failures,['BROWSER_PAGE_CRASHED']);assert.equal(entry.ready,false);assert.equal(browserClosed(entry),true);assert.equal(browser.connected,true);
+ entries.set(entry.id,{id:entry.id});page.emit('close');assert.deepEqual(failures,['BROWSER_PAGE_CRASHED']);
+});
+

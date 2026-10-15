@@ -17,6 +17,7 @@ const {readSnapshot,historyFailureCode}=require('./history-sync');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
 const lifecycle=require('./browser-lifecycle');
+const runtime=require('./browser-runtime');
 const { LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const {LiveWebClient}=require('./live-web-client');
 const { WebSocket, WebSocketServer } = require('ws');
@@ -80,8 +81,9 @@ async function desktopIdentity(id) {
   identityWork = work.catch(() => {}); return work;
 }
 class IsolatedAuth extends LocalAuth {
-  constructor(options, uid) { super(options); this.uid = uid; }
+  constructor(options, uid, onBrowser) { super(options); this.uid = uid;this.onBrowser=onBrowser; }
   async beforeBrowserInitialized() { await super.beforeBrowserInitialized(); if(await clearStaleProfileLock(this.userDataDir))console.log('Removed stale Chromium lock from prior container'); await execute('chown', ['-R', this.uid + ':' + this.uid, this.userDataDir]); await fs.chmod(this.userDataDir, 0o700); }
+  async afterBrowserInitialized(){await super.afterBrowserInitialized();this.onBrowser?.();}
 }
 async function fail(id, reason, expected=null) {
   const entry = entries.get(id); if (!entry || entry.closing || expected&&entry!==expected) return;
@@ -105,6 +107,12 @@ async function startAccount(account) {
   if (entries.has(account.id)) return;
   if(lifecycle.starting(entries)){await state(account.id,'starting');return;}
   assert(entries.size < maxAccounts, 'WORKER_CAPACITY_REACHED', 409);
+  const resources=await lifecycle.resourceSummary();
+  // Resource reads yield: another command may have reserved a slot in the meantime.
+  if(entries.has(account.id))return;
+  if(lifecycle.starting(entries)){await state(account.id,'starting');return;}
+  assert(entries.size<maxAccounts,'WORKER_CAPACITY_REACHED',409);
+  if(!runtime.hasLaunchCapacity(resources)){await state(account.id,'capacity_wait','BROWSER_RESOURCE_WAIT');return;}
   let slot = 0; while ([...entries.values()].some(e => e.slot === slot)) slot++;
   const e = { id: account.id, slot, controlPort: 5900 + slot * 2, viewPort: 5901 + slot * 2, children: [], sockets: new Set(), ready: false, closing: false, launching:true, awaitingScan:false, launchAbort:new AbortController(), started: Date.now() };
   entries.set(account.id, e);
@@ -116,7 +124,8 @@ async function startAccount(account) {
     assert(lifecycle.current(entries,e),'DESKTOP_CLOSED');
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
-    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth };
+    e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth,
+      WA_BROWSER_CPUS:await runtime.browserCpuSet(slot),WA_CHROMIUM_PATH:process.env.CHROMIUM_PATH&&process.env.CHROMIUM_PATH!=='/app/bin/browser'?process.env.CHROMIUM_PATH:'/usr/bin/chromium' };
     processChild(e, 'Xvfb', [display, '-screen', '0', '1366x900x24', '-nolisten', 'tcp', '-auth', identity.xauth]);
     await pause(500);
     for (const [port, viewOnly] of [[e.controlPort, false], [e.viewPort, true]]) {
@@ -125,18 +134,18 @@ async function startAccount(account) {
     }
     assert(!e.closing, 'DESKTOP_CLOSED');
     e.desktopReady = true;
+    const watchBrowser=()=>lifecycle.observeBrowser(entries,e,reason=>{fail(account.id,reason,e).catch(()=>{});});
     e.client = new LiveWebClient({
-      authStrategy: new IsolatedAuth({ clientId: account.id, dataPath: identity.auth }, e.uid),
+      authStrategy: new IsolatedAuth({ clientId: account.id, dataPath: identity.auth }, e.uid,watchBrowser),
       // Load the official page freshly. Do not pin or rewrite the WhatsApp Web UI.
       webVersionCache: { type: 'none' },
       takeoverOnConflict: false,
-      puppeteer: { headless: false, executablePath: process.env.CHROMIUM_PATH || '/app/bin/browser', defaultViewport: null,
+      puppeteer: { headless: false, executablePath: '/app/bin/browser', defaultViewport: null,
         env: { ...e.env, WA_BROWSER_UID: String(e.uid) }, signal:e.launchAbort.signal, timeout:90000, protocolTimeout:90000,
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-size=1366,900', '--window-position=0,0', '--disable-session-crashed-bubble', '--no-first-run'] }
     });
-    const watchBrowser=()=>lifecycle.observeBrowser(entries,e,()=>{fail(account.id,'BROWSER_EXITED',e).catch(()=>{});});
     const on=(event,callback)=>e.client.on(event,lifecycle.guard(entries,e,(...args)=>{watchBrowser();return callback(...args);}));
-    on('qr', () => { e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
+    on('qr', () => { failures.delete(account.id);retryAt.delete(account.id);e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
     on('authenticated', () => { e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
     on('auth_failure', () => { fail(account.id,'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED',e).catch(()=>{}); });
     on('disconnected', reason => { fail(account.id,'DISCONNECTED_'+String(reason).slice(0,60),e).catch(()=>{}); });
@@ -303,7 +312,7 @@ async function send(entry, recipient, campaign) {
   }).catch(() => {});
   return result;
 }
-let ticking = false;
+let ticking = false,nextResourceLog=0;
 async function tick() {
   if (ticking || shuttingDown) return;
   ticking = true;
@@ -338,6 +347,7 @@ async function tick() {
     await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts) VALUES($1,now(),$2,$3,$4)
       ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb,max_accounts=excluded.max_accounts`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576),maxAccounts]);
     shared.checkGroup(group,entries).catch(e=>console.error('shared connection check:',e.code||e.name));
+    if(Date.now()>=nextResourceLog){nextResourceLog=Date.now()+60000;const active=[...entries.values()];console.log('Browser capacity:',JSON.stringify({...await lifecycle.resourceSummary(),running:active.length,ready:active.filter(e=>e.ready&&!e.closing).length,scan_waiting:active.filter(e=>e.awaitingScan&&!e.closing).length,cpus_per_browser:runtime.CPUS_PER_BROWSER}));}
   } finally { ticking = false; }
 }
 async function start() {
@@ -357,10 +367,11 @@ async function start() {
   app.use((req, res, next) => authorized(req) ? next() : res.sendStatus(401));
   app.get('/accounts/:id/status', async (req, res) => {
     try {
-      const a = (await pool.query('SELECT status,enabled FROM accounts WHERE id=$1 AND worker_group=$2', [req.params.id, group])).rows[0];
+      const a = (await pool.query('SELECT status,enabled,last_error FROM accounts WHERE id=$1 AND worker_group=$2', [req.params.id, group])).rows[0];
       if (!a) return res.status(404).json({ error: 'Account unavailable' });
       const e = entries.get(req.params.id);
-      res.json({ role: 'worker', group, status: a.status, screen_ready: Boolean(a.enabled && e?.desktopReady && !e.closing), connected: Boolean(a.enabled && e?.ready && !e.closing) });
+      const healthy=e&&!e.closing&&!lifecycle.browserClosed(e),code=a.last_error==='BROWSER_RESOURCE_WAIT'?'BROWSER_RESOURCE_WAIT':e?.rendererCrashed||!healthy&&['BROWSER_PAGE_CRASHED','BROWSER_PAGE_CLOSED','BROWSER_EXITED'].includes(a.last_error)?'BROWSER_RECOVERING':null;
+      res.json({ role: 'worker', group, status: a.status, code, screen_ready: Boolean(a.enabled && e?.desktopReady && healthy), connected: Boolean(a.enabled && e?.ready && healthy) });
     } catch { res.status(500).json({ error: 'Worker status unavailable' }); }
   });
   app.post('/accounts/:id/:command', async (req, res) => {
@@ -409,4 +420,5 @@ async function start() {
   return server;
 }
 module.exports = { accountWorkSQL, start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };
+
 

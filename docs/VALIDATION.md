@@ -1,5 +1,14 @@
 # 验证范围 · 2026-10-01
 
+## 2026-10-15 扫码崩溃与进程资源修复
+
+- 新截图为扫码画面未连接和 Chromium Aw, Snap! error 5。现场日志反复出现 963–1000 / 1000 个进程/线程、EAGAIN、Runtime.callFunctionOn/Network.enable 超时；内存约 2.6–3.1 GB，服务上限 24 GB。Railway SUCCESS 不能代表扫码正常。
+- 每个 Chromium 在启动并缓存 CPU 数之前，用实际允许的 CPU 集合设置两核 affinity，按桌面槽位分散；随后仍降权到原私有 UID。保留官方网页、原扫码资料和自定义 Chromium 路径。没有使用 single-process、关闭同源保护或删除 profiles。
+- 启动前保留 120 个进程/线程额度，不足时等待，不反复 fork。异步读资源后重新检查当前账号、启动互斥与容量，避免并发命令重复占槽。每分钟记录聚合运行/扫码/就绪和 PID 数。
+- 从认证策略 afterBrowserInitialized、导航之前绑定渲染崩溃与浏览器断开事件。白屏崩溃但浏览器仍连接的情况也会恢复；普通页面脚本错误不触发重启，旧事件不能影响替代连接。扫码窗口意外断开后自动重新检查并连接；已成功关联则停止。USER 扫码只读权限、未知消息/预扣及号码名额不变。
+- 新增真实 taskset 子进程、页面崩溃事件、稀疏 CPU 掩码、资源预留测试；原 1000-task 限制下的离线真实浏览器冒烟增加 Page.crash，并增加六个私有 UID、六个 Xvfb、十二个 VNC 接口和六个 Chromium 并行检查。扫码前端另有中英文恢复、容量等待和关联后停止轮询的 Chrome 检查。
+- 本地语法/纯函数测试及本次原生 PostgreSQL、Chrome、两个容器和上述离线并发检查的实际结果以本次提交的 CI / PR 为准；本地没有 Docker/Chromium，不能把本地纯函数结果当成真实浏览器验证。没有发送真实消息、修改生产余额/密码、注销 WhatsApp 或清除扫码资料。上线后还须检查峰值 PID、真实 scan_required/ready 状态及至少一个先前十分钟超时窗口的运行日志。
+
 ## 2026-10-15 新域名和安全检查
 
 - 部署后继续复查时发现历史同步仍出现 ProtocolError；跟进补上初始化尚未完成时的浏览器断开监听、每轮关闭检测、历史重试退避，以及不含聊天/号码的固定错误分类和进程计数。只在真实浏览器/页面关闭时重连，不因单次同步超时或页面重载重启健康账号，也不重发未知消息。跟进检查及实际诊断结果以该提交 CI、Railway 日志和 PR 为准。
@@ -267,4 +276,5 @@ USER Credit/top-up now directly displays its balance, Bank top-up, Online FPX, d
 Bank global-off/no active receiving banks, unavailable live FPX and disabled shared sending show Coming soon to USER. Maintenance keeps the existing bank-maintenance detail; Owner sees actual status/switches. FPX configuration read failures use a retry message rather than a false Coming soon. Closed methods retain the USER's own past deposits, receipt actions, pending-order checks and verified payment-return handling while exposing no new-payment action or current bank details. No API, payment arithmetic, sender, profile or worker changes are included.
 
 The existing four real Chrome Owner/USER × Chinese/English desktop/mobile flows now inspect simultaneous sections, exact order with the ledger last, USER-only heading text, no switches, closed-method Coming soon, live FPX restoration, closed pending-order checks, bank maintenance/off, legacy saved destinations and verified payment returns. A changing FPX order refresh also checks bank amount and retry-request-ID preservation. The existing PostgreSQL 17 tests, API/worker Docker builds and network-disabled headful smoke remain required release checks. Fixtures never send real messages or create production payments/deposits.
+
 

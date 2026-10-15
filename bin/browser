@@ -2,4 +2,11 @@
 set -eu
 # Each WhatsApp browser uses a distinct Unix UID and private profile directory.
 # Only this clean browser environment is passed; database and service secrets stay in Node.
-exec setpriv --reuid="$WA_BROWSER_UID" --regid="$WA_BROWSER_UID" --clear-groups -- /usr/bin/chromium "$@"
+# Chromium sizes several thread pools from CPU affinity, not the container's CPU quota.
+# Bound each independent browser before Chromium starts and caches that CPU count.
+: "${WA_BROWSER_CPUS:?Missing browser CPU affinity}"
+case "$WA_BROWSER_CPUS" in *[!0-9,]*|'') echo 'Invalid browser CPU affinity' >&2; exit 64;; esac
+case "$WA_BROWSER_UID" in *[!0-9]*|'') echo 'Invalid browser identity' >&2; exit 64;; esac
+[ "$WA_BROWSER_UID" -ge 20000 ] && [ "$WA_BROWSER_UID" -le 2147483647 ] || exit 64
+exec taskset --cpu-list "$WA_BROWSER_CPUS" setpriv --reuid="$WA_BROWSER_UID" --regid="$WA_BROWSER_UID" --clear-groups -- "${WA_CHROMIUM_PATH:-/usr/bin/chromium}" "$@"
+
