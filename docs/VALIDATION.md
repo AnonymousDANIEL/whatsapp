@@ -4,6 +4,7 @@
 
 - 新截图为扫码画面未连接和 Chromium Aw, Snap! error 5。现场日志反复出现 963–1000 / 1000 个进程/线程、EAGAIN、Runtime.callFunctionOn/Network.enable 超时；内存约 2.6–3.1 GB，服务上限 24 GB。Railway SUCCESS 不能代表扫码正常。
 - 每个 Chromium 在启动并缓存 CPU 数之前，用实际允许的 CPU 集合设置两核 affinity，按桌面槽位分散；随后仍降权到原私有 UID。保留官方网页、原扫码资料和自定义 Chromium 路径。没有使用 single-process、关闭同源保护或删除 profiles。
+- 首轮上线已恢复 8 个浏览器（1 个 ready、7 个 scan_required），但进程/线程仍有 923–930 / 1000；跟进把同一 CPU affinity 应用于 Xvfb/两路 x11vnc，并按 Mesa 官方 LP_NUM_THREADS 配置把软件渲染线程数设为 2。并发冒烟额外读取真实 /proc 掩码与桌面线程数，最终占用以跟进 CI 和新部署日志为准。
 - 启动前保留 120 个进程/线程额度，不足时等待，不反复 fork。异步读资源后重新检查当前账号、启动互斥与容量，避免并发命令重复占槽。每分钟记录聚合运行/扫码/就绪和 PID 数。
 - 从认证策略 afterBrowserInitialized、导航之前绑定渲染崩溃与浏览器断开事件。白屏崩溃但浏览器仍连接的情况也会恢复；普通页面脚本错误不触发重启，旧事件不能影响替代连接。扫码窗口意外断开后自动重新检查并连接；已成功关联则停止。USER 扫码只读权限、未知消息/预扣及号码名额不变。
 - 新增真实 taskset 子进程、页面崩溃事件、稀疏 CPU 掩码、资源预留测试；原 1000-task 限制下的离线真实浏览器冒烟增加 Page.crash，并增加六个私有 UID、六个 Xvfb、十二个 VNC 接口和六个 Chromium 并行检查。扫码前端另有中英文恢复、容量等待和关联后停止轮询的 Chrome 检查。

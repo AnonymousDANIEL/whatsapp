@@ -43,7 +43,7 @@ async function state(id,status,error=null,phone=null){
 }
 function processChild(entry, executable, args, env) {
   assert(lifecycle.current(entries,entry),'DESKTOP_CLOSED');
-  const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
+  const child = spawn('taskset', ['--cpu-list',entry.env.WA_BROWSER_CPUS,executable,...args], { stdio: ['ignore', 'ignore', 'pipe'], env: env || entry.env, uid: entry.uid, gid: entry.uid });
   entry.children.push(child);
   let stderr = '';
   child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-4000); });
@@ -125,7 +125,7 @@ async function startAccount(account) {
     await execute('xauth', ['-f', identity.xauth, 'add', display, '.', crypto.randomBytes(16).toString('hex')]);
     await fs.chown(identity.xauth, e.uid, e.uid);
     e.env = { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'en_US.UTF-8', TZ:'Asia/Kuala_Lumpur', HOME: identity.home, DISPLAY: display, XAUTHORITY: identity.xauth,
-      WA_BROWSER_CPUS:await runtime.browserCpuSet(slot),WA_CHROMIUM_PATH:process.env.CHROMIUM_PATH&&process.env.CHROMIUM_PATH!=='/app/bin/browser'?process.env.CHROMIUM_PATH:'/usr/bin/chromium' };
+      WA_BROWSER_CPUS:await runtime.browserCpuSet(slot),LP_NUM_THREADS:String(runtime.CPUS_PER_BROWSER),WA_CHROMIUM_PATH:process.env.CHROMIUM_PATH&&process.env.CHROMIUM_PATH!=='/app/bin/browser'?process.env.CHROMIUM_PATH:'/usr/bin/chromium' };
     processChild(e, 'Xvfb', [display, '-screen', '0', '1366x900x24', '-nolisten', 'tcp', '-auth', identity.xauth]);
     await pause(500);
     for (const [port, viewOnly] of [[e.controlPort, false], [e.viewPort, true]]) {

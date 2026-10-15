@@ -22,9 +22,9 @@ async function vncGreeting(port){
    await fs.writeFile(path.join(profile,'keep-session.marker'),'preserved');
    profiles.push(profile);
    await execute('xauth',['-f',xauth,'add',display,'.',crypto.randomBytes(16).toString('hex')]);await fs.chown(xauth,uid,uid);
-   const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:display,XAUTHORITY:xauth,WA_BROWSER_UID:String(uid),WA_BROWSER_CPUS:await browserCpuSet(slot)};
+   const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'en_US.UTF-8',TZ:'Asia/Kuala_Lumpur',HOME:home,DISPLAY:display,XAUTHORITY:xauth,WA_BROWSER_UID:String(uid),WA_BROWSER_CPUS:await browserCpuSet(slot),LP_NUM_THREADS:'2'};
    const entry={id,uid,sockets:[],children:[],launchAbort:new AbortController()};entries.set(id,entry);
-   const child=(file,args)=>{const p=spawn(file,args,{env,uid,gid:uid,stdio:'ignore'});p.on('error',()=>{});entry.children.push(p);return p;};
+   const child=(file,args)=>{const p=spawn('taskset',['--cpu-list',env.WA_BROWSER_CPUS,file,...args],{env,uid,gid:uid,stdio:'ignore'});p.on('error',()=>{});entry.children.push(p);return p;};
    child('Xvfb',[display,'-screen','0','1366x900x24','-nolisten','tcp','-auth',xauth]);
    for(let i=0;i<50;i++){try{await fs.stat('/tmp/.X11-unix/X'+(120+slot));break;}catch{await pause(100);}}
    for(const [rfbPort,viewOnly] of [[port,false],[port+1,true]]){
@@ -35,7 +35,13 @@ async function vncGreeting(port){
    const page=(await browser.pages())[0];entry.client={pupBrowser:browser,pupPage:page,destroy:()=>browser.close()};
    await page.setContent('<title>Local fleet capacity fixture</title><canvas width="128" height="128"></canvas>');
    const hardware=await page.evaluate(()=>{const c=document.querySelector('canvas').getContext('2d');c.fillStyle='#123456';c.fillRect(0,0,128,128);return navigator.hardwareConcurrency;});
-   assert.ok(hardware>=1&&hardware<=2);const usage=await resourceSummary();peak=Math.max(peak,usage.pids||0);
+   assert.ok(hardware>=1&&hardware<=2);
+   for(const desktop of entry.children){
+    const status=await fs.readFile('/proc/'+desktop.pid+'/status','utf8'),list=status.match(/^Cpus_allowed_list:\s*([^\n]+)$/m)?.[1]?.trim();
+    const allowed=env.WA_BROWSER_CPUS.split(',').map(Number),expected=allowed.length===2&&allowed[1]===allowed[0]+1?allowed[0]+'-'+allowed[1]:allowed.slice().sort((a,b)=>a-b).join(',');
+    assert.equal(list,expected,'Desktop CPU affinity was not applied');assert.ok(Number(status.match(/^Threads:\s*(\d+)/m)?.[1])<32,'Desktop software renderer created an excessive thread pool');
+   }
+   const usage=await resourceSummary();peak=Math.max(peak,usage.pids||0);
    assert.equal(usage.pids_limit,1000);assert.ok(usage.pids<850,JSON.stringify(usage));
   }
   await pause(1500);
