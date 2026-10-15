@@ -5,6 +5,16 @@ const execute=promisify(execFile);
 const fs=require('node:fs/promises');
 function current(entries,entry){return entries.get(entry.id)===entry&&!entry.closing;}
 function guard(entries,entry,callback){return (...args)=>current(entries,entry)?callback(...args):undefined;}
+function browserClosed(entry){
+ const browser=entry.client?.pupBrowser,page=entry.client?.pupPage;
+ return browser?.connected===false||typeof browser?.isConnected==='function'&&!browser.isConnected()||typeof page?.isClosed==='function'&&page.isClosed();
+}
+function observeBrowser(entries,entry,onClose){
+ const browser=entry.client?.pupBrowser;
+ if(!browser||entry.observedBrowser===browser)return;
+ entry.observedBrowser=browser;
+ browser.once('disconnected',guard(entries,entry,onClose));
+}
 function starting(entries){return [...entries.values()].some(e=>!e.closing&&e.launching);}
 function expired(entry,now=Date.now(),timeout=600000){
  return !entry.ready&&!entry.awaitingScan&&now-(entry.progressAt??entry.started)>timeout;
@@ -62,4 +72,4 @@ function retire(entries,entry,{run=execute,timeout=5000,settle=150,beforeRelease
  })();
  return entry.stopping;
 }
-module.exports={current,guard,starting,expired,retire,killIdentity,killProcIdentity,resourceSummary};
+module.exports={current,guard,browserClosed,observeBrowser,starting,expired,retire,killIdentity,killProcIdentity,resourceSummary};

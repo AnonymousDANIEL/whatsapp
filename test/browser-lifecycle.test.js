@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {EventEmitter}=require('node:events');
-const {current,guard,starting,expired,retire,killIdentity,killProcIdentity}=require('../src/browser-lifecycle');
+const {current,guard,browserClosed,observeBrowser,starting,expired,retire,killIdentity,killProcIdentity}=require('../src/browser-lifecycle');
 test('Late browser events cannot change or fail a replacement connection',()=>{
  const client=new EventEmitter(),old={id:'same',started:0,launching:true},entries=new Map([['same',old]]),seen=[];
  client.on('ready',guard(entries,old,()=>seen.push('ready')));
@@ -45,12 +45,21 @@ test('Retiring desktop setup keeps its slot until pending setup has stopped',asy
  finish();await stopping;assert.equal(entries.has('setup'),false);assert.deepEqual(seen,['-TERM','-KILL','saved']);
 });
 test('Fork-free cleanup at a process limit targets only the verified private browser UID',async()=>{
- const killed=[],io={readdir:async()=>['self','1','12','13','14','15','16','0','not-a-pid'],readFile:async file=>{
-  if(file.includes('/16/'))throw Object.assign(Error('exited'),{code:'ENOENT'});
-  const uid=file.includes('/12/')?23001:file.includes('/13/')?23002:file.includes('/14/')?0:23001;
-  return 'Name:\tprivate\nUid:\t'+uid+'\t'+(file.includes('/15/')?0:uid)+'\t'+uid+'\t'+uid+'\n';
+ const ids=Array.from({length:5},(_,i)=>String(process.pid+1000+i)),killed=[],io={readdir:async()=>['self','1',String(process.pid),...ids,'0','not-a-pid'],readFile:async file=>{
+  if(file.includes('/'+ids[4]+'/'))throw Object.assign(Error('exited'),{code:'ENOENT'});
+  const uid=file.includes('/'+ids[0]+'/')?23001:file.includes('/'+ids[1]+'/')?23002:file.includes('/'+ids[2]+'/')?0:23001;
+  return 'Name:\tprivate\nUid:\t'+uid+'\t'+(file.includes('/'+ids[3]+'/')?0:uid)+'\t'+uid+'\t'+uid+'\n';
  }};
  await killProcIdentity(23001,'KILL',io,(pid,signal)=>killed.push([pid,signal]));
- assert.deepEqual(killed,[[12,'SIGKILL']]);
+ assert.deepEqual(killed,[[Number(ids[0]),'SIGKILL']]);
  for(const uid of [0,19999,'23001',NaN])await assert.rejects(killProcIdentity(uid,'TERM',io,()=>assert.fail('unsafe UID')),/UNSAFE_BROWSER_IDENTITY/);
+});
+test('Browser transport is observed before client initialization finishes, and old disconnects cannot stop replacements',()=>{
+ const browser=new EventEmitter(),entry={id:'early',client:{pupBrowser:browser,pupPage:{isClosed:()=>false}}},entries=new Map([[entry.id,entry]]);let closed=0;
+ browser.connected=true;observeBrowser(entries,entry,()=>closed++);observeBrowser(entries,entry,()=>closed++);
+ assert.equal(browser.listenerCount('disconnected'),1);assert.equal(browserClosed(entry),false);
+ browser.connected=false;assert.equal(browserClosed(entry),true);browser.emit('disconnected');assert.equal(closed,1);
+ const nextBrowser=new EventEmitter();nextBrowser.connected=true;entry.client.pupBrowser=nextBrowser;observeBrowser(entries,entry,()=>closed++);
+ entries.set(entry.id,{id:entry.id});nextBrowser.emit('disconnected');assert.equal(closed,1);
+ assert.equal(browserClosed({client:{pupPage:{isClosed:()=>true}}}),true);assert.equal(browserClosed({}),false);
 });

@@ -13,7 +13,7 @@ const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
-const {readSnapshot}=require('./history-sync');
+const {readSnapshot,historyFailureCode}=require('./history-sync');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
 const lifecycle=require('./browser-lifecycle');
@@ -134,7 +134,8 @@ async function startAccount(account) {
         env: { ...e.env, WA_BROWSER_UID: String(e.uid) }, signal:e.launchAbort.signal, timeout:90000, protocolTimeout:90000,
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-size=1366,900', '--window-position=0,0', '--disable-session-crashed-bubble', '--no-first-run'] }
     });
-    const on=(event,callback)=>e.client.on(event,lifecycle.guard(entries,e,callback));
+    const watchBrowser=()=>lifecycle.observeBrowser(entries,e,()=>{fail(account.id,'BROWSER_EXITED',e).catch(()=>{});});
+    const on=(event,callback)=>e.client.on(event,lifecycle.guard(entries,e,(...args)=>{watchBrowser();return callback(...args);}));
     on('qr', () => { e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
     on('authenticated', () => { e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
     on('auth_failure', () => { fail(account.id,'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED',e).catch(()=>{}); });
@@ -156,7 +157,7 @@ async function startAccount(account) {
       }
       e.launching=false;
       e.client.pupPage?.bringToFront().catch(()=>{});
-      e.client.pupBrowser?.on('disconnected',lifecycle.guard(entries,e,()=>{fail(account.id,'BROWSER_EXITED',e).catch(()=>{});}));
+      watchBrowser();
     }).catch(error=>{
       if(!lifecycle.current(entries,e))return;
       console.error(describeStartupError(error,'chromium-initialize'));
@@ -205,11 +206,15 @@ async function syncHistory(accountId,entry) {
     for(const message of snapshot.messages)await recordMessage(accountId,message,null,false);
     await reconcileUnknown(accountId,entry.client,snapshot.messages);
     await pool.query('UPDATE accounts SET history_synced_at=now(),history_sync_error=$2 WHERE id=$1',[accountId,snapshot.chatErrors?'PARTIAL_CHAT_HISTORY':null]);
+    entry.syncFailures=0;
     if(!entry.syncReported){console.log('History sync ready:',JSON.stringify({messages:snapshot.messages.length,chatErrors:snapshot.chatErrors}));entry.syncReported=true;}
   }catch(err){
     entry.syncReported=false;
-    await pool.query("UPDATE accounts SET history_sync_error='HISTORY_SYNC_FAILED' WHERE id=$1",[accountId]).catch(()=>{});
-    console.error('history sync:',err.code||err.name);
+    const code=historyFailureCode(err);
+    entry.syncFailures=(entry.syncFailures||0)+1;entry.nextSync=Date.now()+Math.min(300000,15000*2**Math.min(entry.syncFailures,5));
+    await pool.query('UPDATE accounts SET history_sync_error=$2 WHERE id=$1',[accountId,code]).catch(()=>{});
+    console.error('history sync:',code,JSON.stringify({account:crypto.createHash('sha256').update(accountId).digest('hex').slice(0,12),...await lifecycle.resourceSummary()}));
+    if(lifecycle.current(entries,entry)&&lifecycle.browserClosed(entry))await fail(accountId,'BROWSER_EXITED',entry);
   }finally{entry.syncing=false;}
 }
 const eligible = `u.active AND NOT u.locked AND c.shared_pool=a.shared_pool
@@ -320,6 +325,7 @@ async function tick() {
       }
       if (!entries.has(a.id) && entries.size < maxAccounts && !lifecycle.starting(entries) && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
       const e = entries.get(a.id);
+      if(e&&!e.closing&&lifecycle.browserClosed(e)){await fail(a.id,'BROWSER_EXITED',e);continue;}
       if(e&&lifecycle.expired(e)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
       if (e) {
         await pool.query('UPDATE accounts SET heartbeat_at=now() WHERE id=$1', [a.id]);
