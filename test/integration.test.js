@@ -56,7 +56,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   let c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),'2030-10-02T01:15:00.000Z');assert.equal(c.send_now,true);
   const orig=c.scheduled_at.toISOString();assert.equal((await request('/campaigns/'+task+'/send-now','POST',{},user)).status,200);
   c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),orig);
-  assert.equal((await request('/campaigns/'+task,'PATCH',{window_start:'10:00',window_end:'16:00',timezone:'Asia/Kuala_Lumpur',scheduled_at:'2030-10-02T10:00',expires_at:'2030-10-03T16:00',weekdays:[2],interval_ms:25000,send_now:false},user)).status,200);
+  assert.equal((await request('/campaigns/'+task,'PATCH',{window_start:'10:00',window_end:'16:00',timezone:'Asia/Kuala_Lumpur',scheduled_at:'2030-10-02T10:00',expires_at:'2030-10-03T16:00',weekdays:[2],interval_ms:25000,send_now:false},owner)).status,200);
   c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),'2030-10-02T02:00:00.000Z');assert.equal(c.send_now,false);assert.equal(c.interval_ms,25000);
   assert.equal((await request('/campaigns/'+task+'/results','GET',null,user2)).status,403);
  });
@@ -244,10 +244,41 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await worker.reconcileUnknown(a,null,[message]);
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
  });
+ await t.test('only Owner can edit existing task pacing; USER pause/resume and recipient results remain intact',async()=>{
+  const created=await request('/campaigns','POST',{title:'Pacing access',account_id:a,body:'Synthetic permission fixture',recipients:'0123456789\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);
+  assert.equal(created.status,201);const id=created.data.id;
+  const snapshot=async()=>({
+   campaign:(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[id])).rows[0],
+   recipients:(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1 ORDER BY id',[id])).rows,
+   audit:(await db.pool.query('SELECT action,details FROM audit WHERE entity_id=$1 ORDER BY id',[id])).rows
+  });
+  const before=await snapshot();
+  for(const body of [
+   {pacing:true,interval_ms:5000,batch_size:100},
+   {interval_ms:5000,enabled:false},
+   {batch_size:100,enabled:false},
+   {pacing:false,interval_ms:5000,batch_size:100,enabled:false},
+   {window_start:'00:00',window_end:'00:00',timezone:'Asia/Kuala_Lumpur',interval_ms:5000,scheduled_at:'2030-10-02T09:15',weekdays:[1]},
+   {enabled:false,send_now:false}
+  ]){
+   const denied=await request('/campaigns/'+id,'PATCH',body,user);
+   assert.equal(denied.status,403);assert.equal(denied.data.error,'只有 Owner 可以修改任务间隔或数量');
+   assert.deepEqual(await snapshot(),before);
+  }
+  assert.equal((await request('/campaigns/'+id,'PATCH',{pacing:true,interval_ms:120000,batch_size:3},user2)).status,403);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{pacing:true,interval_ms:120000,batch_size:3},owner)).status,200);
+  const edited=await snapshot();assert.equal(edited.campaign.interval_ms,120000);assert.equal(edited.campaign.batch_size,3);
+  assert.deepEqual(edited.recipients,before.recipients);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:false},user)).status,200);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:true},user)).status,200);
+  assert.equal((await request('/campaigns/'+id+'/send-now','POST',{},user)).status,200);
+  const resumed=await snapshot();assert.equal(resumed.campaign.enabled,true);assert.equal(resumed.campaign.interval_ms,120000);assert.equal(resumed.campaign.batch_size,3);
+  assert.deepEqual(resumed.recipients,before.recipients);
+ });
  await t.test('interval-only batches persist counts and expose pending/invalid per-number records',async()=>{
   const r=await request('/campaigns','POST',{title:'Batch',account_id:a,body:'batch text',recipients:'0123456789\n0123456790\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);assert.equal(r.status,201);
   const c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[r.data.id])).rows[0];assert.equal(c.send_now,true);assert.equal(c.batch_size,2);
-  assert.equal((await request('/campaigns/'+c.id,'PATCH',{pacing:true,interval_ms:60000,batch_size:0},user)).status,400);
+  assert.equal((await request('/campaigns/'+c.id,'PATCH',{pacing:true,interval_ms:60000,batch_size:0},owner)).status,400);
   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[c.id]);await db.pool.query('UPDATE accounts SET next_send_at=now(),batch_sent=0 WHERE id=$1',[a]);
   const before=(await request('/send-records','GET',null,user)).data.filter(x=>x.campaign_id===c.id);assert.equal(before.length,3);assert.equal(before.filter(x=>x.status==='pending').length,2);assert.equal(before.filter(x=>x.status==='invalid').length,1);assert.equal((await request('/send-records','GET',null,user2)).data.length,0);
   let calls=0;const entry={id:a,ready:true,client:{getNumberId:async phone=>({_serialized:phone+'@c.us'}),sendMessage:async(to,body)=>({id:'batch-'+(++calls),fromMe:true,to,body,ack:2})}};

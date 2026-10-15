@@ -5,6 +5,7 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  "只有 Owner 可以修改任务间隔或数量":"Only the Owner can edit a task's interval or quantity.",
  "只有 Owner 可以管理共享 WhatsApp":"Only the Owner can manage shared WhatsApp.",
  "共享 WhatsApp 服务已关闭":"The shared WhatsApp service is closed.",
  "管理员尚未设置共享消息价格":"The Owner has not set the shared-message price yet.",

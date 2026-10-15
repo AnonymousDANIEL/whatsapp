@@ -69,6 +69,16 @@ async function verifyPersonalPages(page,fixture,role,language){
   if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
   if(target==='tasks'&&role==='user')assert.doesNotMatch(text,/按间隔和每批数量发送|Send by interval and batch size/);
   if(target==='tasks'){
+   for(const width of [1440,390]){
+    await page.setViewport({width,height:width===390?844:1000});
+    assert.equal(await page.$$eval('[data-schedule]',nodes=>nodes.length),role==='owner'?1:0);
+   }
+   await page.setViewport({width:1440,height:1000});
+   assert.equal(await page.$$eval('[data-pause]',nodes=>nodes.length),1);
+   if(role==='owner'){
+    await page.click('[data-schedule]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+    assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal input[name=batch_size]'));await page.click('#close-modal');
+   }else assert.doesNotMatch(text,/修改间隔\s*\/\s*数量|Edit interval\s*\/\s*quantity/);
    assert.equal(await page.$$eval('[data-now]',nodes=>nodes.length),0);
    assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;

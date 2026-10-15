@@ -1,5 +1,11 @@
 # Project instructions
 
+## Owner-only edits to existing task pacing (2026-10-15)
+
+- Show Edit interval / quantity on existing tasks only to Owner. USER may still choose the initial pacing when creating a task and use their existing pause/resume, immediate-send, detail and retained-delete controls.
+- Reject USER PATCH requests containing pacing or any schedule field, including interval_ms/batch_size and the legacy window/date route, before any mutation or billing check. Owner retains validated paced and legacy schedule edits. Never modify saved task settings, recipient results, credits or sending attempts as a migration or test.
+- Verify USER denial with native PostgreSQL using both current and legacy payloads, no partial updates/audit side effects, and Owner access. Check Owner/USER in Chinese/English at desktop/mobile widths; update the frontend asset version so cached pages reload the new controls.
+
 ## Account-scoped navigation recovery (2026-10-15 night)
 
 - A real post_logout navigation caused the pinned Client's async framenavigated callback to reject outside initialize and terminate the entire worker. Install the private Page event guard before the native callback is registered, contain both synchronous throws and rejected promises, and route safe fixed categories through the current account's existing lifecycle recovery. Do not suppress all process-wide unhandled rejections or patch global prototypes.

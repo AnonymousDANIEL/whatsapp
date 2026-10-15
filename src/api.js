@@ -351,6 +351,8 @@ async function start() {
   app.patch('/api/campaigns/:id', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
     const c = await campaignAccess(req.user, req.params.id, true); assert(!c.cancelled, '任务已取消');
+    const scheduleEdit=['pacing','interval_ms','batch_size','timezone','window_start','window_end','weekdays','scheduled_at','expires_at','send_now'].some(key=>Object.hasOwn(req.body,key));
+    assert(!scheduleEdit||req.user.role==='owner','只有 Owner 可以修改任务间隔或数量',403);
     if(req.body.enabled===true)await (c.shared_pool?shared:billing).canPay(c.created_by);
     if(req.body.pacing===true){
       const pace=validatePacing(req.body);
