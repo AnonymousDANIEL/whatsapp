@@ -2,6 +2,7 @@
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {spawn,execFile}=require('node:child_process'),{promisify}=require('node:util');
 const execute=promisify(execFile),puppeteer=require('puppeteer'),{retire}=require('../src/browser-lifecycle');
+const {browserSnapshot}=require('../src/history-sync');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{
  const uid=27001,base=await fs.mkdtemp(path.join(os.tmpdir(),'wa-browser-smoke-')),home=path.join(base,'home'),profile=path.join(base,'profile'),xauth=path.join(home,'Xauthority'),entries=new Map();
@@ -28,12 +29,25 @@ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
    entry.client={pupBrowser:browser,destroy:()=>browser.close()};
    const page=(await browser.pages())[0];await page.setContent('<title>Isolated browser smoke</title><h1>Local test only</h1>');
    assert.equal(await page.title(),'Isolated browser smoke');
+   if(round===1){
+    await page.evaluate(()=>{
+     window.__historyTestCalls=0;
+     window.require=()=>({Msg:{getModelsArray:()=>[{id:{_serialized:'offline-smoke-message',fromMe:true},t:100,body:'Local fixture',ack:2}]}});
+     window.WWebJS={getChat:()=>{window.__historyTestCalls++;return new Promise(resolve=>{window.__historyTestRelease=resolve;});}};
+    });
+    for(let pass=0;pass<2;pass++){
+     const snapshot=await page.evaluate(browserSnapshot,['smoke@c.us'],50,{budgetMs:50,perChatMs:10});
+     assert.equal(snapshot.messages[0].id,'offline-smoke-message');assert.equal(snapshot.messages[0].ack,2);assert.equal(snapshot.chatErrors,1);
+    }
+    assert.equal(await page.evaluate(()=>window.__historyTestCalls),1);
+    await page.evaluate(()=>window.__historyTestRelease({msgs:{getModelsArray:()=>[]}}));
+   }
    // Simulate a process-limit failure: cleanup must also work when pkill cannot fork.
    if(round===0){entry.client.destroy=()=>new Promise(()=>{});await retire(entries,entry,{timeout:30,run:async()=>{throw Object.assign(Error('simulated fork limit'),{code:'EAGAIN'});}});}
    else await retire(entries,entry);
    assert.equal(entries.size,0);
    assert.equal(await fs.readFile(path.join(profile,'keep-session.marker'),'utf8'),'preserved');
   }
-  console.log('Worker browser smoke PASS: cancelled launch, isolated headful Chromium, fork-free cleanup, same profile reused; network disabled');
+  console.log('Worker browser smoke PASS: cancelled launch, isolated headful Chromium, bounded partial history, fork-free cleanup, same profile reused; network disabled');
  }finally{for(const entry of [...entries.values()])await retire(entries,entry);await fs.rm(base,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
