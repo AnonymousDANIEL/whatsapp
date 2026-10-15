@@ -234,3 +234,14 @@ USER Credit/top-up now keeps the available balance visible and switches between 
 The requested USER-only explanations are omitted from the DOM on accounts, tasks, message history, overview and shared sending in Chinese and English. Owner retains them. Result rows, real status badges, counts and weekly chart remain. An empty shared pool still disables Send even though its USER explanatory note is removed. No API, database, wallet, payment or sending logic was changed.
 
 Release validation uses the existing PostgreSQL 17 workflow and both Docker builds. The four real Chrome Owner/USER × Chinese/English flows now also inspect the personal pages, retained status rows and chart, consolidated USER credit navigation, enabled/disabled FPX, maintenance/disabled banks, refresh, saved-route migration and mobile width. These fixtures never send real messages or create production payments/deposits. Native PostgreSQL and browser execution are performed by CI; local test skips must not be reported as native database passes.
+
+
+## Observed worker response-body crash (2026-10-15)
+
+After the USER interface release, Railway runtime verification observed repeated fatal ProtocolError exceptions from whatsapp-web.js 1.34.7 Client.initWebVersionCache reading a response body even with webVersionCache.type=none. The process restarted and could leave desktop startup waiting on an old display. This was an observed runtime failure, not inferred from a successful health response.
+
+The worker now uses a narrow Client subclass which skips cache initialization only for the existing explicit none mode. Live WhatsApp loading, authentication/profile storage, message receipts, financial accounting and normal error handling remain intact; there is no global unhandled-rejection suppression. Explicit local/remote cache options delegate to the pinned library.
+
+Two regression tests use the real pinned Client: an isolated strict-rejection Node process reproduces the old fatal unavailable-response error and verifies the new worker client survives it; a disposable local-cache fixture confirms cached-page interception and unrelated-request pass-through. The existing native PostgreSQL, bilingual Chrome and network-disabled headful worker smoke workflow remains the release gate. Production verification must include terminal Railway SUCCESS and bounded runtime logs after the previous repeated-crash interval. No live messages or production financial/account data are changed for testing.
+
+The browser fixture also waits for the post-modal page request to complete before its next interaction, removing an observed detached-element race in the automatic push run. Its earlier PR run passed, but the push-run failure is not counted as a successful validation; the fixed complete workflow must pass again before this runtime repair is published.

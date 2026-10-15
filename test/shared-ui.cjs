@@ -51,7 +51,7 @@ const server=http.createServer(async(req,res)=>{
  }catch(error){res.statusCode=500;res.end(JSON.stringify({error:error.message}));}
 });
 async function waitReady(page,kind='shared'){
- await page.waitForFunction(kind=>document.querySelector('#shell')?.hidden===false&&document.querySelector('#content')?.querySelector(kind==='shared'?'#shared-send-form':'[data-results]'),{},kind);
+ await page.waitForFunction(kind=>!loading&&document.querySelector('#shell')?.hidden===false&&document.querySelector('#content')?.querySelector(kind==='shared'?'#shared-send-form':'[data-results]'),{},kind);
 }
 
 async function verifyPersonalPages(page,fixture,role,language){
@@ -165,7 +165,7 @@ async function runCase(browser,base,role,language){
    document.querySelector('#modal input[name=hour_8]').value='0.3';
    document.querySelector('#modal form').requestSubmit();
   });
-  await page.waitForFunction(()=>!document.querySelector('#modal').open);
+  await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
   const update=fixture.requests.findLast(r=>r.path==='/shared/settings'&&r.method==='PUT');
   assert.equal(update.body.hours.length,24);assert.equal(update.body.price,'0.2');assert.equal(update.body.hours[8].price,'0.3');assert.equal(update.csrf,'fake-ui-csrf');
   await page.click('#shared-add');
@@ -175,9 +175,8 @@ async function runCase(browser,base,role,language){
    document.querySelector('#modal textarea[name=phones]').value='+60123456789\n+60123456788';
    document.querySelector('#modal form').requestSubmit();
   });
-  await page.waitForFunction(()=>!document.querySelector('#modal').open);
+  await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
   assert.equal(fixture.requests.findLast(r=>r.path==='/shared/accounts'&&r.method==='POST').body.groups[0],'fixture-group');
-  await page.click('details.panel > summary');
  }
  await verifyPersonalPages(page,fixture,role,language);
  if(role==='owner')await page.click('details.panel > summary');

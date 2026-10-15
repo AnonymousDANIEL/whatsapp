@@ -17,7 +17,8 @@ const {readSnapshot}=require('./history-sync');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
 const lifecycle=require('./browser-lifecycle');
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const {LiveWebClient}=require('./live-web-client');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, canDispatch, ackStatus } = require('./domain');
@@ -123,7 +124,7 @@ async function startAccount(account) {
     }
     assert(!e.closing, 'DESKTOP_CLOSED');
     e.desktopReady = true;
-    e.client = new Client({
+    e.client = new LiveWebClient({
       authStrategy: new IsolatedAuth({ clientId: account.id, dataPath: identity.auth }, e.uid),
       // Load the official page freshly. Do not pin or rewrite the WhatsApp Web UI.
       webVersionCache: { type: 'none' },

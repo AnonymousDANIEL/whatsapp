@@ -111,3 +111,8 @@ target-environment checks; do not call them tested based on a successful build.
 - Hide only the requested explanatory blocks from USER account, task, message history, overview and shared-send pages in both languages. Owner retains those explanations and connection-sync detail. Remove the USER history-sync banner entirely; keep message records, distinct result badges, weekly data and all actual server checks.
 - Do not display the empty-pool note on USER shared sending. Keep zero connected counts and the disabled Send button when no eligible source exists; never fabricate available accounts or bypass server eligibility.
 - Hiding explanations must never change prepaid holds, verified payment settlement, failed-send refunds, unknown-result review, account permissions, schedules or ledger records.
+
+## Disabled Web cache runtime fix (2026-10-15)
+
+- Worker uses LiveWebClient to skip only initWebVersionCache when webVersionCache.type=none. The pinned library otherwise adds an unnecessary asynchronous response-body capture whose rejection can terminate Node. Do not globally swallow unhandled rejections, rewrite WhatsApp HTML, or change auth profiles to hide this error. Other explicitly configured cache types retain upstream behavior.
+- Keep the isolated subprocess regression that reproduces the pinned upstream failure and confirms the worker client survives the same unavailable response. This fix does not prove all external WhatsApp/network faults are resolved; verify the new deployment's logs and restart behavior.
