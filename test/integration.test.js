@@ -128,6 +128,85 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   let calls=0;const result=await worker.send({id:a,client:{getNumberId:async()=>({_serialized:'60123456789@c.us'}),sendMessage:async(to,media,opts)=>{calls++;assert.equal(media.mimetype,'image/png');assert.equal(media.data,photo.data);assert.equal(opts.caption,'');return{id:'photo-msg',fromMe:true,to,type:'image',body:'',ack:2};}}},{phone:'+60123456789'},c);
   assert.equal(calls,1);assert.equal(result.status,'delivered');assert.equal((await db.pool.query("SELECT message_type FROM message_history WHERE message_id='photo-msg'")).rows[0].message_type,'image');
  });
+ await t.test('image captions use the pinned enqueue path and settle only from the real message ACK',async()=>{
+  const {LiveWebClient}=require('../src/live-web-client'),{LoadUtils}=require('whatsapp-web.js/src/util/Injected/Utils'),{installSendFixture}=require('./send-fixture.cjs');
+  const photo={data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',mimetype:'image/png'};
+  const cid=(await request('/campaigns','POST',{...template,body:'Photo caption 中文',media:photo,recipients:'0123456789',send_now:true},user)).data.id;
+  await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
+  const before=Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units),previous=global.window;
+  global.window={atob:global.atob};LoadUtils();const fixture=installSendFixture();
+  try{
+   const client=new LiveWebClient();client.pupPage={evaluate:async(fn,...args)=>fn(...args)};client.getNumberId=async phone=>({_serialized:phone+'@c.us'});
+   await worker.dispatch({id:a},{id:a,ready:true,client});
+   const row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+   assert.equal(fixture.sent.length,1);assert.equal(fixture.sent[0].caption,'Photo caption 中文');assert.equal(fixture.sent[0].type,'image');
+   assert.equal(row.status,'awaiting_ack');assert.ok(row.message_id);assert.equal(row.media_fingerprint,'synthetic-processed-image-hash');assert.ok(row.send_attempt_id);
+   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');
+   await worker.receiveAck(a,row.message_id,2);await require('../src/billing').reconcile();await require('../src/billing').reconcile();
+   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
+   assert.equal((await db.pool.query("SELECT * FROM credit_ledger WHERE recipient_id=$1 AND kind='charged'",[row.id])).rowCount,1);
+   assert.equal(Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units),before-1000);
+   assert.equal(fixture.serializations,0);assert.equal(fixture.seen,0);
+  }finally{global.window=previous;}
+ });
+ await t.test('preparation failure never sends, pauses the task and refunds exactly once',async()=>{
+  const cid=(await request('/campaigns','POST',{...template,recipients:'0123456789',send_now:true,title:'Preparation failure'},user)).data.id;
+  await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>$1',[cid]);await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a]);
+  let sent=0;const before=Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units);
+  const client={getNumberId:async()=>({_serialized:'60123456789@c.us'}),prepareWorkspaceMessage:async()=>{throw Error('Synthetic media upload error');},sendWorkspaceMessage:async()=>{sent++;},discardWorkspaceMessage:async()=>{}};
+  await worker.dispatch({id:a},{id:a,ready:true,client});await require('../src/billing').reconcile();
+  const row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];assert.equal(row.status,'failed');assert.equal(sent,0);
+  assert.equal((await db.pool.query('SELECT pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0].pause_reason,'review');
+  assert.equal((await db.pool.query("SELECT * FROM credit_ledger WHERE recipient_id=$1 AND kind='refunded'",[row.id])).rowCount,1);
+  assert.equal(Number((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units),before);
+ });
+ await t.test('late lookup cannot submit after its deadline and permissions are rechecked after preparation',async()=>{
+  const cid=(await request('/campaigns','POST',{...template,recipients:'0123456789',send_now:true,title:'Deadline guard'},user)).data.id;
+  const campaign=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[cid])).rows[0],row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+  let release,sent=0;const lookup=new Promise(resolve=>release=resolve);
+  const client={getNumberId:()=>lookup,sendMessage:async()=>{sent++;}};
+  assert.equal((await worker.send({id:a,client},row,campaign,{timeoutMs:15})).status,'failed');release({_serialized:'60123456789@c.us'});
+  await new Promise(resolve=>setTimeout(resolve,30));assert.equal(sent,0);
+  let prepared;const slowPreparation=new Promise(resolve=>prepared=resolve);
+  const slow={getNumberId:async()=>({_serialized:'60123456789@c.us'}),prepareWorkspaceMessage:()=>slowPreparation,sendWorkspaceMessage:async()=>{sent++;},discardWorkspaceMessage:async()=>{}};
+  const timed=await worker.send({id:a,client:slow},row,campaign,{timeoutMs:30});assert.equal(timed.status,'failed');assert.equal(timed.error,'MEDIA_PREPARATION_TIMEOUT');
+  prepared({});await new Promise(resolve=>setTimeout(resolve,30));assert.equal(sent,0);
+  const tracked={getNumberId:async()=>({_serialized:'60123456789@c.us'}),prepareWorkspaceMessage:async()=>{await db.pool.query('UPDATE users SET locked=true WHERE id=$1',[uid]);return {};},sendWorkspaceMessage:async()=>{sent++;},discardWorkspaceMessage:async()=>{}};
+  try{assert.equal((await worker.send({id:a,client:tracked},row,campaign)).status,'pending');assert.equal(sent,0);}finally{await db.pool.query('UPDATE users SET locked=false WHERE id=$1',[uid]);}
+ });
+ await t.test('late enqueue results attach only to their own attempt and settle once without resending',async()=>{
+  const cid=(await request('/campaigns','POST',{...template,body:'Late completion fixture',recipients:'0123456789',send_now:true},user)).data.id;
+  const campaign=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[cid])).rows[0],row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+  await db.transaction(c=>require('../src/billing').reserve(c,uid,row.id));
+  let release,calls=0;const completion=new Promise(resolve=>release=resolve);
+  const client={getNumberId:async()=>({_serialized:'60123456789@c.us'}),prepareWorkspaceMessage:async()=>({}),sendWorkspaceMessage:()=>{calls++;return completion;},discardWorkspaceMessage:async()=>{}};
+  assert.equal((await worker.send({id:a,client},row,campaign,{timeoutMs:50})).status,'unknown');assert.equal(calls,1);
+  await db.pool.query("UPDATE recipients SET status='unknown' WHERE id=$1",[row.id]);
+  release({id:'synthetic-late-send',fromMe:true,to:'60123456789@c.us',body:campaign.body,type:'chat',ack:2});
+  for(let n=0;n<50;n++){if((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status==='delivered')break;await new Promise(resolve=>setTimeout(resolve,10));}
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
+  await require('../src/billing').reconcile();await require('../src/billing').reconcile();assert.equal((await db.pool.query("SELECT * FROM credit_ledger WHERE recipient_id=$1 AND kind='charged'",[row.id])).rowCount,1);assert.equal(calls,1);
+  const cid2=(await request('/campaigns','POST',{...template,body:'Stale completion fixture',recipients:'0123456789',send_now:true},user)).data.id;
+  const c2=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[cid2])).rows[0],r2=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid2])).rows[0];
+  let releaseOld;const old=new Promise(resolve=>releaseOld=resolve);client.sendWorkspaceMessage=()=>old;
+  assert.equal((await worker.send({id:a,client},r2,c2,{timeoutMs:50})).status,'unknown');
+  await db.pool.query("UPDATE recipients SET status='unknown',send_attempt_id=$2 WHERE id=$1",[r2.id,randomUUID()]);
+  releaseOld({id:'synthetic-stale-send',fromMe:true,to:'60123456789@c.us',body:c2.body,type:'chat',ack:2});await new Promise(resolve=>setTimeout(resolve,40));
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[r2.id])).rows[0].status,'unknown');
+ });
+ await t.test('image reconciliation needs the uploaded fingerprint and caption and retains uncertain holds',async()=>{
+  const photo={data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',mimetype:'image/png'},caption='Unique image reconciliation';
+  const cid=(await request('/campaigns','POST',{...template,body:caption,media:photo,recipients:'0123456789',send_now:true},user)).data.id;
+  await db.pool.query("UPDATE recipients SET status='unknown',started_at=now(),media_fingerprint='exact-processed-hash' WHERE campaign_id=$1",[cid]);
+  const row=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
+  await db.transaction(c=>require('../src/billing').reserve(c,uid,row.id));
+  const message={id:'synthetic-reconciled-photo',fromMe:true,to:'60123456789@c.us',body:caption,type:'image',filehash:'different-image',timestamp:Math.floor(+new Date(row.started_at)/1000),ack:2};
+  await worker.reconcileUnknown(a,null,[message]);assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'unknown');
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'held');
+  message.filehash='exact-processed-hash';await worker.reconcileUnknown(a,null,[message]);await require('../src/billing').reconcile();
+  assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[row.id])).rows[0].state,'charged');
+ });
  await t.test('interval-only batches persist counts and expose pending/invalid per-number records',async()=>{
   const r=await request('/campaigns','POST',{title:'Batch',account_id:a,body:'batch text',recipients:'0123456789\n0123456790\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);assert.equal(r.status,201);
   const c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[r.data.id])).rows[0];assert.equal(c.send_now,true);assert.equal(c.batch_size,2);

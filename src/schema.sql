@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS recipients (
 CREATE INDEX IF NOT EXISTS recipients_queue ON recipients(campaign_id,id) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS recipients_results ON recipients(campaign_id,status,id);
 CREATE INDEX IF NOT EXISTS recipients_messages ON recipients(message_id) WHERE message_id IS NOT NULL;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS media_fingerprint text;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS send_attempt_id uuid;
 CREATE TABLE IF NOT EXISTS receipts (
  account_id uuid NOT NULL REFERENCES accounts(id), message_id text NOT NULL, ack integer NOT NULL,
  updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(account_id,message_id)

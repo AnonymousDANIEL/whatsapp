@@ -290,3 +290,13 @@ Bank global-off/no active receiving banks, unavailable live FPX and disabled sha
 The existing four real Chrome Owner/USER × Chinese/English desktop/mobile flows now inspect simultaneous sections, exact order with the ledger last, USER-only heading text, no switches, closed-method Coming soon, live FPX restoration, closed pending-order checks, bank maintenance/off, legacy saved destinations and verified payment returns. A changing FPX order refresh also checks bank amount and retry-request-ID preservation. The existing PostgreSQL 17 tests, API/worker Docker builds and network-disabled headful smoke remain required release checks. Fixtures never send real messages or create production payments/deposits.
 
 
+# Image-caption result recovery — 2026-10-15
+
+The screenshot showed image-caption tasks in unknown/review state; it did not show the underlying exception or prove whether recipients received them. The old worker discarded the exception details, waited for the upstream server-result promise before saving an ID, and excluded every image from read-only reconciliation. Snapshot reads also took an image's thumbnail body instead of its caption.
+
+The new path prepares/uploads without sending, journals the processed fingerprint and attempt, rechecks permissions and deadline, and commits one inline image with its caption. It returns the minimal raw-model ID without the unrelated full serializer or unread-state operation and waits for real ACKs in the existing receipt pipeline. Pre-submission failures refund; uncertain submissions remain held and are never automatically resent. Exact image fingerprint/caption/history matches can recover an existing result; unmatched legacy images remain for review.
+
+Local checks: syntax check passed; 71 tests passed with the three native PostgreSQL suites unavailable locally. Added coverage for the pinned image pipeline, one image-caption message, Unicode/newlines, image-only/text, broken full serialization/unread APIs, unresolved server-result promise, cancellation, upload failure, single-use commit and caption/fingerprint snapshots. GitHub CI runs the native PostgreSQL suites, the network-blocked Chrome fixture, existing Owner/USER and QR UI tests, and both production image builds/smokes before release. No production contacts, balances, profiles or credentials were changed as tests, and no live WhatsApp message was sent.
+
+External WhatsApp image processing/upload/network behavior can still fail. Stage-only diagnostics now distinguish preparation and submission without printing phone numbers, captions or upstream error text. Neither synthetic tests nor a Railway SUCCESS status establishes fault-free real phone delivery or indefinite uptime.
+

@@ -1,5 +1,13 @@
 # Project instructions
 
+## Image-caption sending and reliable results (2026-10-15)
+
+- Preserve one inline photo with its exact caption, including Unicode and line breaks. Do not split it into two sends or silently convert it to a document. LiveWebClient prepares media without enqueueing, then commits the single-use page token after worker permission/deadline checks. Use the pinned upstream preparation and enqueue APIs; never patch the official UI or globally replace its send functions.
+- Return the minimal real message ID/ACK directly from the raw model; do not wait for the server-result promise or run unrelated full-model serialization/sendSeen before saving that ID. ACK 0 stays awaiting_ack with its credit held; only real server/delivery/read ACKs settle a charge. No synthetic success or live test messages.
+- Preparation cannot enqueue. Expired or cancelled work must never later submit, including late number lookups and uploads. Keep one outstanding preparation per page, bounded prepared tokens, single-use commit and safe stage-only diagnostics without contacts, captions, image data or secret-bearing errors.
+- Store the processed upload fingerprint and attempt UUID before enqueue. Recover uncertain images read-only using matching image type, caption, fingerprint, recipient, time and unique message; never infer from caption alone. Legacy images can match only an identical original-byte fingerprint. Ambiguous/re-encoded images stay unknown with holds preserved. Late callbacks must match their attempt and cannot overwrite a newer attempt or a confirmed ACK.
+- Keep image-caption tests against the actual pinned upstream prepare/enqueue implementations with synthetic upload/chat modules in Node and network-blocked Chrome, plus native disposable PostgreSQL deadline, permissions, receipt, charge/refund and reconciliation cases. A successful fixture is not a real WhatsApp delivery certification.
+
 ## Long-lived QR screens and honest capacity (2026-10-15)
 
 - Worker ENTRYPOINT must use tini -s -- so it adopts/reaps orphaned browser descendants even beneath Railway's PID-1 wrapper. Do not add -g: retain Node's coordinated graceful shutdown. Keep the image smoke that reads the declared entrypoint and proves a private-UID orphan is adopted and reaped while Tini is not PID 1.

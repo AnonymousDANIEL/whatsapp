@@ -8,7 +8,8 @@ async function browserSnapshot(chatIds, since, {budgetMs=8000,perChatMs=500}={})
     try {
       const id=textId(m.id),fromMe=m.id?.fromMe===true||m.fromMe===true;
       if(!id||!fromMe||!Number.isFinite(m.t)||m.t<since)return;
-      const item={id,fromMe:true,to:textId(m.to)||textId(m.id?.remote)||chatId||'',body:typeof m.body==='string'?m.body:'',type:typeof m.type==='string'?m.type:'chat',timestamp:m.t,ack:Number.isInteger(m.ack)?m.ack:0};
+      const image=m.type==='image',caption=image?m.caption:m.body;
+      const item={id,fromMe:true,to:textId(m.to)||textId(m.id?.remote)||chatId||'',body:typeof caption==='string'?caption:'',type:typeof m.type==='string'?m.type:'chat',filehash:typeof m.filehash==='string'?m.filehash:null,timestamp:m.t,ack:Number.isInteger(m.ack)?m.ack:0};
       const prior=output.get(id);if(chatId)item.chatId=chatId;else if(prior?.chatId)item.chatId=prior.chatId;
       output.set(id,item);
     }catch{/* A malformed message must not discard the rest of the snapshot. */}

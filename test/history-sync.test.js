@@ -24,3 +24,9 @@ test('A stalled chat read preserves the loaded snapshot and is reused across ret
   assert.equal(window.__mywasapReadOnlyHistory.pending.size,0);
  }finally{release({msgs:{getModelsArray:()=>[]}});global.window=saved;}
 });
+test('Image snapshots retain the caption and uploaded fingerprint rather than the thumbnail body',async()=>{
+ const saved=global.window;
+ const image={id:{_serialized:'synthetic-image',fromMe:true},t:100,type:'image',body:'private-thumbnail-base64',caption:'图片说明 Photo caption',filehash:'uploaded-filehash',ack:2};
+ global.window={require:()=>({Msg:{getModelsArray:()=>[image]}})};
+ try{const r=await browserSnapshot([],50);assert.equal(r.messages[0].body,image.caption);assert.equal(r.messages[0].filehash,image.filehash);assert.ok(!JSON.stringify(r).includes(image.body));}finally{global.window=saved;}
+});

@@ -15,6 +15,7 @@ const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
 const {readSnapshot,historyFailureCode}=require('./history-sync');
+const {sendFailureCode}=require('./workspace-send');
 const {purgeAccountData}=require('./account-deletion');
 const {clearStaleProfileLock}=require('./profile-lock');
 const lifecycle=require('./browser-lifecycle');
@@ -191,14 +192,17 @@ async function reconcileUnknown(accountId,client,snapshot=null) {
   const chats=new Map();
   for(const row of rows){
     try{
-      if(row.media)continue; // Never infer an image send from a matching caption alone.
+      // Older sends can only match if WhatsApp kept the original image bytes.
+      // Re-encoded legacy images remain unknown; a caption alone proves nothing.
+      const fingerprint=row.media_fingerprint||(row.media?.data?crypto.createHash('sha256').update(Buffer.from(row.media.data,'base64')).digest('base64'):null);
+      if(row.media&&!fingerprint)continue;
       const chatId=row.phone?.replace(/^\+/,'')+'@c.us';
       if(!chats.has(chatId))chats.set(chatId,snapshot?snapshot.filter(m=>m.chatId===chatId||m.to===chatId):await (await client.getChatById(chatId)).fetchMessages({limit:100}));
-      const matches=chats.get(chatId).filter(m=>m.fromMe&&messageId(m)&&m.body===row.body&&Math.abs(m.timestamp*1000-+new Date(row.started_at))<=90000);
+      const matches=chats.get(chatId).filter(m=>m.fromMe&&messageId(m)&&m.body===row.body&&(row.media?(m.type==='image'&&m.filehash===fingerprint):(!m.type||m.type==='chat'))&&Math.abs(m.timestamp*1000-+new Date(row.started_at))<=90000);
       if(matches.length!==1)continue;
       const message=matches[0],mid=messageId(message);
       // Ambiguous repeated identical sends remain unknown for human review.
-      if(rows.filter(other=>other.phone===row.phone&&other.body===row.body&&Math.abs(message.timestamp*1000-+new Date(other.started_at))<=90000).length!==1)continue;
+      if(rows.filter(other=>other.phone===row.phone&&other.body===row.body&&(!row.media||!other.media_fingerprint||other.media_fingerprint===fingerprint)&&Math.abs(message.timestamp*1000-+new Date(other.started_at))<=90000).length!==1)continue;
       if((await pool.query('SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE r.message_id=$1 AND COALESCE(r.send_account_id,c.account_id)=$2',[mid,accountId])).rowCount)continue;
       await pool.query("UPDATE recipients SET status=$1,message_id=$2,ack=$3,error_code=NULL,updated_at=now() WHERE id=$4 AND status='unknown'",[ackStatus(messageAck(message)),mid,messageAck(message),row.id]);
       await recordMessage(accountId,message,row.created_by,false);
@@ -261,7 +265,8 @@ async function dispatch(account, entry) {
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
     if (!stillAllowed || !canDispatch(stillAllowed)) { await pool.query("UPDATE recipients SET status='pending',started_at=NULL,updated_at=now() WHERE id=$1", [recipient.id]); await billing.settle(recipient.id,'pending'); return; }
     const result = await send(entry, recipient, campaign);
-    await pool.query('UPDATE recipients SET status=$1,error_code=$2,message_id=$3,ack=$4,updated_at=now() WHERE id=$5', [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
+    // A late completion may already have replaced sending with its real result.
+    await pool.query("UPDATE recipients SET status=$1,error_code=$2,message_id=$3,ack=$4,updated_at=now() WHERE id=$5 AND status='sending'", [result.status, result.error, result.messageId || null, result.ack ?? null, recipient.id]);
     if (result.messageId) {
       const receipt = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [account.id, result.messageId])).rows[0];
       if (receipt) await receiveAck(account.id, result.messageId, receipt.ack);
@@ -280,35 +285,67 @@ async function dispatch(account, entry) {
     console.error('dispatch:', err.code || err.name);
   } finally { busy.delete(account.id); }
 }
-async function send(entry, recipient, campaign) {
-  let startedSend = false;
+async function send(entry, recipient, campaign, {timeoutMs=60000}={}) {
+  let startedSend=false,expired=false,stage='lookup';
+  const attempt=crypto.randomUUID(),deadline=Date.now()+timeoutMs;
+  const tracked=typeof entry.client.prepareWorkspaceMessage==='function'&&typeof entry.client.sendWorkspaceMessage==='function';
+  const stopped=()=>expired||Date.now()>=deadline||shuttingDown||entry.closing;
+  const permitted=async()=>{
+    const allowed=(await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
+      WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
+      AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`,[campaign.id])).rows[0];
+    return allowed&&canDispatch(allowed);
+  };
   const operation = (async () => {
     try {
       const wid = await entry.client.getNumberId(recipient.phone.replace(/^\+/, ''));
       if (!wid) return { status: 'invalid', error: 'NOT_ON_WHATSAPP' };
-      if (shuttingDown || entry.closing) return { status: 'unknown', error: 'WORKER_STOPPED' };
-      // Recheck after number lookup, which may take a while.
-      const allowed = (await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
-        WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
-        AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`, [campaign.id])).rows[0];
-      if (!allowed || !canDispatch(allowed)) return { status: 'pending', error: null };
+      if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
+      if(!await permitted())return {status:'pending',error:null};
+      if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
+      let prepared;
+      if(tracked){
+        stage='prepare';
+        prepared=await entry.client.prepareWorkspaceMessage(attempt,wid._serialized,campaign.body,campaign.media||null,deadline);
+        // Media upload may be slow. Recheck permissions and the deadline before enqueueing.
+        if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
+        if(!await permitted())return {status:'pending',error:null};
+      }
+      if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
+      await pool.query('UPDATE recipients SET media_fingerprint=$1,send_attempt_id=$2,started_at=now() WHERE id=$3',[prepared?.filehash||null,attempt,recipient.id]);
+      if(stopped())return {status:'failed',error:'SEND_STOPPED_BEFORE_SUBMISSION',quarantine:true};
+      stage='send';
       startedSend = true;
-      const message = await entry.client.sendMessage(wid._serialized, campaign.media?new MessageMedia(campaign.media.mimetype,campaign.media.data,campaign.media.filename):campaign.body, { waitUntilMsgSent: true,...(campaign.media?{caption:campaign.body}:{}) });
+      const message=tracked?await entry.client.sendWorkspaceMessage(attempt):await entry.client.sendMessage(wid._serialized,campaign.media?new MessageMedia(campaign.media.mimetype,campaign.media.data,campaign.media.filename):campaign.body,{waitUntilMsgSent:false,sendSeen:false,...(campaign.media?{caption:campaign.body}:{})});
       const mid=messageId(message);
       if(!mid) return {status:'unknown',error:'SEND_ID_MISSING_REVIEW_REQUIRED',quarantine:true};
       await recordMessage(entry.id,{...message,fromMe:true,to:message.to||wid._serialized},campaign.created_by).catch(err=>console.error('message history:',err.code||err.name));
       return { status: ackStatus(messageAck(message)), error: null, messageId:mid, ack:messageAck(message) };
-    } catch { return { status: startedSend ? 'unknown' : 'failed', error: startedSend ? 'SEND_EXCEPTION_REVIEW_REQUIRED' : 'NUMBER_LOOKUP_FAILED', quarantine: startedSend }; }
+    } catch(error) {
+      const uncertain=startedSend&&!error?.notSent;
+      const code=error?.sendCode||(!startedSend&&stage==='lookup'?'NUMBER_LOOKUP_FAILED':sendFailureCode(error,stage));
+      console.error('Message send:',JSON.stringify({account:crypto.createHash('sha256').update(entry.id).digest('hex').slice(0,12),stage,media:Boolean(campaign.media),code,uncertain}));
+      return {status:uncertain?'unknown':'failed',error:code,quarantine:startedSend||stage==='prepare',definitelyNotSent:error?.notSent===true};
+    } finally {
+      if(tracked)entry.client.discardWorkspaceMessage?.(attempt).catch(()=>{});
+    }
   })();
   let timer;
-  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve({ status: 'unknown', error: 'SEND_TIMEOUT_REVIEW_REQUIRED', quarantine: true }), 60000); });
+  const timeout=new Promise(resolve=>{timer=setTimeout(()=>{
+    expired=true;
+    const code=startedSend?'SEND_TIMEOUT_REVIEW_REQUIRED':stage==='prepare'?'MEDIA_PREPARATION_TIMEOUT':'NUMBER_LOOKUP_TIMEOUT';
+    console.error('Message send:',JSON.stringify({account:crypto.createHash('sha256').update(entry.id).digest('hex').slice(0,12),stage,media:Boolean(campaign.media),code,uncertain:startedSend}));
+    resolve({status:startedSend?'unknown':'failed',error:code,quarantine:true});
+  },timeoutMs);});
   const result = await Promise.race([operation, timeout]); clearTimeout(timer);
   // A late successful completion is still recorded. Never start a duplicate send.
   if (result.quarantine) operation.then(async late => {
     if (late.messageId) {
-      await pool.query("UPDATE recipients SET status=$1,error_code=NULL,message_id=$2,ack=$3,updated_at=now() WHERE id=$4 AND status='unknown'", [late.status, late.messageId, late.ack, recipient.id]);
+      await pool.query("UPDATE recipients SET status=$1,error_code=NULL,message_id=$2,ack=$3,updated_at=now() WHERE id=$4 AND status IN ('sending','unknown') AND send_attempt_id=$5", [late.status, late.messageId, late.ack, recipient.id,attempt]);
       const saved = (await pool.query('SELECT ack FROM receipts WHERE account_id=$1 AND message_id=$2', [entry.id, late.messageId])).rows[0];
       if (saved) await receiveAck(entry.id, late.messageId, saved.ack);
+    }else if(late.definitelyNotSent){
+      await pool.query("UPDATE recipients SET status='failed',error_code=$1,updated_at=now() WHERE id=$2 AND status IN ('sending','unknown') AND send_attempt_id=$3",[late.error,recipient.id,attempt]);
     }
   }).catch(() => {});
   return result;
