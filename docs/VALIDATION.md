@@ -3,7 +3,7 @@
 - Added Owner-only read-only capacity snapshots for service status and shared-pool status, with active personal/shared assignments, running counts, fresh worker admission and zero availability for stale, missing or resource-blocked workers.
 - Added disposable native PostgreSQL coverage for scope/permissions, pending assignments, inactive/deleted exclusions and unchanged accounts/wallets/USER quota. Browser coverage checks both Owner views, 22 rows / 115 configured slots, Chinese/English, 390/1440 widths, background refresh and absence from USER pages.
 - Local dependencies and JavaScript checks are available. Local native PostgreSQL/Chrome/container checks are unavailable and must pass in GitHub Actions before main is updated. No production messages, passwords, funds or login profiles are used as tests. A 22-group fixture is not a real 100+ linked-phone load test.
-- Requested infrastructure expansion: 16 independent groups g–v at five slots each (+80), separate /data volumes, GitHub main sources, private authenticated routes. Record terminal deployment and route verification in the change's PR after rollout; provisioned resources alone are not evidence of live WhatsApp linking.
+- Final infrastructure expansion: 14 independent groups g–t (+80): g–p have six slots / 6 GB each, q–t have five slots / 4 GB each, all on 2 vCPU with DB_POOL_SIZE=3. Each has its own /data volume, GitHub main source and private authenticated route. The platform rejected the next volume at the project quota; do not create ephemeral profiles to work around it. Record terminal deployment and route verification in the change's PR after rollout; provisioned resources alone are not evidence of live WhatsApp linking.
 
 # 验证范围 · 2026-10-01
 

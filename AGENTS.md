@@ -2,7 +2,7 @@
 
 - Owner shared management and Service status show Available QR slots next to Running capacity, plus occupied/total/temporarily unavailable and per-group remaining slots in Chinese and English. Keep these infrastructure details out of USER responses/pages.
 - Use only each view's configured groups. Count enabled, nondeleted personal AND shared assignments, including browsers not started yet. Occupied is at least the running count. Stale/missing/future heartbeats and resource-blocked groups contribute no available slots; do not subtract running alone or advertise a stale worker as available. Capacity reads must not mutate profiles, account flags, wallets or quotas.
-- Add capacity with distinct worker groups and separate /data volumes, one replica per group. New groups are limited to five browsers, 2 vCPU and 4 GB each; retain process admission guards and the per-USER ten-account quota. Configured free slots are a current capacity snapshot, not verified linked phones or a 100+ live-load certification.
+- Add capacity with distinct worker groups and separate /data volumes, one replica per group. The final +80 topology adds groups g–p at six browsers / 2 vCPU / 6 GB each and q–t at five browsers / 2 vCPU / 4 GB each; all fourteen use DB_POOL_SIZE=3. Preserve a–f, process admission guards and the per-USER ten-account quota. See docs/CAPACITY.md before further expansion: the platform rejected another volume at the project quota. Configured free slots are a current capacity snapshot, not verified linked phones or a 100+ live-load certification.
 
 # Project instructions
 
