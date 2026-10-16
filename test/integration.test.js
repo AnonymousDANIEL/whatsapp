@@ -433,7 +433,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await request('/campaigns/'+manual,'PATCH',{enabled:false},user2);
   await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[review]);
   await db.pool.query("UPDATE recipients SET status='unknown' WHERE campaign_id=$1 AND status='pending'",[review]);
-  await request('/campaigns/'+cancelled+'/cancel','POST',{},user2);
+  assert.equal((await request('/campaigns/'+cancelled+'/cancel','POST',{},owner)).status,200);
   await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit',deleted_at=now() WHERE id=$1",[removed]);
   await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);let lookups=0,sends=0;
   const entry={id:b,ready:true,client:{getNumberId:async()=>{lookups++;return{_serialized:'60123456789@c.us'};},sendMessage:async()=>{sends++;return{id:{_serialized:'credit-auto-fake'},ack:1,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(Date.now()/1000)};}}};
