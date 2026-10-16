@@ -54,7 +54,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  await t.test('Malaysia dates convert once; immediate mode and edits preserve task recipients',async()=>{
   const r=await request('/campaigns','POST',{...template,send_now:true},user);assert.equal(r.status,201);assert.equal(r.data.duplicates,1);task=r.data.id;
   let c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),'2030-10-02T01:15:00.000Z');assert.equal(c.send_now,true);
-  const orig=c.scheduled_at.toISOString();assert.equal((await request('/campaigns/'+task+'/send-now','POST',{},user)).status,200);
+  const orig=c.scheduled_at.toISOString();assert.equal((await request('/campaigns/'+task+'/send-now','POST',{},owner)).status,200);
   c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),orig);
   assert.equal((await request('/campaigns/'+task,'PATCH',{window_start:'10:00',window_end:'16:00',timezone:'Asia/Kuala_Lumpur',scheduled_at:'2030-10-02T10:00',expires_at:'2030-10-03T16:00',weekdays:[2],interval_ms:25000,send_now:false},owner)).status,200);
   c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[task])).rows[0];assert.equal(c.scheduled_at.toISOString(),'2030-10-02T02:00:00.000Z');assert.equal(c.send_now,false);assert.equal(c.interval_ms,25000);
@@ -91,7 +91,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal(calls,1);assert.equal(destroyed,false);assert.equal(e.ready,true);
   assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[cid])).rows[0].enabled,false);
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[cid])).rows[0].status,'unknown');
-  const blocked=await request('/campaigns/'+cid+'/send-now','POST',{},user);assert.equal(blocked.status,400);assert.match(blocked.data.error,/待核对/);assert.equal(calls,1);
+  const blocked=await request('/campaigns/'+cid+'/send-now','POST',{},owner);assert.equal(blocked.status,400);assert.match(blocked.data.error,/待核对/);assert.equal(calls,1);
   // Read-only reconciliation recovers a unique existing message without sending.
   const rr=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[cid])).rows[0];
   const partial={id:'partial-history-fixture',fromMe:true,to:'60123456789@c.us',body:template.body,timestamp:Math.floor(+new Date(rr.started_at)/1000),ack:2};
@@ -244,7 +244,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await worker.reconcileUnknown(a,null,[message]);
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
  });
- await t.test('only Owner can edit existing task pacing; USER pause/resume and recipient results remain intact',async()=>{
+ await t.test('only Owner can edit or resume existing task pacing; USER pause and recipient results remain intact',async()=>{
   const created=await request('/campaigns','POST',{title:'Pacing access',account_id:a,body:'Synthetic permission fixture',recipients:'0123456789\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);
   assert.equal(created.status,201);const id=created.data.id;
   const snapshot=async()=>({
@@ -270,10 +270,56 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const edited=await snapshot();assert.equal(edited.campaign.interval_ms,120000);assert.equal(edited.campaign.batch_size,3);
   assert.deepEqual(edited.recipients,before.recipients);
   assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:false},user)).status,200);
-  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:true},user)).status,200);
-  assert.equal((await request('/campaigns/'+id+'/send-now','POST',{},user)).status,200);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:true},owner)).status,200);
+  assert.equal((await request('/campaigns/'+id+'/send-now','POST',{},owner)).status,200);
   const resumed=await snapshot();assert.equal(resumed.campaign.enabled,true);assert.equal(resumed.campaign.interval_ms,120000);assert.equal(resumed.campaign.batch_size,3);
   assert.deepEqual(resumed.recipients,before.recipients);
+ });
+ await t.test('new Send now verifies the linked browser and starts a new task without Owner approval',async()=>{
+  const originalFetch=global.fetch;let connected=false;
+  const before=(await db.pool.query('SELECT count(*)::integer n FROM campaigns')).rows[0].n;
+  global.fetch=async(input,options)=>{
+   if(String(input)==='http://127.0.0.1:9/accounts/'+a+'/status')return new Response(JSON.stringify({role:'worker',group:'group-a',status:connected?'ready':'scan_required',screen_ready:true,connected}),{status:200,headers:{'Content-Type':'application/json'}});
+   return originalFetch(input,options);
+  };
+  try{
+   const payload={...template,title:'New immediate browser check',recipients:'0123456789',pacing:true,interval_ms:5000,batch_size:1,send_now:true,require_connected:true};
+   assert.equal((await request('/campaigns','POST',payload,user)).status,409);
+   assert.equal((await db.pool.query('SELECT count(*)::integer n FROM campaigns')).rows[0].n,before);
+   connected=true;const response=await request('/campaigns','POST',payload,user);assert.equal(response.status,201);
+   const created=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[response.data.id])).rows[0];assert.equal(created.enabled,true);assert.equal(created.send_now,true);assert.equal(created.pause_reason,null);
+   await request('/campaigns/'+created.id,'PATCH',{enabled:false},user);
+  }finally{global.fetch=originalFetch;}
+ });
+ await t.test('USER can only pause existing tasks; stale ACKs isolate the old task and Owner can purge without refunding unknown credit',async()=>{
+  const make=async title=>{const r=await request('/campaigns','POST',{...template,title,recipients:'0123456789',pacing:true,interval_ms:5000,batch_size:1,send_now:true},user);assert.equal(r.status,201);return r.data.id;};
+  const old=await make('Old uncertain task'),fresh=await make('Independent new task');
+  await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>ALL($1::uuid[])',[[old,fresh]]);
+  for(const path of ['/send-now','/cancel'])assert.equal((await request('/campaigns/'+fresh+path,'POST',{},user)).status,403);
+  assert.equal((await request('/campaigns/'+fresh,'DELETE',null,user)).status,403);
+  assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:false},user)).status,200);
+  assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:true},user)).status,403);
+  assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:true},owner)).status,200);
+  const oldRow=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[old])).rows[0];
+  const billing=require('../src/billing');await db.transaction(tx=>billing.reserveForSend(tx,uid,oldRow.id));
+  await db.pool.query("UPDATE recipients SET status='awaiting_ack',message_id='old-synthetic-id',started_at=now()-interval '5 minutes' WHERE id=$1",[oldRow.id]);
+  await db.pool.query('UPDATE accounts SET next_send_at=now(),batch_sent=0 WHERE id=$1',[a]);
+  let sends=0;await worker.dispatch({id:a},{id:a,ready:true,client:{getNumberId:async phone=>({_serialized:phone+'@c.us'}),sendMessage:async to=>({id:'new-independent-'+(++sends),to,fromMe:true,body:template.body,ack:2})}});
+  assert.equal(sends,1);assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[fresh])).rows[0].status,'delivered');
+  const uncertain=(await db.pool.query('SELECT * FROM recipients WHERE id=$1',[oldRow.id])).rows[0];assert.equal(uncertain.status,'unknown');assert.equal(uncertain.message_id,'old-synthetic-id');
+  const paused=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[old])).rows[0];assert.equal(paused.enabled,false);assert.equal(paused.pause_reason,'review');assert.ok(paused.operation_at);
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[oldRow.id])).rows[0].state,'held');
+  const balance=(await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units;
+  assert.equal((await request('/campaigns/'+old,'DELETE',{preserve_holds:true},user)).status,403);
+  assert.equal((await request('/campaigns/'+old,'DELETE',null,owner)).status,409);
+  assert.equal((await request('/campaigns/'+old,'DELETE',{preserve_holds:true},owner)).status,200);
+  assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE id=$1',[old])).rowCount,0);
+  assert.equal((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units,balance);
+  const held=(await request('/billing?user_id='+uid,'GET',null,owner)).data.held.find(r=>r.recipient_id===oldRow.id);assert.equal(held.status,'unknown');
+  assert.equal((await request('/billing/resolve','POST',{recipient_id:oldRow.id,action:'refund',note:'Synthetic Owner-confirmed review'},owner)).status,200);
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[oldRow.id])).rows[0].state,'refunded');
+  const results=await request('/campaigns/'+fresh+'/results','GET',null,user);assert.ok(results.data.rows[0].created_at);assert.ok(results.data.rows[0].started_at);
+  const listed=(await request('/campaigns','GET',null,user)).data.find(c=>c.id===fresh);assert.ok(listed.created_at);assert.ok(listed.operation_at);
  });
  await t.test('interval-only batches persist counts and expose pending/invalid per-number records',async()=>{
   const r=await request('/campaigns','POST',{title:'Batch',account_id:a,body:'batch text',recipients:'0123456789\n0123456790\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);assert.equal(r.status,201);
@@ -290,10 +336,10 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/messages/'+a+'/message-1','DELETE',null,user)).status,200);
   assert.ok(!(await request('/messages','GET',null,user)).data.some(m=>m.message_id==='message-1'));
   assert.ok((await request('/messages','GET',null,owner)).data.find(m=>m.message_id==='message-1').deleted_at);
-  assert.equal((await request('/campaigns/'+task,'DELETE',null,user)).status,200);
-  assert.ok(!(await request('/campaigns','GET',null,user)).data.some(c=>c.id===task));
-  assert.ok((await request('/campaigns','GET',null,owner)).data.find(c=>c.id===task).deleted_at);
-  assert.ok((await request('/audit','GET',null,owner)).data.some(a=>a.action==='campaign.delete'));
+  assert.equal((await request('/campaigns/'+task,'DELETE',null,user)).status,403);
+  assert.ok((await request('/campaigns','GET',null,user)).data.some(c=>c.id===task));
+  assert.equal((await request('/campaigns/'+task,'PATCH',{enabled:true},user)).status,403);
+  assert.equal((await request('/campaigns/'+task+'/cancel','POST',{},user)).status,403);
   assert.equal((await request('/campaigns/'+task,'DELETE',null,owner)).status,200);
   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE id=$1',[task])).rowCount,0);
   assert.equal((await db.pool.query('SELECT 1 FROM audit WHERE entity_id=$1',[task])).rowCount,0);
@@ -355,7 +401,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);let calls=0;
   await worker.dispatch({id:b},{id:b,ready:true,client:{getNumberId:async()=>{calls++;return null;}}});assert.equal(calls,0);
   assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[paused])).rows[0].enabled,false);
-  assert.equal((await request('/campaigns/'+paused+'/send-now','POST',{},user2)).status,402);
+  assert.equal((await request('/campaigns/'+paused+'/send-now','POST',{},owner)).status,402);
  });
  await t.test('Owner USER remarks are private, editable and do not reset credentials, grants or sessions',async()=>{
   const before=(await db.pool.query('SELECT password_hash,active FROM users WHERE id=$1',[uid2])).rows[0];
@@ -625,4 +671,5 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/accounts','GET',null,owner)).data.length,2);
  });
 });
+
 

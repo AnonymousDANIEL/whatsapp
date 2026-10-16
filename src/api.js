@@ -4,6 +4,7 @@ const express = require('express');
 const billing=require('./billing');
 const payments=require('./payments'),vault=require('./secrets'),banks=require('./banks');
 const shared=require('./shared');
+const allocation=require('./account-allocation');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -23,6 +24,8 @@ const sharedGroups=JSON.parse(process.env.SHARED_WORKER_GROUPS_JSON||'[]');
 assert(Array.isArray(sharedGroups)&&sharedGroups.every(g=>typeof g==='string'&&Object.hasOwn(routes,g)),'共享运行分组配置无效',500);
 const sharedOnly=new Set(sharedGroups),poolRoutes=sharedGroups.length?Object.fromEntries(sharedGroups.map(g=>[g,routes[g]])):routes;
 const browser = createWorkerConnection(routes, process.env.INTERNAL_SECRET);
+const personalGroups=Object.keys(routes).filter(g=>!sharedOnly.has(g));
+const rebalanceAccounts=allocation.createRebalancer(routes,browser,personalGroups);
 const COOKIE = 'wa_session';
 const publicURL = security.publicAddress(process.env.PUBLIC_URL);
 const secure = publicURL.protocol === 'https:';
@@ -153,18 +156,20 @@ async function start() {
   app.post('/api/accounts', route(async (req, res) => {
     assert(typeof req.body.label === 'string' && req.body.label.trim().length > 0 && req.body.label.length <= 80, '请输入账号名称');
     assert(Object.hasOwn(routes, req.body.worker_group)&&!sharedOnly.has(req.body.worker_group), '请选择已配置的浏览器分组');
-    const id=crypto.randomUUID();
+    const id=crypto.randomUUID();let assignedGroup=req.body.worker_group;
     await transaction(async db=>{
+      await db.query('SELECT pg_advisory_xact_lock($1)',[allocation.PLACEMENT_LOCK]);
+      assignedGroup=await allocation.chooseGroup(db,personalGroups,assignedGroup)||assignedGroup;
       if(req.user.role!=='owner'){
         const u=(await db.query('SELECT account_limit FROM users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];
         const n=(await db.query('SELECT count(*)::int n FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=$1 AND a.deleted_at IS NULL',[req.user.id])).rows[0].n;
         assert(n<u.account_limit,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
       }
-      await db.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)',[id,req.body.label.trim(),req.body.worker_group]);
+      await db.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)',[id,req.body.label.trim(),assignedGroup]);
       if(req.user.role!=='owner')await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[req.user.id,id]);
     });
     await audit(req.user.id,'account.create',id,{label:req.body.label.trim()});
-    try {await workerCommand({id,worker_group:req.body.worker_group},'start');res.status(201).json({id,started:true});}
+    try {await workerCommand({id,worker_group:assignedGroup},'start');res.status(201).json({id,started:true});}
     catch(error){if(!error.publicMessage)throw error;res.status(201).json({id,started:false,connection:{code:error.code,message:error.message}});}
   }));
   app.get('/api/accounts/:id/connection', route(async (req, res) => {
@@ -297,7 +302,7 @@ async function start() {
   }));
   app.get('/api/campaigns', route(async (req, res) => {
     const ids = await visibleAccountIds(req.user);
-    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.pause_reason,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
+    const { rows } = await pool.query(`SELECT c.id,c.account_id,c.created_by,c.title,c.body,c.enabled,c.pause_reason,c.cancelled,c.send_now,c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,COALESCE(c.operation_at,c.created_at) AS operation_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
       (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::integer n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) AS counts
       FROM campaigns c JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
       WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner') ORDER BY c.created_at DESC LIMIT 200`, [ids,req.user.role]);
@@ -312,6 +317,7 @@ async function start() {
     const b = req.body; assert(permission(req.user, 'tasks.create'), '没有创建任务权限', 403);
     const a = await access(req.user, b.account_id, true); assert(a.enabled, '账号已停用');
     assert(!a.shared_pool,'请使用共享 WhatsApp 发送入口');
+    if(b.require_connected===true){const connection=await browser.status(a);assert(connection.connected,'请先扫码连接 WhatsApp 账号，再立刻发送',409);}
     assert(typeof b.title === 'string' && b.title.trim().length && b.title.length <= 120, '请输入任务名称');
     const media=validateImage(b.media);
     assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
@@ -331,6 +337,7 @@ async function start() {
   }));
   app.post('/api/campaigns/:id/send-now', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
+    assert(req.user.role==='owner','只有 Owner 可以继续或重新启动已有任务',403);
     const c = await campaignAccess(req.user, req.params.id, true);
     const a = await access(req.user, c.account_id, true); assert(a.enabled, '账号已停用');
     await (c.shared_pool?shared:billing).canPay(c.created_by);
@@ -342,7 +349,7 @@ async function start() {
       assert(count>0||!counts.review,'任务存在待核对号码，请先查看明细核对，系统不会自动重发。');
       assert(count > 0, '任务没有待发送的号码');
       // Never reset recipients: submitted, unknown and other finished results stay intact.
-      await db.query('UPDATE campaigns SET enabled=true,send_now=true,pause_reason=NULL WHERE id=$1', [c.id]);
+      await db.query('UPDATE campaigns SET enabled=true,send_now=true,pause_reason=NULL,operation_at=now(),review_released_at=now() WHERE id=$1', [c.id]);
       await db.query('INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,$2,$3,$4)', [req.user.id, 'campaign.send_now', c.id, { pending: count }]);
       return count;
     });
@@ -353,34 +360,36 @@ async function start() {
     const c = await campaignAccess(req.user, req.params.id, true); assert(!c.cancelled, '任务已取消');
     const scheduleEdit=['pacing','interval_ms','batch_size','timezone','window_start','window_end','weekdays','scheduled_at','expires_at','send_now'].some(key=>Object.hasOwn(req.body,key));
     assert(!scheduleEdit||req.user.role==='owner','只有 Owner 可以修改任务间隔或数量',403);
+    assert(req.user.role==='owner'||req.body.enabled!==true,'USER 只能暂停任务，不能继续',403);
     if(req.body.enabled===true)await (c.shared_pool?shared:billing).canPay(c.created_by);
     if(req.body.pacing===true){
       const pace=validatePacing(req.body);
-      await pool.query('UPDATE campaigns SET interval_ms=$1,batch_size=$2,send_now=true WHERE id=$3',[pace.interval_ms,pace.batch_size,c.id]);
+      await pool.query('UPDATE campaigns SET interval_ms=$1,batch_size=$2,send_now=true,operation_at=now() WHERE id=$3',[pace.interval_ms,pace.batch_size,c.id]);
       await audit(req.user.id,'campaign.schedule',c.id,pace);
     }else if(req.body.window_start!==undefined){
       const schedule=validateSchedule({...c,scheduled_at:c.scheduled_at.toISOString(),expires_at:c.expires_at?.toISOString(),...req.body});
       assert(req.body.send_now===undefined||typeof req.body.send_now==='boolean','send_now 无效');
-      await pool.query(`UPDATE campaigns SET timezone=$1,window_start=$2,window_end=$3,weekdays=$4,scheduled_at=$5,expires_at=$6,interval_ms=$7,send_now=$8 WHERE id=$9`,[schedule.timezone,schedule.window_start,schedule.window_end,schedule.weekdays,schedule.scheduled_at,schedule.expires_at,schedule.interval_ms,req.body.send_now??c.send_now,c.id]);
+      await pool.query(`UPDATE campaigns SET timezone=$1,window_start=$2,window_end=$3,weekdays=$4,scheduled_at=$5,expires_at=$6,interval_ms=$7,send_now=$8,operation_at=now() WHERE id=$9`,[schedule.timezone,schedule.window_start,schedule.window_end,schedule.weekdays,schedule.scheduled_at,schedule.expires_at,schedule.interval_ms,req.body.send_now??c.send_now,c.id]);
       await audit(req.user.id,'campaign.schedule',c.id,schedule);
     }else{
       assert(typeof req.body.enabled==='boolean','enabled 无效');
-      await pool.query('UPDATE campaigns SET enabled=$1,pause_reason=NULL WHERE id=$2',[req.body.enabled,c.id]);
+      await pool.query(`UPDATE campaigns SET enabled=$1,pause_reason=CASE WHEN NOT $1 AND pause_reason='review' THEN 'review' ELSE NULL END,operation_at=now(),review_released_at=CASE WHEN $1 THEN now() ELSE review_released_at END WHERE id=$2`,[req.body.enabled,c.id]);
       await audit(req.user.id,'campaign.enabled',c.id,{enabled:req.body.enabled});
     }
     res.json({ok:true});
   }));
   app.post('/api/campaigns/:id/cancel', route(async (req, res) => {
     assert(permission(req.user, 'tasks.create'), '没有任务权限', 403);
+    assert(req.user.role==='owner','只有 Owner 可以取消或删除任务',403);
     const c = await campaignAccess(req.user, req.params.id, true);
-    await transaction(async db => { await db.query('UPDATE campaigns SET enabled=false,cancelled=true,pause_reason=NULL WHERE id=$1', [c.id]); await db.query("UPDATE recipients SET status='cancelled',updated_at=now() WHERE campaign_id=$1 AND status='pending'", [c.id]); });
+    await transaction(async db => { await db.query('UPDATE campaigns SET enabled=false,cancelled=true,pause_reason=NULL,operation_at=now() WHERE id=$1', [c.id]); await db.query("UPDATE recipients SET status='cancelled',updated_at=now() WHERE campaign_id=$1 AND status='pending'", [c.id]); });
     await audit(req.user.id, 'campaign.cancel', c.id); res.json({ ok: true });
   }));
   app.get('/api/campaigns/:id/results', route(async (req, res) => {
     const c = await campaignAccess(req.user, req.params.id);
     const page = Math.max(1, Math.min(10000, Number(req.query.page) || 1));
     const status = req.query.status || null;
-    const rows = (await pool.query('SELECT * FROM recipients WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY id LIMIT 100 OFFSET $3', [c.id, status, (page - 1) * 100])).rows;
+    const rows = (await pool.query('SELECT r.*,c.created_at FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY r.id LIMIT 100 OFFSET $3', [c.id, status, (page - 1) * 100])).rows;
     const total = (await pool.query('SELECT count(*)::integer total FROM recipients WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2)', [c.id, status])).rows[0].total;
     res.json({ rows:c.shared_pool&&req.user.role!=='owner'?rows.map(({send_account_id,...r})=>r):rows, total, page });
   }));
@@ -439,6 +448,7 @@ async function start() {
     }res.json({ok:true});
   }));
   app.delete('/api/campaigns/:id',route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以取消或删除任务',403);
     const c=await campaignAccess(req.user,req.params.id);
     assert(!c.shared_pool||req.user.role==='owner','只有 Owner 可以管理共享发送任务',403);
     assert(req.user.role==='owner'||c.created_by===req.user.id,'只能修改自己创建的发送任务',403);
@@ -450,7 +460,7 @@ async function start() {
         await db.query('DELETE FROM message_history m USING recipients r WHERE r.campaign_id=$1 AND m.account_id=COALESCE(r.send_account_id,$2::uuid) AND m.message_id=r.message_id',[c.id,c.account_id]);
         await db.query('DELETE FROM receipts m USING recipients r WHERE r.campaign_id=$1 AND m.account_id=COALESCE(r.send_account_id,$2::uuid) AND m.message_id=r.message_id',[c.id,c.account_id]);
         await db.query('DELETE FROM audit WHERE entity_id IN(SELECT message_id FROM recipients WHERE campaign_id=$1)',[c.id]);
-        await billing.assertNoHolds(db,c.id);await db.query('DELETE FROM recipients WHERE campaign_id=$1',[c.id]);await db.query('DELETE FROM campaigns WHERE id=$1',[c.id]);await db.query('DELETE FROM audit WHERE entity_id=$1',[c.id]);
+        if(req.body?.preserve_holds!==true)await billing.assertNoHolds(db,c.id);await db.query('DELETE FROM recipients WHERE campaign_id=$1',[c.id]);await db.query('DELETE FROM campaigns WHERE id=$1',[c.id]);await db.query('DELETE FROM audit WHERE entity_id=$1',[c.id]);
       }else{
         await db.query('UPDATE campaigns SET enabled=false,cancelled=true,pause_reason=NULL,deleted_at=now(),deleted_by=$1 WHERE id=$2',[req.user.id,c.id]);
         await db.query("UPDATE recipients SET status='cancelled' WHERE campaign_id=$1 AND status='pending'",[c.id]);
@@ -526,6 +536,9 @@ async function start() {
       });
     } catch (e) { socket.write('HTTP/1.1 ' + (e.status || 403) + ' Rejected\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
+  Promise.allSettled(Object.keys(routes).map(async worker_group=>{try{await browser.request({worker_group},'/capacity');console.log('Worker route verified:',JSON.stringify({group:worker_group,authenticated:true}));}catch(e){console.log('Worker route pending:',JSON.stringify({group:worker_group,code:e.code||'UNAVAILABLE'}));}}));
+  const allocationTimer=setInterval(()=>rebalanceAccounts().catch(e=>console.error('allocation tick:',e.code||e.name)),15000);allocationTimer.unref();
+  server.on('close',()=>clearInterval(allocationTimer));
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
   await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '::', resolve));
   console.log('Management service ready');
@@ -533,5 +546,6 @@ async function start() {
   return server;
 }
 module.exports = { start, getSession, access };
+
 
 

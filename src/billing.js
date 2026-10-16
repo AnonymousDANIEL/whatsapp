@@ -39,7 +39,7 @@ async function reserveForSend(db,userId,recipientId){
 async function reserve(db,userId,recipientId){return (await reserveForSend(db,userId,recipientId)).ok;}
 async function resumeCreditTasks(userId=null,workerGroup=null){
  return transaction(async db=>{
-  const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL FROM users u,accounts a,billing_settings b,shared_settings s
+  const rows=(await db.query(`UPDATE campaigns c SET enabled=true,pause_reason=NULL,operation_at=now() FROM users u,accounts a,billing_settings b,shared_settings s
    WHERE c.created_by=u.id AND c.account_id=a.id AND b.id=1 AND s.id=1 AND c.pause_reason='credit' AND NOT c.enabled
    AND NOT c.cancelled AND c.deleted_at IS NULL AND u.active AND NOT u.locked AND (a.enabled OR c.shared_pool) AND a.deleted_at IS NULL
    AND ($1::uuid IS NULL OR u.id=$1) AND ($2::text IS NULL OR a.worker_group=$2)
@@ -90,7 +90,7 @@ function routes(app,route,uuid){
   if(req.user.role!=='owner'){const ledger=(await pool.query('SELECT id,kind,delta_units,balance_units,recipient_id,created_at FROM credit_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT 100',[id])).rows;return res.json({currency:'MYR',scale:SCALE,user:u,ledger});}
   const settings=(await pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
   const ledger=(await pool.query('SELECT l.*,u.username actor FROM credit_ledger l LEFT JOIN users u ON u.id=l.actor_id WHERE l.user_id=$1 ORDER BY l.id DESC LIMIT 100',[id])).rows;
-  const held=(await pool.query("SELECT m.*,r.status FROM message_charges m LEFT JOIN recipients r ON r.id=m.recipient_id WHERE m.user_id=$1 AND m.state='held' ORDER BY m.created_at DESC LIMIT 100",[id])).rows;
+  const held=(await pool.query("SELECT m.*,COALESCE(r.status,'unknown') AS status FROM message_charges m LEFT JOIN recipients r ON r.id=m.recipient_id WHERE m.user_id=$1 AND m.state='held' ORDER BY m.created_at DESC LIMIT 100",[id])).rows;
   const heldTotal=(await pool.query("SELECT COALESCE(sum(amount_units),0) total FROM message_charges WHERE user_id=$1 AND state='held'",[id])).rows[0].total;
   res.json({currency:'MYR',scale:SCALE,price_units:settings.price_units,user:u,held_units:heldTotal,ledger,held});
  }));
@@ -114,8 +114,10 @@ function routes(app,route,uuid){
   assert(req.user.role==='owner','只有 Owner 可以管理余额和定价',403);const b=req.body;
   assert(/^\d+$/.test(String(b.recipient_id))&&['charge','refund'].includes(b.action),'结算操作无效');assert(typeof b.note==='string'&&b.note.trim().length>0&&b.note.length<=200,'请填写调整原因');
   const r=(await pool.query('SELECT status FROM recipients WHERE id=$1',[b.recipient_id])).rows[0];
-  assert(r?.status==='unknown','仅可手动核对结果不确定的消息',409);
+  const held=!r&&(await pool.query("SELECT 1 FROM message_charges WHERE recipient_id=$1 AND state='held'",[b.recipient_id])).rowCount;
+  assert(r?.status==='unknown'||held,'仅可手动核对结果不确定的消息',409);
   await settle(b.recipient_id,b.action==='charge'?'submitted':'failed',req.user.id,b.note.trim());res.json({ok:true});
  }));
 }
 module.exports={units,canPay,reserve,reserveForSend,resumeCreditTasks,recoverCreditTasks,settle,reconcile,assertNoHolds,routes};
+

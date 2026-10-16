@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
  opt_in_confirmed boolean NOT NULL, duplicate_count integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_now boolean NOT NULL DEFAULT false;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS operation_at timestamptz;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS review_released_at timestamptz;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS profile_bound boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS recipients (
  id bigserial PRIMARY KEY, campaign_id uuid NOT NULL REFERENCES campaigns(id), raw_phone text NOT NULL, phone text,
  status text NOT NULL CHECK(status IN ('pending','sending','awaiting_ack','submitted','delivered','read','failed','invalid','unknown','cancelled')),
@@ -227,6 +230,9 @@ INSERT INTO shared_settings(id) VALUES(1) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS shared_hour_prices(hour integer PRIMARY KEY CHECK(hour BETWEEN 0 AND 23),price_units bigint NOT NULL CHECK(price_units>0));
 ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT 'personal' CHECK(service IN ('personal','shared'));
 ALTER TABLE message_charges ADD COLUMN IF NOT EXISTS price_hour integer CHECK(price_hour BETWEEN 0 AND 23);
+ALTER TABLE worker_health ADD COLUMN IF NOT EXISTS can_start_more boolean NOT NULL DEFAULT true;
+ALTER TABLE worker_health ADD COLUMN IF NOT EXISTS pids_current integer;
+ALTER TABLE worker_health ADD COLUMN IF NOT EXISTS pids_limit integer;
 ALTER TABLE worker_health ADD COLUMN IF NOT EXISTS max_accounts integer NOT NULL DEFAULT 5 CHECK(max_accounts BETWEEN 1 AND 10);
 CREATE TABLE IF NOT EXISTS shared_health_hourly(
  worker_group text NOT NULL,hour_start timestamptz NOT NULL,total integer NOT NULL,connected integer NOT NULL,
@@ -235,3 +241,4 @@ CREATE TABLE IF NOT EXISTS shared_health_hourly(
 );
 
 CREATE INDEX IF NOT EXISTS accounts_personal_phone_live ON accounts ((replace(phone,'+',''))) WHERE NOT shared_pool AND deleted_at IS NULL AND phone IS NOT NULL;
+

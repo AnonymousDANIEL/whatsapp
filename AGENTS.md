@@ -1,8 +1,17 @@
 # Project instructions
 
+## Pause-only USER tasks and independent connection capacity (2026-10-16)
+
+- USER may create a fresh opt-in sending task and pause their own existing task; only Owner can resume/restart, cancel or delete existing tasks. Block both UI actions and direct APIs, preserve review pauses, and keep credit-only automatic recovery distinct from a manual USER pause.
+- Send now on a new form must verify the actual linked browser, without human approval when eligible; never claim queued work was delivered. Keep old unknown recipients and holds. Recent ACK zero blocks the account briefly; after 90 seconds it becomes unknown and pauses only its original task. Owner may explicitly release remaining pending recipients; never reset or retry the unknown recipient.
+- Owner permanent task deletion may explicitly preserve unresolved financial holds. Delete application task/results while keeping immutable charges and ledger; allow later Owner-only manual settlement even after the recipient row is gone. Never automatically refund or charge an unknown result merely because it was deleted.
+- Show creation/last-operation timestamps on tasks and creation/send-start/update timestamps in results in Asia/Kuala_Lumpur. New server operations must record their real time.
+- Use fresh worker capacity and assigned-record counts to select a configured personal group. Keep per-USER ten-slot limits, resource admission guards, dedicated shared groups, and profile volumes separate. Only a never-started account without profile/home/identity files, bound browser, linked phone or send history may move. Serialize placement, verify target capacity, and atomically mark browser ownership before filesystem setup so an old worker cannot start a handed-off account.
+- Test policy/holds/old ACKs with disposable native PostgreSQL and fake clients, concurrent placement with real temporary profile sentinels, and zh/en Owner/USER Chrome including new form submission. Never send real customer messages or delete production profiles as a test.
+
 ## Owner-only edits to existing task pacing (2026-10-15)
 
-- Show Edit interval / quantity on existing tasks only to Owner. USER may still choose the initial pacing when creating a task and use their existing pause/resume, immediate-send, detail and retained-delete controls.
+- Show Edit interval / quantity on existing tasks only to Owner. USER may still choose the initial pacing when creating a task and view details or pause an existing task. Only Owner can resume, restart, cancel or delete existing tasks.
 - Reject USER PATCH requests containing pacing or any schedule field, including interval_ms/batch_size and the legacy window/date route, before any mutation or billing check. Owner retains validated paced and legacy schedule edits. Never modify saved task settings, recipient results, credits or sending attempts as a migration or test.
 - Verify USER denial with native PostgreSQL using both current and legacy payloads, no partial updates/audit side effects, and Owner access. Check Owner/USER in Chinese/English at desktop/mobile widths; update the frontend asset version so cached pages reload the new controls.
 
@@ -23,7 +32,7 @@
 ## Image-caption sending and reliable results (2026-10-15)
 
 - Preserve one inline photo with its exact caption, including Unicode and line breaks. Do not split it into two sends or silently convert it to a document. LiveWebClient prepares media without enqueueing, then commits the single-use page token after worker permission/deadline checks. Use the pinned upstream preparation and enqueue APIs; never patch the official UI or globally replace its send functions.
-- Return the minimal real message ID/ACK directly from the raw model; do not wait for the server-result promise or run unrelated full-model serialization/sendSeen before saving that ID. ACK 0 stays awaiting_ack with its credit held; only real server/delivery/read ACKs settle a charge. Gate further account dispatch while a sending/awaiting_ack recipient exists, so slow/offline sends do not accumulate. No synthetic success or live test messages.
+- Return the minimal real message ID/ACK directly from the raw model; do not wait for the server-result promise or run unrelated full-model serialization/sendSeen before saving that ID. ACK 0 stays awaiting_ack with its credit held; only real server/delivery/read ACKs settle a charge. Keep recent sending/awaiting_ack dispatch serialized. After 90 seconds without a real ACK, retain the uncertain ID/hold, pause its original task and allow separate new tasks; never retry that recipient. No synthetic success or live test messages.
 - Preparation cannot enqueue. Expired or cancelled work must never later submit, including late number lookups and uploads. Keep one outstanding preparation per page, bounded prepared tokens, single-use commit and safe stage-only diagnostics without contacts, captions, image data or secret-bearing errors.
 - Store the processed upload fingerprint and attempt UUID before enqueue. Recover uncertain images read-only using matching image type, caption, fingerprint, recipient, time and unique message; never infer from caption alone. Legacy images can match only an identical original-byte fingerprint. Ambiguous/re-encoded images stay unknown with holds preserved. Late callbacks must match their attempt and cannot overwrite a newer attempt or a confirmed ACK.
 - Keep image-caption tests against the actual pinned upstream prepare/enqueue implementations with synthetic upload/chat modules in Node and network-blocked Chrome, plus native disposable PostgreSQL deadline, permissions, receipt, charge/refund and reconciliation cases. A successful fixture is not a real WhatsApp delivery certification.
@@ -175,5 +184,6 @@ target-environment checks; do not call them tested based on a successful build.
 - USER Credit/top-up has no tabs or section-switch buttons. Keep the balance, then Bank top-up and Online FPX, deposit history, and the credit ledger last. Remove only the USER ledger title suffix (latest 100); retain bounded queries and all stored ledger records. Owner retains their title and controls.
 - Closed bank top-up, unavailable live FPX and disabled shared sending show Coming soon to USER. Keep Owner real configuration status, bank-maintenance detail and server-side checks. Never enable a payment/send just to display its section; do not label failed configuration reads as Coming soon.
 - Closed methods retain the USER's own historical deposits and FPX order checks/verified settlement. Global/per-bank-off still hides current receiving details and QR, prevents new deposits and does not create credit. Preserve unsent bank form amount, selected bank and retry request ID during combined-page refresh.
+
 
 

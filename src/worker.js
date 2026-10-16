@@ -25,6 +25,7 @@ const {LiveWebClient}=require('./live-web-client');
 const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, canDispatch, ackStatus } = require('./domain');
+const allocation=require('./account-allocation');
 const group = process.env.WORKER_GROUP;
 const maxAccounts = Number(process.env.MAX_ACCOUNTS_PER_WORKER || 5);
 const dataPath = path.resolve(process.env.DATA_DIR || '/data');
@@ -121,6 +122,8 @@ async function startAccount(account) {
   entries.set(account.id, e);
   e.setup=(async()=>{
   try {
+    const claimed=await pool.query('UPDATE accounts SET profile_bound=true WHERE id=$1 AND worker_group=$2 RETURNING id',[account.id,group]);
+    if(!claimed.rowCount){if(entries.get(account.id)===e)entries.delete(account.id);return;}
     await state(account.id, 'starting');
     const display = ':' + (100 + slot);
     const identity = await desktopIdentity(account.id); e.uid = identity.uid;
@@ -244,11 +247,24 @@ const eligible = `u.active AND NOT u.locked AND c.shared_pool=a.shared_pool
   AND (NOT c.shared_pool OR (EXISTS(SELECT 1 FROM shared_settings WHERE id=1 AND enabled) AND ${connectedSQL}))
   AND (u.role='owner' OR (u.role='user' AND (c.shared_pool OR EXISTS
   (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id))))`;
+async function expireUnconfirmed(accountId){
+ return transaction(async db=>{
+  const expired=(await db.query(`UPDATE recipients r SET status='unknown',error_code='ACK_TIMEOUT_REVIEW_REQUIRED',updated_at=now()
+   FROM campaigns c WHERE c.id=r.campaign_id AND COALESCE(r.send_account_id,c.account_id)=$1
+   AND r.status='awaiting_ack' AND r.started_at<now()-interval '90 seconds' RETURNING r.campaign_id`,[accountId])).rows;
+  if(!expired.length)return 0;
+  const ids=[...new Set(expired.map(r=>r.campaign_id))];
+  await db.query("UPDATE campaigns SET enabled=false,pause_reason='review',operation_at=now() WHERE id=ANY($1::uuid[])",[ids]);
+  return expired.length;
+ });
+}
 async function dispatch(account, entry) {
   if (busy.has(account.id) || !entry.ready || shuttingDown) return;
   busy.add(account.id);
   let recipient;
   try {
+    await expireUnconfirmed(account.id);
+    // Recent sends stay serialized; an expired receipt holds only its original task.
     // Save a local ID promptly, but retain the old one-at-a-time server-ACK gate.
     // A slow/offline upload channel must not accumulate unconfirmed submissions.
     if((await pool.query(`SELECT 1 FROM recipients r JOIN campaigns c ON c.id=r.campaign_id
@@ -257,6 +273,8 @@ async function dispatch(account, entry) {
       WHERE c.account_id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND (c.send_now OR (c.scheduled_at<=now() AND (c.expires_at IS NULL OR c.expires_at>now()))) AND a.enabled AND a.next_send_at<=now() AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())
       AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending')
+      AND NOT EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='unknown'
+        AND (c.review_released_at IS NULL OR r.updated_at>c.review_released_at))
       ORDER BY c.send_now DESC,c.created_at`, [account.id])).rows;
     const campaign = candidates.find(c => canDispatch(c)); if (!campaign) return;
     recipient = await transaction(async db=>{
@@ -290,7 +308,7 @@ async function dispatch(account, entry) {
       batch_sent=CASE WHEN (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 >= $4 THEN 0 ELSE (CASE WHEN batch_campaign_id=$3 THEN batch_sent ELSE 0 END)+1 END,
       batch_campaign_id=$3 WHERE id=$2`,[campaign.interval_ms,account.id,campaign.id,campaign.batch_size||1]);
     if (result.quarantine&&!['submitted','delivered','read'].includes(savedStatus)) {
-      await pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[campaign.id]);
+      await pool.query("UPDATE campaigns SET enabled=false,pause_reason='review',operation_at=now() WHERE id=$1",[campaign.id]);
       await audit(campaign.created_by,'campaign.review_required',campaign.id,{recipient_id:recipient.id,reason:result.error});
     }
   } catch (err) {
@@ -395,8 +413,10 @@ async function tick() {
         if (e.ready) dispatch(a, e).catch(() => {});
       } else if (entries.size >= maxAccounts&&a.status!=='capacity_wait') await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
     }
-    await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts) VALUES($1,now(),$2,$3,$4)
-      ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb,max_accounts=excluded.max_accounts`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576),maxAccounts]);
+    const resources=await lifecycle.resourceSummary();
+    await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more,pids_current,pids_limit) VALUES($1,now(),$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb,max_accounts=excluded.max_accounts,
+      can_start_more=excluded.can_start_more,pids_current=excluded.pids_current,pids_limit=excluded.pids_limit`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576),maxAccounts,entries.size<maxAccounts&&runtime.hasLaunchCapacity(resources),resources.pids,Number.isFinite(resources.pids_limit)?resources.pids_limit:null]);
     shared.checkGroup(group,entries).catch(e=>console.error('shared connection check:',e.code||e.name));
     if(Date.now()>=nextResourceLog){nextResourceLog=Date.now()+60000;const active=[...entries.values()];console.log('Browser capacity:',JSON.stringify({...await lifecycle.resourceSummary(),running:active.length,ready:active.filter(e=>e.ready&&!e.closing).length,scan_waiting:active.filter(e=>e.awaitingScan&&!e.closing).length,cpus_per_browser:runtime.CPUS_PER_BROWSER}));}
   } finally { ticking = false; }
@@ -424,6 +444,12 @@ async function start() {
       const healthy=e&&!e.closing&&!lifecycle.browserClosed(e),code=a.last_error==='BROWSER_RESOURCE_WAIT'?'BROWSER_RESOURCE_WAIT':e?.rendererCrashed||!healthy&&['BROWSER_PAGE_CRASHED','BROWSER_PAGE_CLOSED','BROWSER_EXITED'].includes(a.last_error)?'BROWSER_RECOVERING':null;
       res.json({ role: 'worker', group, status: a.status, code, screen_ready: Boolean(a.enabled && e?.desktopReady && healthy), connected: Boolean(a.enabled && e?.ready && healthy) });
     } catch { res.status(500).json({ error: 'Worker status unavailable' }); }
+  });
+  app.get('/capacity',(_,res)=>res.json({role:'worker',group,running:entries.size,max_accounts:maxAccounts}));
+  app.post('/accounts/:id/handoff/:target',async(req,res)=>{
+    try{assert(/^[\w-]{1,40}$/.test(req.params.target),'Invalid group');
+      const moved=await allocation.moveUnstarted(req.params.id,group,req.params.target,dataPath,entries);if(moved)console.log('Account capacity handoff:',JSON.stringify({from:group,to:req.params.target,account:crypto.createHash('sha256').update(req.params.id).digest('hex').slice(0,12)}));res.json({ok:true,moved});
+    }catch{res.status(503).json({error:'Account allocation unavailable'});}
   });
   app.post('/accounts/:id/:command', async (req, res) => {
     try {
@@ -472,6 +498,7 @@ async function start() {
   });
   return server;
 }
-module.exports = { accountWorkSQL, start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch };
+module.exports = { accountWorkSQL, start, send, receiveAck, recordMessage, reconcileUnknown, syncHistory, eligible, dispatch, expireUnconfirmed };
+
 
 

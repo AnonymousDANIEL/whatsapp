@@ -5,6 +5,11 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  "只有 Owner 可以继续或重新启动已有任务":"Only the Owner can resume or restart existing tasks.",
+  "USER 只能暂停任务，不能继续":"USERs can pause tasks but cannot resume them.",
+  "只有 Owner 可以取消或删除任务":"Only the Owner can cancel or delete tasks.",
+  "请先扫码连接 WhatsApp 账号，再立刻发送":"Link the WhatsApp account by QR before sending now.",
+
   "只有 Owner 可以修改任务间隔或数量":"Only the Owner can edit a task's interval or quantity.",
  "只有 Owner 可以管理共享 WhatsApp":"Only the Owner can manage shared WhatsApp.",
  "共享 WhatsApp 服务已关闭":"The shared WhatsApp service is closed.",
@@ -152,3 +157,4 @@ window.connectionText=info=>({
  SCREEN_READY:info.connected?T('WhatsApp 已连接','WhatsApp is connected.'):T('浏览器画面已准备好，请用手机扫码','The browser is ready. Link it using WhatsApp on your phone.'),
  BROWSER_NOT_READY:T('浏览器正在准备，请稍后重试；持续失败时查看服务日志','The browser is preparing. Retry shortly; check service logs if it keeps failing.')
 }[info.code]||translateError(info.message||''));
+

@@ -1,5 +1,15 @@
 # 验证范围 · 2026-10-01
 
+## 2026-10-16 USER 暂停、新任务派发、操作时间与容量
+
+- USER 对已有任务仅保留暂停/查看；继续、已有任务立刻发送、取消、删除均在服务端限制为 Owner。新任务仍可由 USER 创建；新表单要求实际浏览器已关联，否则明确提示扫码，不创建一个假装正在发送的任务。
+- 90 秒未取得服务器 ACK 的旧提交转为待核对，准确消息 ID/预扣保持，只暂停原任务；其他新任务可以独立派发。近期 ACK 零仍阻止重复堆积；未知号码不会重置或重发，Owner 可明确继续旧任务中尚未发送的号码。
+- Owner 删除任务可明确保留尚未核对的费用；永久删除应用任务/结果，不会自动退款/扣费，余额管理仍可人工结算保留的财务项。USER 不具备该操作。
+- 任务展示创建/最近操作时间；结果展示创建、开始发送、更新时间，使用马来西亚 UTC+8。前端版本 tasks7。
+- 现场记录原分组 8 个浏览器、1 个已关联/7 个二维码，进程/线程约 948/1000，内存约 4.6 GB，CPU/内存额度仍有余量。新增账号被 120-slot 资源保护拦截，不能通过提高记录上限或删除保护解决。
+- 新增独立 personal 浏览器分组与独立资料卷来承接新增账号。分配使用新鲜容量、已占用记录和事务锁；仅完全没有 profile/home/Unix identity、已关联号码、已发消息和当前浏览器的待资源账号允许交接。启动前原子标记所属分组，已有登录资料不复制、不重置、不搬迁。
+- 本地语法及普通测试通过；本地没有原生 PostgreSQL、Chrome 或 Docker，完整数据库、真实 Chrome、镜像及并发/清理检查以最终提交的 GitHub CI 为准。上线后须核实各服务终态、两条经认证私网路由和原分组/新分组的实际容量日志。所有消息测试使用假客户端，没有给顾客发测试消息，也没有修改生产密码或余额。
+
 ## 2026-10-15 USER 删除修改间隔 / 数量
 
 - 现有发送任务的修改间隔 / 数量按钮仅 Owner 可见。USER 新建任务时的初始间隔、每批数量及已有暂停/继续、立刻发送、明细和删除流程保留。
@@ -324,4 +334,5 @@ The new path prepares/uploads without sending, journals the processed fingerprin
 Local checks: syntax check passed; 71 tests passed with the three native PostgreSQL suites unavailable locally. Added coverage for the pinned image pipeline, one image-caption message, Unicode/newlines, image-only/text, broken full serialization/unread APIs, unresolved server-result promise, cancellation, upload failure, single-use commit and caption/fingerprint snapshots. GitHub CI runs the native PostgreSQL suites, the network-blocked Chrome fixture, existing Owner/USER and QR UI tests, and both production image builds/smokes before release. No production contacts, balances, profiles or credentials were changed as tests, and no live WhatsApp message was sent.
 
 External WhatsApp image processing/upload/network behavior can still fail. Stage-only diagnostics now distinguish preparation and submission without printing phone numbers, captions or upstream error text. Neither synthetic tests nor a Railway SUCCESS status establishes fault-free real phone delivery or indefinite uptime.
+
 

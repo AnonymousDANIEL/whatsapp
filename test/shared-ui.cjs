@@ -19,8 +19,9 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
-   else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'scan_required',history_synced_at:null}];
-   else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,counts:{unknown:1}}]:[];
+   else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'ready',history_synced_at:null}];
+   else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
+   else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}}]:[];
    else if(p==='/overview')result={counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
    else if(p==='/send-records')result=['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+60123456789',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
@@ -80,11 +81,19 @@ async function verifyPersonalPages(page,fixture,role,language){
     assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal input[name=batch_size]'));await page.click('#close-modal');
    }else assert.doesNotMatch(text,/修改间隔\s*\/\s*数量|Edit interval\s*\/\s*quantity/);
    assert.equal(await page.$$eval('[data-now]',nodes=>nodes.length),0);
-   assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
+   if(role==='owner')assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
+   else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$eval('[data-pause]',n=>n.disabled),true);assert.match(await page.$eval('[data-pause]',n=>n.textContent),language==='en'?/Paused/:/已暂停/);}
+   assert.match(text,language==='en'?/Last action/:/最近操作/);assert.match(text,/11:10:00/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
    await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
    assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Needs review/:/结果待核对/);
-   assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');fixture.taskReview=false;
+   assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');
+   await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
+   await page.$eval('#modal form',f=>{f.elements.namedItem('title').value='New independent task';f.elements.namedItem('body').value='Synthetic message';f.elements.namedItem('recipients').value='0123456789';f.elements.namedItem('opt_in').checked=true;});
+   const created=page.waitForResponse(r=>r.url().endsWith('/api/campaigns')&&r.request().method()==='POST');
+   await page.click('#modal button[value=now]');await created;await page.waitForFunction(()=>!document.querySelector('#modal').open);
+   const newTask=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(newTask.body.send_now,true);assert.equal(newTask.body.require_connected,true);
+   assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);fixture.taskReview=false;
   }
   if(target==='messages'){
    assert.equal(!!await page.$('#history-sync-note'),role==='owner');
@@ -269,4 +278,5 @@ async function runCase(browser,base,role,language){
   for(const role of ['owner','user'])for(const language of ['zh','en'])await runCase(browser,base,role,language);
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
 
