@@ -242,3 +242,7 @@ CREATE TABLE IF NOT EXISTS shared_health_hourly(
 
 CREATE INDEX IF NOT EXISTS accounts_personal_phone_live ON accounts ((replace(phone,'+',''))) WHERE NOT shared_pool AND deleted_at IS NULL AND phone IS NOT NULL;
 
+
+CREATE INDEX IF NOT EXISTS accounts_personal_capacity_wait ON accounts(worker_group,created_at) WHERE enabled AND deleted_at IS NULL AND NOT shared_pool AND NOT profile_bound AND phone IS NULL AND status='capacity_wait';
+CREATE INDEX IF NOT EXISTS accounts_active_worker ON accounts(worker_group) WHERE enabled AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS recipients_unconfirmed_age ON recipients(started_at) WHERE status='awaiting_ack';
