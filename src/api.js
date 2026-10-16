@@ -537,7 +537,7 @@ async function start() {
       });
     } catch (e) { socket.write('HTTP/1.1 ' + (e.status || 403) + ' Rejected\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
-  Promise.allSettled(Object.keys(routes).map(async worker_group=>{try{await browser.request({worker_group},'/capacity');console.log('Worker route verified:',JSON.stringify({group:worker_group,authenticated:true}));}catch(e){console.log('Worker route pending:',JSON.stringify({group:worker_group,code:e.code||'UNAVAILABLE'}));}}));
+  Promise.allSettled(Object.keys(routes).map(async worker_group=>{try{const sample=await browser.request({worker_group},'/capacity');console.log('Worker route verified:',JSON.stringify({group:worker_group,authenticated:true,running:Number.isSafeInteger(sample.running)?sample.running:null,max_accounts:Number.isSafeInteger(sample.max_accounts)?sample.max_accounts:null}));}catch(e){console.log('Worker route pending:',JSON.stringify({group:worker_group,code:e.code||'UNAVAILABLE'}));}}));
   const allocationTimer=setInterval(()=>rebalanceAccounts().catch(e=>console.error('allocation tick:',e.code||e.name)),15000);allocationTimer.unref();
   server.on('close',()=>clearInterval(allocationTimer));
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
