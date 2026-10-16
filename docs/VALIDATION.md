@@ -1,3 +1,10 @@
+## QR slot counters and 80-slot expansion — 2026-10-16
+
+- Added Owner-only read-only capacity snapshots for service status and shared-pool status, with active personal/shared assignments, running counts, fresh worker admission and zero availability for stale, missing or resource-blocked workers.
+- Added disposable native PostgreSQL coverage for scope/permissions, pending assignments, inactive/deleted exclusions and unchanged accounts/wallets/USER quota. Browser coverage checks both Owner views, 22 rows / 115 configured slots, Chinese/English, 390/1440 widths, background refresh and absence from USER pages.
+- Local dependencies and JavaScript checks are available. Local native PostgreSQL/Chrome/container checks are unavailable and must pass in GitHub Actions before main is updated. No production messages, passwords, funds or login profiles are used as tests. A 22-group fixture is not a real 100+ linked-phone load test.
+- Requested infrastructure expansion: 16 independent groups g–v at five slots each (+80), separate /data volumes, GitHub main sources, private authenticated routes. Record terminal deployment and route verification in the change's PR after rollout; provisioned resources alone are not evidence of live WhatsApp linking.
+
 # 验证范围 · 2026-10-01
 
 ## 2026-10-16 USER 暂停、新任务派发、操作时间与容量
@@ -334,5 +341,6 @@ The new path prepares/uploads without sending, journals the processed fingerprin
 Local checks: syntax check passed; 71 tests passed with the three native PostgreSQL suites unavailable locally. Added coverage for the pinned image pipeline, one image-caption message, Unicode/newlines, image-only/text, broken full serialization/unread APIs, unresolved server-result promise, cancellation, upload failure, single-use commit and caption/fingerprint snapshots. GitHub CI runs the native PostgreSQL suites, the network-blocked Chrome fixture, existing Owner/USER and QR UI tests, and both production image builds/smokes before release. No production contacts, balances, profiles or credentials were changed as tests, and no live WhatsApp message was sent.
 
 External WhatsApp image processing/upload/network behavior can still fail. Stage-only diagnostics now distinguish preparation and submission without printing phone numbers, captions or upstream error text. Neither synthetic tests nor a Railway SUCCESS status establishes fault-free real phone delivery or indefinite uptime.
+
 
 

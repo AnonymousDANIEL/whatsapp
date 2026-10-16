@@ -5,6 +5,7 @@ const billing=require('./billing');
 const payments=require('./payments'),vault=require('./secrets'),banks=require('./banks');
 const shared=require('./shared');
 const allocation=require('./account-allocation');
+const capacity=require('./capacity');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -480,7 +481,7 @@ async function start() {
   }));
   app.get('/api/health', route(async (req, res) => {
     assert(req.user.role === 'owner', '只有 Owner 可以查看服务信息', 403);
-    res.json((await pool.query('SELECT * FROM worker_health ORDER BY worker_group')).rows);
+    res.json(await capacity.read(pool,Object.keys(routes)));
   }));
   app.use('/novnc', express.static(path.resolve('node_modules/@novnc/novnc'), { maxAge: '1d' }));
   app.use(express.static(path.join(__dirname, '../public'), { etag: true }));
@@ -546,6 +547,7 @@ async function start() {
   return server;
 }
 module.exports = { start, getSession, access };
+
 
 
 

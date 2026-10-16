@@ -7,6 +7,8 @@ const puppeteer=require('puppeteer');
 const root=path.resolve(__dirname,'../public');
 const accountId='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-4222-8222-222222222222';
 let current;
+function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');
@@ -27,10 +29,11 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
+   else if(p==='/health')result=capacityRows(s);
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
     result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
-    if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:['fixture-group'],workers:[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,heartbeat_at:new Date().toISOString()}]});
+    if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:capacityRows(s).map(w=>w.worker_group),workers:capacityRows(s)});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
    else if(p==='/shared/settings')result={ok:true};
@@ -161,6 +164,30 @@ async function verifyUserBilling(page,fixture,language){
  fixture.fpxEnabled=false;await page.evaluate(()=>loadPage());await sections();
 }
 
+async function verifyCapacity(page,fixture,language){
+ async function summary(available,used,total,unavailable,rows){
+  for(const [key,value] of Object.entries({available,used,total,unavailable}))assert.equal(await page.$eval('[data-capacity-'+key+']',n=>Number(n.textContent.replaceAll(',',''))),value);
+  assert.equal(await page.$$eval('[data-capacity] tbody tr',n=>n.length),rows);
+  assert.match(await page.$eval('[data-capacity] h2',n=>n.textContent),language==='en'?/Available QR slots/:/剩余可扫码/);
+ }
+ await summary(7,3,10,0,1);
+ const now=Date.now();fixture.capacityRows=Array.from({length:22},(_,i)=>({worker_group:i?'fixture-group-'+(i+1):'fixture-group',max_accounts:i?5:10,accounts_running:0,assigned_accounts:0,slots_used:0,slots_available:i?5:10,slots_unavailable:0,can_start_more:true,heartbeat_at:new Date(now).toISOString()}));
+ Object.assign(fixture.capacityRows[0],{accounts_running:8,assigned_accounts:8,slots_used:8,slots_available:0,slots_unavailable:2,can_start_more:false});
+ Object.assign(fixture.capacityRows[1],{accounts_running:5,assigned_accounts:5,slots_used:5,slots_available:0});
+ Object.assign(fixture.capacityRows[2],{accounts_running:1,assigned_accounts:2,slots_used:2,slots_available:3});
+ fixture.capacityRows[3].heartbeat_at=new Date(now-120000).toISOString();
+ await page.evaluate(()=>loadPage());await summary(93,15,115,7,22);
+ for(const width of [390,1440]){
+  await page.setViewport({width,height:width===390?844:1000});
+  assert.equal(await page.$eval('[data-capacity-available]',n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),true);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ }
+ Object.assign(fixture.capacityRows[2],{assigned_accounts:4,slots_used:4,slots_available:1});
+ await page.evaluate(()=>loadPage(true));await summary(91,17,115,7,22);
+ fixture.capacityRows=null;await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(7,3,10,0,1);
+ await page.click('#nav [data-page=shared]');await waitReady(page);
+}
+
 async function runCase(browser,base,role,language){
  current={role,language,enabled:true,available:2,requests:[],sends:[],failNext:false};
  const fixture=current,context=await browser.createBrowserContext(),page=await context.newPage(),errors=[];
@@ -179,6 +206,7 @@ async function runCase(browser,base,role,language){
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);
   assert.equal(await page.$('[data-shared-login]'),null);
+  assert.equal(await page.$('[data-capacity]'),null);
   assert.equal(await page.$('#nav [data-page=users]'),null);
   assert.equal(fixture.requests.some(r=>['/shared/accounts','/shared/hourly'].includes(r.path)),false);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/10000000|可用余额|Available credit|Available balance/);
@@ -190,6 +218,7 @@ async function runCase(browser,base,role,language){
   await page.click('#nav [data-page=shared]');await waitReady(page);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Current rate per message|当前每条价格/);
  }else{
+  await verifyCapacity(page,fixture,language);
   assert.equal(await page.$eval('#content strong',n=>n.textContent),'<img src=x onerror=alert(1)>');
   await page.click('[data-shared-login]');
   assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+accountId+'&mode=operate','_blank','noopener']);
@@ -278,5 +307,6 @@ async function runCase(browser,base,role,language){
   for(const role of ['owner','user'])for(const language of ['zh','en'])await runCase(browser,base,role,language);
  }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
 
 

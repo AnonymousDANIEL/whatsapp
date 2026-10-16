@@ -19,3 +19,6 @@
 .shared-hour-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px}.shared-cards{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}details.panel>summary{cursor:pointer;font-weight:600;padding:8px 0}details.panel>.panel{padding:20px 0 0;margin:0;border:0}#shared-send-form .check-row{display:flex;align-items:center;gap:8px}#shared-send-form .check-row input{width:auto;margin:0}@media(max-width:900px){.shared-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.shared-hour-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shared-cards{grid-template-columns:1fr}}
 
 @media(max-width:720px){aside .aside-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px;padding-top:12px}aside .aside-footer strong,aside .aside-footer small{align-self:center}}
+
+
+.capacity-heading h2{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.capacity-heading .badge{font-size:13px;padding:6px 10px}.capacity-heading .badge strong{font-size:19px;font-variant-numeric:tabular-nums;margin-left:5px}.capacity-heading .summary-line{gap:16px}.capacity-panel td strong{font-variant-numeric:tabular-nums}.capacity-panel>.muted{margin:16px 0 0;font-size:12px}@media(max-width:720px){.capacity-heading{align-items:flex-start}.capacity-heading .summary-line{gap:10px}.capacity-heading h2{font-size:18px}}

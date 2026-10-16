@@ -1,4 +1,5 @@
 'use strict';
+const capacity=require('./capacity');
 const {randomUUID}=require('node:crypto');
 const {rateLimit}=require('express-rate-limit');
 const {pool,transaction}=require('./db');
@@ -119,7 +120,7 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
   if(req.query.layout!=='2')data.balance_units=(await pool.query('SELECT credit_units FROM users WHERE id=$1',[req.user.id])).rows[0].credit_units;
   if(req.user.role==='owner'){
    data.settings=s;data.hours=(await pool.query('SELECT hour,price_units FROM shared_hour_prices ORDER BY hour')).rows;
-   data.workers=(await pool.query('SELECT worker_group,accounts_running,max_accounts,heartbeat_at FROM worker_health WHERE worker_group=ANY($1::text[]) ORDER BY worker_group',[Object.keys(workerRoutes)])).rows;
+   data.workers=await capacity.read(pool,Object.keys(workerRoutes));
    data.groups=Object.keys(workerRoutes);
   }res.json(data);
  }));
@@ -190,3 +191,4 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
  }));
 }
 module.exports={routes,config,canPay,createTask,chooseAccount,rebalance,checkGroup,recoverInterrupted};
+

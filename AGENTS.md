@@ -1,3 +1,9 @@
+# Live QR capacity counters (2026-10-16)
+
+- Owner shared management and Service status show Available QR slots next to Running capacity, plus occupied/total/temporarily unavailable and per-group remaining slots in Chinese and English. Keep these infrastructure details out of USER responses/pages.
+- Use only each view's configured groups. Count enabled, nondeleted personal AND shared assignments, including browsers not started yet. Occupied is at least the running count. Stale/missing/future heartbeats and resource-blocked groups contribute no available slots; do not subtract running alone or advertise a stale worker as available. Capacity reads must not mutate profiles, account flags, wallets or quotas.
+- Add capacity with distinct worker groups and separate /data volumes, one replica per group. New groups are limited to five browsers, 2 vCPU and 4 GB each; retain process admission guards and the per-USER ten-account quota. Configured free slots are a current capacity snapshot, not verified linked phones or a 100+ live-load certification.
+
 # Project instructions
 
 ## Pause-only USER tasks and independent connection capacity (2026-10-16)
@@ -184,6 +190,7 @@ target-environment checks; do not call them tested based on a successful build.
 - USER Credit/top-up has no tabs or section-switch buttons. Keep the balance, then Bank top-up and Online FPX, deposit history, and the credit ledger last. Remove only the USER ledger title suffix (latest 100); retain bounded queries and all stored ledger records. Owner retains their title and controls.
 - Closed bank top-up, unavailable live FPX and disabled shared sending show Coming soon to USER. Keep Owner real configuration status, bank-maintenance detail and server-side checks. Never enable a payment/send just to display its section; do not label failed configuration reads as Coming soon.
 - Closed methods retain the USER's own historical deposits and FPX order checks/verified settlement. Global/per-bank-off still hides current receiving details and QR, prevents new deposits and does not create credit. Preserve unsent bank form amount, selected bank and retry request ID during combined-page refresh.
+
 
 
 
