@@ -12,7 +12,7 @@ test('PostgreSQL: Owner QR slots reserve pending accounts, honor live resources 
  const owner=await login('owner','capacity-owner-fixture-password');
  assert.equal((await request('/users','POST',{username:'capacity_user',password:'capacity-user-fixture-password'},owner)).status,201);
  const user=await login('capacity_user','capacity-user-fixture-password');
- for(const [group,max,running,canStart,age] of [['group-a',10,8,false,0],['group-b',5,2,true,0],['group-c',5,2,true,120],['removed-group',1000,0,true,0]])await db.pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES($1,now()-make_interval(secs=>$5),$3,50,$2,$4)`,[group,max,running,canStart,age]);
+ for(const [group,max,running,canStart,age] of [['group-a',10,8,false,0],['group-b',5,2,true,0],['group-c',5,2,true,120],['removed-group',10,0,true,0]])await db.pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES($1,now()-make_interval(secs=>$5),$3,50,$2,$4)`,[group,max,running,canStart,age]);
  for(const [group,n] of [['group-a',8],['group-b',3],['group-c',2]])for(let i=0;i<n;i++)await db.pool.query('INSERT INTO accounts(id,label,worker_group,shared_pool) VALUES($1,$2,$3,$4)',[randomUUID(),'Synthetic capacity account',group,group==='group-b'&&i===0]);
  await db.pool.query("INSERT INTO accounts(id,label,worker_group,enabled) VALUES($1,'Disabled fixture','group-b',false)",[randomUUID()]);
  await db.pool.query("INSERT INTO accounts(id,label,worker_group,deleted_at) VALUES($1,'Deleted fixture','group-b',now())",[randomUUID()]);
