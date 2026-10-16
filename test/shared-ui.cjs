@@ -184,7 +184,8 @@ async function verifyCapacity(page,fixture,language){
  }
  Object.assign(fixture.capacityRows[2],{assigned_accounts:4,slots_used:4,slots_available:1});
  await page.evaluate(()=>loadPage(true));await summary(91,17,115,7,22);
- fixture.capacityRows=null;await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(7,3,10,0,1);
+ await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(91,17,115,7,22);
+ fixture.capacityRows=null;await page.evaluate(()=>loadPage());await summary(7,3,10,0,1);
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 
