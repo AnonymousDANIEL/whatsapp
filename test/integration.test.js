@@ -302,11 +302,15 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:true},owner)).status,200);
   const oldRow=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[old])).rows[0];
   const billing=require('../src/billing');await db.transaction(tx=>billing.reserveForSend(tx,uid,oldRow.id));
+  const stranded=(await db.pool.query("INSERT INTO recipients(campaign_id,raw_phone,phone,status,started_at,send_account_id,message_id) VALUES($1,'0123456790','+60123456790','sending',now()-interval '5 minutes',$2,'old-stranded-synthetic') RETURNING id",[old,a])).rows[0];
+  await db.transaction(tx=>billing.reserveForSend(tx,uid,stranded.id));
   await db.pool.query("UPDATE recipients SET status='awaiting_ack',message_id='old-synthetic-id',started_at=now()-interval '5 minutes' WHERE id=$1",[oldRow.id]);
   await db.pool.query('UPDATE accounts SET next_send_at=now(),batch_sent=0 WHERE id=$1',[a]);
   let sends=0;await worker.dispatch({id:a},{id:a,ready:true,client:{getNumberId:async phone=>({_serialized:phone+'@c.us'}),sendMessage:async to=>({id:'new-independent-'+(++sends),to,fromMe:true,body:template.body,ack:2})}});
   assert.equal(sends,1);assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[fresh])).rows[0].status,'delivered');
   const uncertain=(await db.pool.query('SELECT * FROM recipients WHERE id=$1',[oldRow.id])).rows[0];assert.equal(uncertain.status,'unknown');assert.equal(uncertain.message_id,'old-synthetic-id');
+  const recovered=(await db.pool.query('SELECT status,error_code,message_id FROM recipients WHERE id=$1',[stranded.id])).rows[0];assert.deepEqual(recovered,{status:'unknown',error_code:'SEND_INTERRUPTED_REVIEW_REQUIRED',message_id:'old-stranded-synthetic'});
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[stranded.id])).rows[0].state,'held');
   const paused=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[old])).rows[0];assert.equal(paused.enabled,false);assert.equal(paused.pause_reason,'review');assert.ok(paused.operation_at);
   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[oldRow.id])).rows[0].state,'held');
   const balance=(await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units;
@@ -318,6 +322,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const held=(await request('/billing?user_id='+uid,'GET',null,owner)).data.held.find(r=>r.recipient_id===oldRow.id);assert.equal(held.status,'unknown');
   assert.equal((await request('/billing/resolve','POST',{recipient_id:oldRow.id,action:'refund',note:'Synthetic Owner-confirmed review'},owner)).status,200);
   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[oldRow.id])).rows[0].state,'refunded');
+  assert.equal((await request('/billing/resolve','POST',{recipient_id:stranded.id,action:'refund',note:'Synthetic Owner-confirmed stranded-send review'},owner)).status,200);
   const results=await request('/campaigns/'+fresh+'/results','GET',null,user);assert.ok(results.data.rows[0].created_at);assert.ok(results.data.rows[0].started_at);
   const listed=(await request('/campaigns','GET',null,user)).data.find(c=>c.id===fresh);assert.ok(listed.created_at);assert.ok(listed.operation_at);
  });

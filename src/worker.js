@@ -249,9 +249,9 @@ const eligible = `u.active AND NOT u.locked AND c.shared_pool=a.shared_pool
   (SELECT 1 FROM account_grants g WHERE g.user_id=u.id AND g.account_id=c.account_id))))`;
 async function expireUnconfirmed(accountId){
  return transaction(async db=>{
-  const expired=(await db.query(`UPDATE recipients r SET status='unknown',error_code='ACK_TIMEOUT_REVIEW_REQUIRED',updated_at=now()
+  const expired=(await db.query(`UPDATE recipients r SET status='unknown',error_code=CASE WHEN r.status='sending' THEN 'SEND_INTERRUPTED_REVIEW_REQUIRED' ELSE 'ACK_TIMEOUT_REVIEW_REQUIRED' END,updated_at=now()
    FROM campaigns c WHERE c.id=r.campaign_id AND COALESCE(r.send_account_id,c.account_id)=$1
-   AND r.status='awaiting_ack' AND r.started_at<now()-interval '90 seconds' RETURNING r.campaign_id`,[accountId])).rows;
+   AND r.status IN ('sending','awaiting_ack') AND r.started_at<now()-interval '90 seconds' RETURNING r.campaign_id`,[accountId])).rows;
   if(!expired.length)return 0;
   const ids=[...new Set(expired.map(r=>r.campaign_id))];
   await db.query("UPDATE campaigns SET enabled=false,pause_reason='review',operation_at=now() WHERE id=ANY($1::uuid[])",[ids]);
