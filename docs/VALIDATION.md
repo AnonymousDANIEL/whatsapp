@@ -1,3 +1,9 @@
+## Current linked-number display — 2026-10-17 night
+
+- Personal account API responses mask a retained phone unless the account is enabled, not deleted and displayed as ready on a fresh worker. The account table also guards against stale phone payloads. Names and stored identities/history remain unchanged.
+- Native PostgreSQL regression covers Owner/USER scope, waiting/loading/recovery/stopped/disabled states, offline heartbeat, newly confirmed identity, deleted records and read-only retained data. Existing Chrome checks now exercise a stale old phone in a waiting response and a new linked phone through the real five-second poll, without manually reloading the page, across Owner/USER zh/en and mobile.
+- Local syntax/unit checks and exact-head CI must pass before main. Verify Railway SUCCESS and live frontend hashes, authenticated private routes and unchanged active browser deployments. No production scans, customer messages, profile resets or financial/credential changes are used as tests. A fake-client regression does not certify a real phone registration or external login.
+
 ## Sidebar line icons — 2026-10-17 late evening
 
 - Added fixed inline SVG icons to every authorized Owner/USER root and child menu entry, with green line styling matching the reference. Root icons are 18 px, child icons 16 px; labels and independent chevrons remain intact. SVGs are decorative and nonfocusable and require no external assets.

@@ -1,3 +1,9 @@
+# Current linked-number display (2026-10-17 night)
+
+- Personal WhatsApp account lists show a phone number only for an enabled, nondeleted account whose displayed status is ready and whose worker heartbeat is fresh. Awaiting scan, loading, recovery, stopped, inactive and offline accounts must not present their retained prior phone as a current identity. Apply this to the API response and the table renderer, including Owner and USER.
+- Keep retained phone, name, history, grants, profiles and financial data unchanged. Existing worker ready events atomically store the newly linked identity; the existing five-second page polling must then display that new number without a manual reload. Do not fake readiness, register phones or restart linked workers for this API/frontend change.
+- Verify disposable PostgreSQL response scope, nonready masking, fresh/stale workers and unchanged retained values. In real Chrome test old number → awaiting scan/loading → newly linked number using the existing automatic poll, in Owner/USER zh/en and mobile. Preserve the green sidebar icons, menus and 125-slot topology.
+
 # Sidebar line icons (2026-10-17 late evening)
 
 - Owner and USER sidebar entries use compact green outline SVG icons beside their text labels, matching the supplied reference. Use fixed local SVG markup, 18 px at root and 16 px for children, hidden from assistive text/focus. Keep labels, nested indentation, selection and separate expansion chevrons. Icon clicks must follow the same menu action; do not replace labels with an icon-only rail or use external fonts/CDNs.

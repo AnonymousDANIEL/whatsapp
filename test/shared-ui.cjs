@@ -27,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
    else if(p==='/accounts'){
-    const personal={id:accountId,label:'fixture personal'+(s.accountSuffix||''),enabled:true,status:'ready',history_synced_at:null};
+    const personal={id:accountId,label:'fixture personal'+(s.accountSuffix||''),enabled:true,status:s.accountStatus||'ready',phone:s.accountPhone||'15555550101',history_synced_at:null};
     result=s.role==='owner'?[...managedUsers.map((u,i)=>({...personal,id:i?'account-'+i:accountId,assigned_users:[{id:u.id,username:u.username,active:u.active}]})),{...personal,id:'owner-account',assigned_users:[]}]:[personal];
    }
    else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers];
@@ -67,6 +67,28 @@ async function waitReady(page,kind='shared'){
  await page.waitForFunction(kind=>!loading&&document.querySelector('#shell')?.hidden===false&&document.querySelector('#content')?.querySelector(kind==='shared'?'#shared-send-form':'[data-results]'),{},kind);
 }
 
+async function verifyAccountIdentity(page,fixture,role,language){
+ const cell=role==='owner'?'[data-account-user=owner] tbody tr td:first-child':'#content tbody tr td:first-child';
+ const oldPhone='+15555550101',newPhone='+15555550102',writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ assert.match(await page.$eval(cell,n=>n.textContent),/\+15555550101/);
+ // The fixture deliberately retains the old phone in disconnected responses.
+ // Wait for the real five-second page poll; do not call loadPage or reload here.
+ fixture.accountStatus='scan_required';
+ await page.waitForFunction((selector,old)=>{const n=document.querySelector(selector);return n&&!n.textContent.includes(old);},{timeout:12000},cell,oldPhone);
+ assert.match(await page.$eval(cell,n=>n.textContent),language==='en'?/Not linked/:/尚未关联/);
+ assert.ok((await page.$eval(cell,n=>n.textContent)).includes('fixture personal'));
+ fixture.accountStatus='loading';await page.evaluate(()=>loadPage(true));
+ assert.ok(!(await page.$eval(cell,n=>n.textContent)).includes(oldPhone));
+ fixture.accountStatus='ready';fixture.accountPhone=newPhone.slice(1);
+ await page.waitForFunction((selector,phone)=>document.querySelector(selector)?.textContent.includes(phone),{timeout:12000},cell,newPhone);
+ assert.ok(!(await page.$eval(cell,n=>n.textContent)).includes(oldPhone));
+ await page.setViewport({width:390,height:844});assert.match(await page.$eval(cell,n=>n.textContent),/\+15555550102/);
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.setViewport({width:1440,height:1000});
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);
+ console.log('Account identity PASS: '+role+' / '+language+' / old number hidden while awaiting scan and syncing; new number appears through automatic polling');
+}
+
 async function verifyPersonalPages(page,fixture,role,language){
  const pages=[
   ['accounts','#add-account',/画面断开不代表|A disconnected screen does not mean/],
@@ -80,7 +102,7 @@ async function verifyPersonalPages(page,fixture,role,language){
   await page.waitForSelector(ready);
   const text=await page.$eval('#content',n=>n.textContent);
   if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
-  if(target==='accounts'&&role==='owner')await verifyAccountGroups(page,fixture);
+  if(target==='accounts'){await verifyAccountIdentity(page,fixture,role,language);if(role==='owner')await verifyAccountGroups(page,fixture);}
   if(target==='tasks'&&role==='user')assert.doesNotMatch(text,/按间隔和每批数量发送|Send by interval and batch size/);
   if(target==='tasks'){
    for(const width of [1440,390]){

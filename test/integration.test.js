@@ -12,6 +12,40 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  const uid2=(await request('/users','POST',{username:'user2',password:'user-password-123',role:'user',grants:[{account_id:b}]},owner)).data.id;
  const user=await login('user1'),user2=await login('user2');
  const template={title:'Task',account_id:a,body:'Authorized fake message',recipients:'0123456789\n+60123456789\nwrong',opt_in_confirmed:true,timezone:'Asia/Kuala_Lumpur',window_start:'09:00',window_end:'18:00',scheduled_at:'2030-10-02T09:15',expires_at:'2030-10-03T18:00',weekdays:[1,2,3,4,5,6,7],interval_ms:10000};
+ await t.test('account numbers are visible only while linked and refresh to the new identity without altering retained data',async()=>{
+  const original=(await db.pool.query('SELECT status,phone,enabled,deleted_at,heartbeat_at FROM accounts WHERE id=$1',[a])).rows[0];
+  assert.equal((await db.pool.query("SELECT 1 FROM worker_health WHERE worker_group='group-a'")).rowCount,0);
+  const oldPhone='15555550101',newPhone='15555550102';
+  async function visible(phone,status){
+   const before=(await db.pool.query('SELECT to_jsonb(a) snapshot FROM accounts a WHERE id=$1',[a])).rows[0].snapshot;
+   for(const session of [owner,user]){
+    const response=await request('/accounts','GET',null,session);assert.equal(response.status,200);
+    const row=response.data.find(row=>row.id===a);assert.ok(row);assert.equal(row.phone,phone);assert.equal(row.status,status);
+   }
+   assert.deepEqual((await db.pool.query('SELECT to_jsonb(a) snapshot FROM accounts a WHERE id=$1',[a])).rows[0].snapshot,before);
+  }
+  try{
+   await db.pool.query("INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb) VALUES('group-a',now(),1,0)");
+   await db.pool.query("UPDATE accounts SET enabled=true,status='ready',phone=$1,heartbeat_at=now() WHERE id=$2",[oldPhone,a]);
+   await visible(oldPhone,'ready');
+   assert.equal((await request('/accounts','GET',null,user2)).data.some(row=>row.id===a),false);
+   for(const status of ['scan_required','loading','starting','error','stopped','capacity_wait','disabled']){
+    await db.pool.query('UPDATE accounts SET status=$1 WHERE id=$2',[status,a]);await visible(null,status);
+    assert.equal((await db.pool.query('SELECT phone FROM accounts WHERE id=$1',[a])).rows[0].phone,oldPhone);
+   }
+   await db.pool.query("UPDATE accounts SET status='ready',phone=$1 WHERE id=$2",[newPhone,a]);await visible(newPhone,'ready');
+   await db.pool.query("UPDATE worker_health SET heartbeat_at=now()-interval '5 minutes' WHERE worker_group='group-a'");await visible(null,'worker_offline');
+   await db.pool.query("UPDATE worker_health SET heartbeat_at=now() WHERE worker_group='group-a'");
+   await db.pool.query('UPDATE accounts SET enabled=false WHERE id=$1',[a]);await visible(null,'ready');
+   await db.pool.query('UPDATE accounts SET enabled=true,deleted_at=now() WHERE id=$1',[a]);
+   const deleted=(await request('/accounts','GET',null,owner)).data.find(row=>row.id===a);assert.equal(deleted.phone,null);
+   assert.equal((await request('/accounts','GET',null,user)).data.some(row=>row.id===a),false);
+   assert.equal((await db.pool.query('SELECT phone FROM accounts WHERE id=$1',[a])).rows[0].phone,newPhone);
+  }finally{
+   await db.pool.query('UPDATE accounts SET status=$1,phone=$2,enabled=$3,deleted_at=$4,heartbeat_at=$5 WHERE id=$6',[original.status,original.phone,original.enabled,original.deleted_at,original.heartbeat_at,a]);
+   await db.pool.query("DELETE FROM worker_health WHERE worker_group='group-a'");
+  }
+ });
  await t.test('prepaid defaults deny USER sending and direct controls; Owner can configure credit',async()=>{
   assert.equal((await request('/campaigns','POST',template,user)).status,402);
   assert.equal(Number((await request('/billing','GET',null,user)).data.user.credit_units),0);
@@ -676,5 +710,6 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/accounts','GET',null,owner)).data.length,2);
  });
 });
+
 
 

@@ -63,7 +63,10 @@ async function visibleAccounts(user) {
     FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
     WHERE NOT a.shared_pool AND ($1='owner' OR (a.deleted_at IS NULL AND EXISTS(SELECT 1 FROM account_grants WHERE account_id=a.id AND user_id=$2)))
     ORDER BY a.created_at`,[user.role,user.id]);
-  return rows.map(a=>({...a,status:a.enabled&&(!a.worker_heartbeat_at||Date.now()-+new Date(a.worker_heartbeat_at)>90000)?'worker_offline':a.status}));
+  return rows.map(a=>{
+    const status=a.enabled&&(!a.worker_heartbeat_at||Date.now()-+new Date(a.worker_heartbeat_at)>90000)?'worker_offline':a.status;
+    return {...a,status,phone:a.enabled&&!a.deleted_at&&status==='ready'?a.phone:null};
+  });
 }
 async function visibleAccountIds(user,includeDeleted=true){
  return (await pool.query(`SELECT a.id FROM accounts a WHERE NOT a.shared_pool AND (a.deleted_at IS NULL OR ($1='owner' AND $3))
