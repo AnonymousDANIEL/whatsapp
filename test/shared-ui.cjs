@@ -8,6 +8,7 @@ const root=path.resolve(__dirname,'../public');
 const accountId='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-4222-8222-222222222222';
 let current;
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
+const managedUsers=[{id:'active-user',username:'Active fixture',role:'user',active:true,locked:false},{id:'inactive-user',username:'Inactive fixture',role:'user',active:false,locked:false},{id:'locked-user',username:'Locked fixture',role:'user',active:true,locked:true}];
 
 const server=http.createServer(async(req,res)=>{
  try{
@@ -15,13 +16,17 @@ const server=http.createServer(async(req,res)=>{
   if(url.pathname.startsWith('/api/')){
    let raw='';for await(const chunk of req)raw+=chunk;
    const body=raw?JSON.parse(raw):null,p=url.pathname.slice(4),s=current;
-   s.requests.push({path:p,method:req.method,body,csrf:req.headers['x-csrf-token']});
+   s.requests.push({path:p,query:url.search,method:req.method,body,csrf:req.headers['x-csrf-token']});
    let result;
    if(p==='/me')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
    else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
-   else if(p==='/accounts')result=[{id:accountId,label:'fixture personal',enabled:true,status:'ready',history_synced_at:null}];
+   else if(p==='/accounts'){
+    const personal={id:accountId,label:'fixture personal'+(s.accountSuffix||''),enabled:true,status:'ready',history_synced_at:null};
+    result=s.role==='owner'?[...managedUsers.map((u,i)=>({...personal,id:i?'account-'+i:accountId,assigned_users:[{id:u.id,username:u.username,active:u.active}]})),{...personal,id:'owner-account',assigned_users:[]}]:[personal];
+   }
+   else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers];
    else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
    else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}}]:[];
    else if(p==='/overview')result={counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
@@ -29,8 +34,8 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
-   else if(p==='/health')result=capacityRows(s);
-   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
+   else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
+   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
     result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:capacityRows(s).map(w=>w.worker_group),workers:capacityRows(s)});
@@ -71,6 +76,7 @@ async function verifyPersonalPages(page,fixture,role,language){
   await page.waitForSelector(ready);
   const text=await page.$eval('#content',n=>n.textContent);
   if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
+  if(target==='accounts'&&role==='owner')await verifyAccountGroups(page,fixture);
   if(target==='tasks'&&role==='user')assert.doesNotMatch(text,/按间隔和每批数量发送|Send by interval and batch size/);
   if(target==='tasks'){
    for(const width of [1440,390]){
@@ -108,21 +114,24 @@ async function verifyPersonalPages(page,fixture,role,language){
    if(role==='user')assert.doesNotMatch(text,/按首次发送日期统计|Grouped by first send date|发送成功包含|Successful includes submitted/);
    assert.equal(await page.$$eval('.overview-cards .card',nodes=>nodes.length),4);
    assert.equal(await page.$$eval('.overview-week>div',nodes=>nodes.length),7);
+   assert.equal(await page.$$eval('#content [data-view],#content [data-start],#content [data-account-user]',nodes=>nodes.length),0);
+   assert.equal(!!await page.$('[data-capacity]'),role==='owner');
+   assert.equal(!!await page.$('[data-hourly-checks]'),role==='owner');
+   if(role==='user')assert.equal(fixture.requests.some(r=>['/health','/shared/hourly','/users'].includes(r.path)),false);
   }
  }
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 async function verifyUserBilling(page,fixture,language){
- const heading=language==='en'?'Credit ledger':'余额流水';
  async function sections(){
   assert.equal(await page.$('#nav [data-page=fpx]'),null);
   assert.equal(await page.$('#nav [data-page=bank-deposits]'),null);
   assert.equal(await page.$('#nav [data-nav-toggle=billing]'),null);
   assert.equal(await page.$('[data-billing-view]'),null);
-  assert.equal(await page.$eval('.credit-ledger h3',n=>n.textContent),heading);
-  assert.equal(await page.$eval('#content',n=>n.lastElementChild.matches('.credit-ledger')),true);
+  assert.equal(await page.$('.credit-ledger'),null);
+  assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/余额流水|Credit ledger/);
   assert.equal(await page.$eval('#bank-topup',n=>!!(n.compareDocumentPosition(document.querySelector('#online-fpx'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
-  assert.equal(await page.$eval('#online-fpx',n=>!!(n.compareDocumentPosition(document.querySelector('.credit-ledger'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
+  assert.match(await page.$eval('#content > section:last-of-type h2',n=>n.textContent),language==='en'?/My deposits/:/我的充值记录/);
   assert.match(await page.$eval('.balance-only',n=>n.textContent),/10000000/);
  }
  await sections();
@@ -157,34 +166,89 @@ async function verifyUserBilling(page,fixture,language){
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Expanded USER billing fits a mobile viewport');
  await page.setViewport({width:1440,height:1000});
  await page.evaluate(()=>sessionStorage.setItem('wa_page','bank-deposits'));
- await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.credit-ledger');await sections();
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#bank-topup');await sections();
  fixture.fpxEnabled=true;await page.goto(new URL('/?topup=fixture-order',page.url()).href,{waitUntil:'networkidle0'});
  await page.waitForSelector('#online-topup');await page.waitForFunction(()=>!location.search);await sections();
  assert.equal(fixture.requests.filter(r=>r.path==='/payments/orders/fixture-order/check'&&r.method==='POST'&&r.csrf==='fake-ui-csrf').length,2);
  fixture.fpxEnabled=false;await page.evaluate(()=>loadPage());await sections();
 }
 
+async function verifyAccountGroups(page,fixture){
+ assert.equal(await page.$$eval('[data-account-user]',nodes=>nodes.length),4);
+ assert.equal(await page.$$eval('[data-account-user][open]',nodes=>nodes.length),0);
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ const colors={active:'rgb(103, 216, 177)',inactive:'rgb(255, 142, 150)',locked:'rgb(181, 188, 199)'};
+ for(const [status,color]of Object.entries(colors)){
+  const selector='[data-account-user="'+status+'-user"]';
+  assert.equal(await page.$eval(selector+' [data-user-status]',n=>n.dataset.userStatus),status);
+  assert.equal(await page.$eval(selector+' .status-dot',n=>getComputedStyle(n).backgroundColor),color);
+  assert.equal(await page.$eval(selector+' summary',n=>n.getAttribute('aria-expanded')),'false');
+  assert.equal(await page.$eval(selector+' .table-wrap',n=>n.checkVisibility()),false);
+ }
+ const active='[data-account-user="active-user"]';
+ await page.click(active+' summary');
+ await page.waitForFunction(()=>document.querySelector('[data-account-user="active-user"] summary').getAttribute('aria-expanded')==='true');
+ assert.equal(await page.$eval(active+' .table-wrap',n=>n.checkVisibility()),true);
+ assert.equal(await page.$$eval('[data-account-user][open]',nodes=>nodes.length),1);
+ fixture.accountSuffix=' refreshed';await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval(active,n=>n.open),true);
+ assert.equal(await page.$$eval('[data-account-user][open]',nodes=>nodes.length),1);
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#add-account');
+ assert.equal(await page.$eval(active,n=>n.open),true);
+ await page.focus(active+' summary');await page.keyboard.press('Enter');
+ await page.waitForFunction(()=>document.querySelector('[data-account-user="active-user"] summary').getAttribute('aria-expanded')==='false');
+ await page.keyboard.press('Space');
+ await page.waitForFunction(()=>document.querySelector('[data-account-user="active-user"]').open);
+ await page.keyboard.press('Escape');
+ await page.waitForFunction(()=>!document.querySelector('[data-account-user="active-user"]').open);
+ await page.setViewport({width:390,height:844});
+ await page.click('[data-account-user="locked-user"] summary');
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Collapsible account groups fit a mobile viewport');
+ assert.equal(await page.$eval('[data-account-user="locked-user"]',n=>n.open),true);
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Expanding groups must be read-only');
+ assert.equal(fixture.requests.some(r=>r.path==='/users'&&r.query.includes('passwords=true')),false);
+ await page.setViewport({width:1440,height:1000});
+}
+
+async function verifyOwnerBilling(page,language){
+ await page.evaluate(()=>{page='billing';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
+ assert.match(await page.$eval('.credit-ledger h3',n=>n.textContent),language==='en'?/Credit ledger \(latest 100\)/:/余额流水（最近 100 条）/);
+ assert.equal(await page.$$eval('.credit-ledger tbody tr',nodes=>nodes.length),1);
+ assert.match(await page.$eval('.credit-ledger',n=>n.textContent),/RM 1000\.0000/);
+ await page.click('#nav [data-page=shared]');await waitReady(page);
+}
+
 async function verifyCapacity(page,fixture,language){
+ assert.equal(await page.$('[data-capacity]'),null);
+ assert.equal(await page.$('[data-hourly-checks]'),null);
+ assert.equal(fixture.requests.some(r=>r.path==='/shared/hourly'),false);
+ await page.evaluate(()=>{page='overview';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
+ assert.ok(await page.$('[data-hourly-checks]'));
+ assert.equal(await page.$$eval('[data-account-user],[data-view]',nodes=>nodes.length),0);
  async function summary(available,used,total,unavailable,rows){
   for(const [key,value] of Object.entries({available,used,total,unavailable}))assert.equal(await page.$eval('[data-capacity-'+key+']',n=>Number(n.textContent.replaceAll(',',''))),value);
   assert.equal(await page.$$eval('[data-capacity] tbody tr',n=>n.length),rows);
   assert.match(await page.$eval('[data-capacity] h2',n=>n.textContent),language==='en'?/Available QR slots/:/剩余可扫码/);
  }
  await summary(7,3,10,0,1);
- const now=Date.now();fixture.capacityRows=Array.from({length:22},(_,i)=>({worker_group:i?'fixture-group-'+(i+1):'fixture-group',max_accounts:i?5:10,accounts_running:0,assigned_accounts:0,slots_used:0,slots_available:i?5:10,slots_unavailable:0,can_start_more:true,heartbeat_at:new Date(now).toISOString()}));
+ const now=Date.now();fixture.capacityRows=Array.from({length:20},(_,i)=>{const max=i===0?10:i>=6&&i<=15?7:5;return{worker_group:i?'fixture-group-'+(i+1):'fixture-group',max_accounts:max,accounts_running:0,assigned_accounts:0,slots_used:0,slots_available:max,slots_unavailable:0,can_start_more:true,heartbeat_at:new Date(now).toISOString()};});
  Object.assign(fixture.capacityRows[0],{accounts_running:8,assigned_accounts:8,slots_used:8,slots_available:0,slots_unavailable:2,can_start_more:false});
  Object.assign(fixture.capacityRows[1],{accounts_running:5,assigned_accounts:5,slots_used:5,slots_available:0});
  Object.assign(fixture.capacityRows[2],{accounts_running:1,assigned_accounts:2,slots_used:2,slots_available:3});
  fixture.capacityRows[3].heartbeat_at=new Date(now-120000).toISOString();
- await page.evaluate(()=>loadPage());await summary(93,15,115,7,22);
+ await page.evaluate(()=>loadPage());await summary(103,15,125,7,20);
  for(const width of [390,1440]){
   await page.setViewport({width,height:width===390?844:1000});
   assert.equal(await page.$eval('[data-capacity-available]',n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),true);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  }
  Object.assign(fixture.capacityRows[2],{assigned_accounts:4,slots_used:4,slots_available:1});
- await page.evaluate(()=>loadPage(true));await summary(91,17,115,7,22);
- await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(91,17,115,7,22);
+ await page.evaluate(()=>loadPage(true));await summary(101,17,125,7,20);
+ fixture.capacityFailure=true;await page.evaluate(()=>loadPage());
+ assert.ok(await page.$('.overview-chart'));assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('[data-capacity-total]'),null);
+ assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Cannot load this section/:/暂时无法加载/);
+ fixture.capacityFailure=false;
+ await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(101,17,125,7,20);
  fixture.capacityRows=null;await page.evaluate(()=>loadPage());await summary(7,3,10,0,1);
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
@@ -214,12 +278,13 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$$eval('.shared-cards .card',n=>n.length),1);
   await page.click('#nav [data-page=billing]');
   await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('10000000'));
-  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Credit ledger/:/余额流水/);
+  assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Credit ledger|余额流水/);
   await verifyUserBilling(page,fixture,language);
   await page.click('#nav [data-page=shared]');await waitReady(page);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Current rate per message|当前每条价格/);
  }else{
   await verifyCapacity(page,fixture,language);
+  await verifyOwnerBilling(page,language);
   assert.equal(await page.$eval('#content strong',n=>n.textContent),'<img src=x onerror=alert(1)>');
   await page.click('[data-shared-login]');
   assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+accountId+'&mode=operate','_blank','noopener']);
@@ -295,6 +360,7 @@ async function runCase(browser,base,role,language){
  await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#login').hidden===false);
  assert.equal(await page.$$eval('#nav button',n=>n.length),0);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_nav_expanded')),null);
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_account_groups')),null);
  assert.equal(await page.$eval('#content',n=>n.textContent),'');
  assert.deepEqual(errors,[]);
  await context.close();console.log('Browser PASS: '+role+' / '+language+' / desktop + mobile');

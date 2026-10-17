@@ -1,3 +1,12 @@
+## Owner layout, USER billing visibility and +10 slots — 2026-10-17
+
+- Owner personal accounts default to collapsed USER groups. Browser regressions check ACTIVE green / INACTIVE red / LOCKED grey, click/Enter/Space/Escape, independent expansion, state across polling/reload and logout cleanup. Access colors come from the existing Owner-only USER read without password reveal; expansion never changes access, browser state or accounting.
+- Personal account lists/controls are removed from both Overview roles. Owner Overview now reads current capacity and hourly checks; shared management stops requesting hourly checks or rendering either panel. Service status retains capacity. A failed capacity read leaves charts and hourly data usable and does not display a false zero.
+- USER billing removes only the credit-ledger section; bank/FPX, deposit history, integer balance and payment-return verification remain. Owner ledger rows and controls remain tested. Legacy authenticated API display fields remain compatible; no balances, ledger rows or other production data are changed.
+- Capacity fixture covers 20 groups / 125 slots with assigned-but-not-running accounts, stale/resource-blocked groups, polling and 390/1440 widths. The worker-image check is extended to seven private UID/Xvfb/Chromium desktops and fourteen localhost VNC endpoints under the same 1000-task limit; it sends no WhatsApp messages and cannot certify 125 real linked phones.
+- Target expansion is g–p from six to seven slots with 8 GB RAM each, retaining 2 vCPU, DB_POOL_SIZE=3 and distinct existing /data mounts. Original a–f and q–t are left running. Check idle status immediately before changes, then verify terminal SUCCESS, actual runtime maxima, fresh heartbeats, private authentication and the original linked count. Resource admission remains authoritative.
+- Local JavaScript checks and ordinary tests pass (86 passed; five native PostgreSQL parent suites unavailable locally). Native database, real Chrome, both images and seven-desktop checks must pass at the exact final GitHub head before main promotion. Record observed CI/deployment IDs and final runtime counts in the PR; source upload alone is not deployment verification.
+
 ## QR slot counters and 80-slot expansion — 2026-10-16
 
 - Added Owner-only read-only capacity snapshots for service status and shared-pool status, with active personal/shared assignments, running counts, fresh worker admission and zero availability for stale, missing or resource-blocked workers.

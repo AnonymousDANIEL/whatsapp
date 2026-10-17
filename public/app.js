@@ -4,6 +4,7 @@ if(page==='reports')page='tasks';
 const historyPages={audit:1,messages:1};
 let pageRequest=null,pageRequestVersion=0,lastRenderedPage='',lastRenderSignature='',noticeSignature='';
 let navOpen=new Set(),navStateUser='';
+let accountGroupsOpen=new Set(),accountGroupSession='',accountAccessUsers=[];
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let userStatusFilter=sessionStorage.getItem('wa_user_status_filter')||'active';if(!['active','locked','inactive'].includes(userStatusFilter))userStatusFilter='active';
 const userState=u=>!u.active?'inactive':u.locked?'locked':'active';
@@ -23,7 +24,7 @@ const table=(headers,rows)=>`<div class="table-wrap"><table><thead><tr>${headers
 function toast(text,bad=false){$('#toast').textContent=text;$('#toast').className=bad?'bad':'';$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',6500);}
 async function api(path,options={}){const r=await fetch('/api'+path,{...options,signal:options.signal||AbortSignal.timeout(30000),headers:{'Content-Type':'application/json','X-CSRF-Token':csrf||'',...options.headers}});const data=await r.json().catch(()=>({error:T('服务返回异常','Invalid server response')}));if(!r.ok){if(r.status===401)showLogin();throw Object.assign(new Error(data.code?connectionText(data):translateError(data.error||'Request failed')),{status:r.status});}return data;}
 function staticText(){document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';document.querySelectorAll('[data-zh]').forEach(n=>n.textContent=T(n.dataset.zh,n.dataset.en));$('#language').value=WA_LANG;$('#session-message').textContent=T('正在恢复登录状态…','Restoring your session…');}
-function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
+function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');accountGroupsOpen=new Set();accountGroupSession='';accountAccessUsers=[];sessionStorage.removeItem('wa_account_groups');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');showUserPasswords=false;passwordAccessExpired=false;users=[];accounts=[];campaigns=[];billingData=null;sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#modal').close();}
 function modal(title,html,callback){$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
 function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
@@ -95,12 +96,19 @@ async function loadPage(quiet=false){
   if(requested==='banks')jobs.banks=get('/banks');
   if(requested==='bank-deposits'){jobs.banks=get('/banks');jobs.deposits=get('/bank-deposits?'+bankDepositQuery());}
   if(requested==='bank-transactions'){jobs.banks=get('/banks');jobs.transactions=get('/bank-transactions?'+bankTransactionQuery());}
-  if(requested==='shared'){jobs.sharedStatus=get('/shared/status?layout=2');if(me.role==='owner'){jobs.sharedAccounts=get('/shared/accounts'+sharedQuery());jobs.sharedHourly=get('/shared/hourly');}}
+  if(requested==='shared'){jobs.sharedStatus=get('/shared/status?layout=2');if(me.role==='owner')jobs.sharedAccounts=get('/shared/accounts'+sharedQuery());}
   if(requested==='shared-tasks')jobs.sharedTasks=get('/shared/tasks?page='+sharedUI.tasksPage);
   if(requested==='shared-records')jobs.sharedRecords=get('/shared/records?page='+sharedUI.recordsPage);
   if(['overview','accounts','tasks','messages'].includes(requested))jobs.accounts=get('/accounts');
+  if(requested==='accounts'&&me.role==='owner')jobs.accountUsers=get('/users');
   if(me.role!=='owner'||requested==='notices')jobs.notice=get('/notice');
-  if(requested==='overview')jobs.overview=get('/overview');
+  if(requested==='overview'){
+   jobs.overview=get('/overview');
+   if(me.role==='owner'){
+    const optional=promise=>promise.then(rows=>({rows})).catch(e=>{if(e.status===401||controller.signal.aborted)throw e;return{unavailable:true};});
+    jobs.overviewCapacity=optional(get('/health'));jobs.overviewHourly=optional(get('/shared/hourly'));
+   }
+  }
   if(requested==='tasks')jobs.campaigns=get('/campaigns');
   if(requested==='users')jobs.users=get('/users'+(showUserPasswords?'?passwords=true':''));
   if(requested==='audit')jobs.audit=get('/audit?page='+historyPages.audit);
@@ -117,6 +125,7 @@ async function loadPage(quiet=false){
   if(data.paymentSettings){paymentSettings=data.paymentSettings;navigation();if(page!==requested)return await loadPage();}
   if(data.paymentOrders)paymentOrders=data.paymentOrders;
   if(data.accounts)accounts=data.accounts;if(data.notice)noticeData=data.notice;renderNotice();
+  if(data.accountUsers)accountAccessUsers=data.accountUsers.map(({id,active,locked})=>({id,active,locked}));
   if(data.overview)overviewData=data.overview;if(data.campaigns)campaigns=data.campaigns;if(data.users)users=data.users;
   if(requested==='users'&&showUserPasswords&&!users.some(u=>u.password_access)){showUserPasswords=false;passwordAccessExpired=true;}
   if(data.billing)billingData=data.billing;
@@ -127,7 +136,7 @@ async function loadPage(quiet=false){
   const scrollX=window.scrollX,scrollY=window.scrollY,tableScroll=[...document.querySelectorAll('#content .table-wrap')].map(n=>n.scrollLeft);
   if(['banks','bank-deposits','bank-transactions'].includes(requested))renderBankPage(requested,data);
   if(['shared','shared-tasks','shared-records'].includes(requested))renderSharedPage(requested,data);
-  if(requested==='overview')overview();if(requested==='accounts')accountPage();if(requested==='tasks')taskPage();if(requested==='users')userPage();
+  if(requested==='overview')overview(data);if(requested==='accounts')accountPage();if(requested==='tasks')taskPage();if(requested==='users')userPage();
   if(requested==='fpx')fpxPage();if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage(data);if(requested==='system')systemPage(data.system);if(requested==='notices')noticePage();
   lastRenderedPage=requested;lastRenderSignature=signature;
   if(quiet){document.querySelectorAll('#content .table-wrap').forEach((n,i)=>{n.scrollLeft=tableScroll[i]||0;});window.scrollTo(scrollX,scrollY);}
@@ -154,31 +163,53 @@ function noticePage(){
  };
 }
 function overviewIcon(kind){const paths={mail:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3 7 9 6 9-6"/>',check:'<path d="m5 12 4 4L19 6"/>',double:'<path d="m2 12 4 4L16 6m-5 10 3 3L23 9"/>',cross:'<path d="m7 7 10 10M17 7 7 17"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind]||paths.mail}</svg>`;}
-function overview(){
+function overview(data){
  const counts=overviewData.counts,days=overviewData.days,success=c=>['submitted','delivered','read'].reduce((n,k)=>n+Number(c[k]||0),0),failed=c=>Number(c.failed||0)+Number(c.invalid||0),total=Object.values(counts).reduce((n,v)=>n+Number(v),0);
  const cards=[['mail',T('全部消息','All messages'),total,'purple'],['check',T('发送成功','Sent successfully'),success(counts),'green'],['cross',T('发送失败','Failed to send'),failed(counts),'orange'],['clock',T('等待发送','Waiting to send'),counts.pending||0,'blue']];
  const stages=['submitted','delivered','read','failed','invalid','unknown','pending','sending','awaiting_ack','cancelled'];
  const max=Math.max(1,...days.map(d=>success(d.counts)+failed(d.counts)+Number(d.counts.unknown||0)+Number(d.counts.sending||0)+Number(d.counts.awaiting_ack||0)));
  const series=[{label:T('成功','Successful'),color:'#67d8b1',value:success},{label:T('失败','Failed'),color:'#ff9d78',value:failed}];
  const chart=`<svg class="overview-chart" viewBox="0 0 660 220" role="img" aria-label="${T('最近七天发送趋势，详细数字见下方','Last seven days sending trend; exact values below')}">${[0,1,2,3].map(i=>`<line x1="42" y1="${175-i*50}" x2="630" y2="${175-i*50}" stroke="#253349"/><text x="32" y="${179-i*50}" text-anchor="end">${Math.round(max*i/3)}</text>`).join('')}${series.map(item=>`<polyline points="${days.map((d,i)=>`${48+i*96},${175-item.value(d.counts)/max*150}`).join(' ')}" fill="none" stroke="${item.color}" stroke-width="3"/>${days.map((d,i)=>`<circle cx="${48+i*96}" cy="${175-item.value(d.counts)/max*150}" r="4" fill="${item.color}"><title>${d.date}: ${item.label} ${item.value(d.counts)}</title></circle>`).join('')}`).join('')}${days.map((d,i)=>`<text x="${48+i*96}" y="205" text-anchor="middle">${d.date.slice(5).replace('-','/')}</text>`).join('')}</svg>`;
- $('#content').innerHTML=`<div class="overview-heading"><div><h2>${T('消息总览','Message overview')}</h2>${ownerHint('真实消息数据 · 马来西亚时间 UTC+8','Live message data · Malaysia time UTC+8','muted','p')}</div><span class="badge">${accounts.filter(a=>!a.deleted_at&&a.status==='ready').length} ${T('账号在线','accounts online')}</span></div><div class="cards overview-cards">${cards.map(([icon,label,value,color])=>`<div class="card overview-card"><span class="overview-icon ${color}">${overviewIcon(icon)}</span><div><div class="label">${label}</div><div class="value">${num(value)}</div></div></div>`).join('')}</div><div class="overview-panels"><section class="panel"><h3>${T('最近 7 天 · 发送走势','Last 7 days · Sending trend')}</h3><div class="overview-legend">${series.map(x=>`<span style="color:${x.color}">● ${x.label}</span>`).join('')}</div>${chart}<div class="overview-week">${days.map(d=>`<div><span>${d.date.slice(5).replace('-','/')}</span><strong>${num(success(d.counts))}</strong><small>${T('失败','Failed')} ${num(failed(d.counts))}</small></div>`).join('')}</div>${ownerHint('按首次发送日期统计，包含今天；状态随回执更新。未开始发送的号码不计入周走势。','Grouped by first send date, including today; statuses update with receipts. Unsent numbers are excluded from the weekly trend.','muted','p')}</section><section class="panel"><h3>${T('消息状态','Message status')}</h3><p class="muted">${T('全部现有记录的最新状态','Latest status of all current records')}</p><div class="overview-status">${stages.map((k,i)=>{const n=Number(counts[k]||0);return `<div><div class="overview-status-label"><span>${state(k)}</span><strong>${num(n)}</strong></div><div class="overview-track"><span style="width:${total?n/total*100:0}%;background:${['#8e83ff','#67d8b1','#5796ff','#ff9d78','#ff8e96','#e9c46a'][i%6]}"></span></div></div>`;}).join('')}</div>${!total?`<p class="muted">${T('暂无消息记录，发送后自动更新。','No messages yet. Data updates automatically after sending.')}</p>`:''}</section></div>${ownerHint('发送成功包含已提交、已送达、已读；不代表全部已送达。失败包含无效号码。已删除资料不计入总览，结果待核对不会自动重发。','Successful includes submitted, delivered and read; it does not mean all were delivered. Failed includes invalid numbers. Deleted records are excluded; uncertain results are never resent automatically.')}${accountSections()}`;bindAccounts();
+ $('#content').innerHTML=`<div class="overview-heading"><div><h2>${T('消息总览','Message overview')}</h2>${ownerHint('真实消息数据 · 马来西亚时间 UTC+8','Live message data · Malaysia time UTC+8','muted','p')}</div><span class="badge">${accounts.filter(a=>!a.deleted_at&&a.status==='ready').length} ${T('账号在线','accounts online')}</span></div><div class="cards overview-cards">${cards.map(([icon,label,value,color])=>`<div class="card overview-card"><span class="overview-icon ${color}">${overviewIcon(icon)}</span><div><div class="label">${label}</div><div class="value">${num(value)}</div></div></div>`).join('')}</div><div class="overview-panels"><section class="panel"><h3>${T('最近 7 天 · 发送走势','Last 7 days · Sending trend')}</h3><div class="overview-legend">${series.map(x=>`<span style="color:${x.color}">● ${x.label}</span>`).join('')}</div>${chart}<div class="overview-week">${days.map(d=>`<div><span>${d.date.slice(5).replace('-','/')}</span><strong>${num(success(d.counts))}</strong><small>${T('失败','Failed')} ${num(failed(d.counts))}</small></div>`).join('')}</div>${ownerHint('按首次发送日期统计，包含今天；状态随回执更新。未开始发送的号码不计入周走势。','Grouped by first send date, including today; statuses update with receipts. Unsent numbers are excluded from the weekly trend.','muted','p')}</section><section class="panel"><h3>${T('消息状态','Message status')}</h3><p class="muted">${T('全部现有记录的最新状态','Latest status of all current records')}</p><div class="overview-status">${stages.map((k,i)=>{const n=Number(counts[k]||0);return `<div><div class="overview-status-label"><span>${state(k)}</span><strong>${num(n)}</strong></div><div class="overview-track"><span style="width:${total?n/total*100:0}%;background:${['#8e83ff','#67d8b1','#5796ff','#ff9d78','#ff8e96','#e9c46a'][i%6]}"></span></div></div>`;}).join('')}</div>${!total?`<p class="muted">${T('暂无消息记录，发送后自动更新。','No messages yet. Data updates automatically after sending.')}</p>`:''}</section></div>${ownerHint('发送成功包含已提交、已送达、已读；不代表全部已送达。失败包含无效号码。已删除资料不计入总览，结果待核对不会自动重发。','Successful includes submitted, delivered and read; it does not mean all were delivered. Failed includes invalid numbers. Deleted records are excluded; uncertain results are never resent automatically.')}${me.role==='owner'?ownerOverviewPanels(data):''}`;
 }
 function accountTable(items=accounts){
  const owner=me.role==='owner';
  return table([T('备注 / 号码','Name / number'),T('连接状态','Connection'),T('操作','Actions')],items.map(a=>`<tr><td><strong>${esc(a.label)}</strong><br>${esc(a.phone?'+'+a.phone:T('尚未关联','Not linked'))}</td><td>${badge(a.status)}${a.last_error?`<br><small>${T('诊断代码','Diagnostic code')}: ${esc(a.last_error)}</small>`:''}</td><td><div class="actions">${a.deleted_at?`<span>${a.purge_requested?T('正在删除…','Deleting…'):T('已删除（记录保留）','Deleted (retained)')}</span>`:`${owner?`<button data-view="${a.id}" data-mode="view">${T('查看聊天','View chats')}</button>`:''}<button data-view="${a.id}" data-mode="${owner?'operate':'scan'}" ${!owner&&a.status==='ready'?'disabled':''}>${owner?T('打开操作 / 扫码','Open / scan QR'):T('扫码','Scan QR')}</button><button data-start="${a.id}">${T('启动 / 重连','Start / reconnect')}</button><button data-rename="${a.id}">${T('修改名称','Rename')}</button>${owner?`<button data-check="${a.id}">${T('检查连接','Check connection')}</button><button data-enabled="${a.id}">${a.enabled?T('停用','Deactivate'):T('启用','Activate')}</button>`:''}`}${owner&&!a.purge_requested?`<button class="danger" data-delete-account="${a.id}">${T('删除账号','Delete account')}</button>`:''}</div></td></tr>`));
 }
+function restoreAccountGroups(){
+ const scope=me.id+':'+me.role;if(accountGroupSession===scope)return;
+ accountGroupSession=scope;accountGroupsOpen=new Set();let saved;
+ try{saved=JSON.parse(sessionStorage.getItem('wa_account_groups'));}catch{}
+ if(saved?.user_id===me.id&&saved.role===me.role&&Array.isArray(saved.open)&&saved.open.length<=5000)accountGroupsOpen=new Set(saved.open.filter(id=>typeof id==='string'&&id.length<=80));
+}
+function bindAccountGroups(){
+ document.querySelectorAll('[data-account-user]').forEach(group=>{
+  group.ontoggle=()=>{
+   if(!group.isConnected)return;
+   const id=group.dataset.accountUser;
+   if(group.open)accountGroupsOpen.add(id);else accountGroupsOpen.delete(id);
+   group.querySelector('summary').setAttribute('aria-expanded',String(group.open));
+   try{sessionStorage.setItem('wa_account_groups',JSON.stringify({user_id:me.id,role:me.role,open:[...accountGroupsOpen]}));}catch{}
+  };
+  group.onkeydown=e=>{if(e.key==='Escape'&&group.open){e.preventDefault();group.open=false;group.querySelector('summary').focus();}};
+ });
+}
 function accountSections(){
  if(me.role!=='owner')return accountTable();
+ restoreAccountGroups();
  const groups=new Map(),unassigned=accounts.filter(a=>!a.assigned_users?.length);
  for(const account of accounts)for(const user of account.assigned_users||[]){if(!groups.has(user.id))groups.set(user.id,{...user,accounts:[]});groups.get(user.id).accounts.push(account);}
  const entries=[{id:'owner',username:me.username+' · Owner',active:true,accounts:unassigned},...Array.from(groups.values()).sort((a,b)=>a.username.localeCompare(b.username))];
- return entries.map(g=>`<section class="panel account-group" data-account-user="${esc(g.id)}"><div class="toolbar toolbar-wrap"><h2>${esc(g.username)}</h2><span class="muted">${g.id==='owner'?T('Owner / 未分配','Owner / unassigned'):g.active?'USER ID':'USER ID · Inactive'} · ${g.accounts.length} ${T('个账号','accounts')}</span></div>${accountTable(g.accounts)}</section>`).join('');
+ return entries.map(g=>{
+  const access=accountAccessUsers.find(u=>u.id===g.id)||g,status=userState(access),owner=g.id==='owner',open=accountGroupsOpen.has(g.id),listId='account-group-list-'+g.id;
+  return `<details class="panel account-group" data-account-user="${esc(g.id)}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="${esc(listId)}"><span class="account-group-heading"><span class="account-group-name">${esc(g.username)}</span>${owner?'':`<span class="badge account-user-state ${status}" data-user-status="${status}"><span class="status-dot" aria-hidden="true"></span>${status.toUpperCase()}</span>`}</span><span class="muted">${owner?T('Owner / 未分配','Owner / unassigned'):'USER ID'} · ${g.accounts.length} ${T('个账号','accounts')}</span></summary><div id="${esc(listId)}" class="account-group-content">${accountTable(g.accounts)}</div></details>`;
+ }).join('');
 }
 function accountPage(){
  const owner=me.role==='owner';
  const toolbar=`<div class="toolbar toolbar-wrap"><h2>${T('WhatsApp 账号','WhatsApp accounts')}</h2><button id="add-account" ${!owner&&accounts.filter(a=>!a.deleted_at).length>=(me.account_limit||10)?'disabled':''}>${T('添加账号','Add account')}</button></div>`;
  $('#content').innerHTML=`${ownerHint('画面断开不代表 WhatsApp 被封。连接检查会区分浏览器画面、服务状态和 WhatsApp 登录状态。','A disconnected screen does not mean WhatsApp is banned. Connection checks distinguish screen, service and WhatsApp login status.')}${owner?toolbar+accountSections():`<section class="panel">${toolbar}${accountTable()}</section>`}`;
- bindAccounts();$('#add-account').onclick=()=>modal(T('添加账号','Add account'),`<form><label>${T('备注 / 名称','Name / note')}<input name="label" required maxlength="80"></label><input type="hidden" name="worker_group" value="${esc(boot.groups[0]||'')}"><p>${T('保存后用手机 WhatsApp 关联设备扫码。','After saving, scan the QR code using Linked devices on your phone.')}</p>${submit()}</form>`,async f=>{const r=await api('/accounts',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});toast(r.started?T('已启动，请打开扫码窗口','Started. Open the QR window.'):connectionText(r.connection));});
+ bindAccountGroups();bindAccounts();$('#add-account').onclick=()=>modal(T('添加账号','Add account'),`<form><label>${T('备注 / 名称','Name / note')}<input name="label" required maxlength="80"></label><input type="hidden" name="worker_group" value="${esc(boot.groups[0]||'')}"><p>${T('保存后用手机 WhatsApp 关联设备扫码。','After saving, scan the QR code using Linked devices on your phone.')}</p>${submit()}</form>`,async f=>{const r=await api('/accounts',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});toast(r.started?T('已启动，请打开扫码窗口','Started. Open the QR window.'):connectionText(r.connection));});
 }
 function bindAccounts(){document.querySelectorAll('[data-delete-account]').forEach(b=>b.onclick=()=>{const a=accounts.find(a=>a.id===b.dataset.deleteAccount);if(confirm(me.role==='owner'?T(`删除“${a.label}”及其后台任务、发送记录和服务器登录资料？手机 WhatsApp 账号不会注销。`,`Delete “${a.label}”, its dashboard tasks, message history and server login data? This does not delete the WhatsApp account on your phone.`):T(`删除“${a.label}”并停止其任务？Owner 仍可查看保留的资料与删除记录。`,`Delete “${a.label}” and stop its tasks? The Owner can still see retained data and the deletion record.`)))action(b,()=>api('/accounts/'+a.id,{method:'DELETE'}));});document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>window.open(`/viewer.html?id=${b.dataset.view}&mode=${b.dataset.mode}`,'_blank','noopener'));document.querySelectorAll('[data-rename]').forEach(b=>b.onclick=()=>{const a=accounts.find(a=>a.id===b.dataset.rename);modal(T('修改账号名称','Rename account'),`<form><label>${T('备注 / 名称','Name / note')}<input name="label" required maxlength="80" value="${esc(a.label)}"></label>${submit()}</form>`,f=>api('/accounts/'+a.id,{method:'PATCH',body:JSON.stringify({label:f.elements.namedItem('label').value})}));});document.querySelectorAll('[data-check]').forEach(b=>b.onclick=async()=>{try{const r=await api('/accounts/'+b.dataset.check+'/connection?mode=operate');modal(T('连接检查','Connection check'),`<p>${esc(connectionText(r))}</p><p>${T('画面或网络中断不能用来判断账号被封。','Screen or network interruptions do not establish that an account is banned.')}</p>`);}catch(e){toast(e.message,true);}});document.querySelectorAll('[data-start]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/accounts/'+b.dataset.start+'/restart',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}finally{b.disabled=false;}});document.querySelectorAll('[data-enabled]').forEach(b=>b.onclick=async()=>{const a=accounts.find(a=>a.id===b.dataset.enabled);try{await api('/accounts/'+a.id,{method:'PATCH',body:JSON.stringify({enabled:!a.enabled})});await loadPage();}catch(e){toast(e.message,true);}});}
 function taskSendControl(c){
@@ -237,6 +268,14 @@ function capacityPanel(rows,groups,note=''){
  return `<section class="panel capacity-panel" data-capacity><div class="toolbar toolbar-wrap capacity-heading"><h2>${T('运行容量','Running capacity')}<span class="badge ${total.available?'green':'blue'}">${T('剩余可扫码','Available QR slots')} <strong data-capacity-available aria-live="polite">${num(total.available)}</strong></span></h2><div class="summary-line"><span>${T('已占用','Occupied')} <strong data-capacity-used>${num(total.used)}</strong></span><span>${T('总名额','Total slots')} <strong data-capacity-total>${num(total.max)}</strong></span><span>${T('暂不可用','Temporarily unavailable')} <strong data-capacity-unavailable>${num(total.unavailable)}</strong></span></div></div>${table([T('分组','Group'),T('运行账号 / 容量','Running accounts / capacity'),T('已占用','Occupied'),T('剩余可扫码','Available QR slots'),T('状态','Status'),T('最近在线 UTC+8','Last heartbeat UTC+8')],items.map(w=>`<tr><td>${esc(w.label)}</td><td>${num(w.r.accounts_running||0)} / ${w.r.max_accounts==null?'—':num(w.max)}</td><td>${num(w.used)}</td><td><strong class="${w.available?'success':''}" data-slots-available>${num(w.available)}</strong></td><td>${esc(status[w.state])}${w.r.pids_current!=null?`<br><small>${num(w.r.pids_current)} / ${w.r.pids_limit==null?'—':num(w.r.pids_limit)}</small>`:''}</td><td>${date(w.r.heartbeat_at)}</td></tr>`))}${note?`<p class="muted">${esc(note)}</p>`:''}</section>`;
 }
 function systemPage(rows){$('#content').innerHTML=capacityPanel(rows,rows.map(w=>w.worker_group));}
+function hourlyChecksPanel(rows){
+ return `<section class="panel" data-hourly-checks><h2>${T('每小时连接检查','Hourly connection checks')}</h2>${table([T('小时 UTC+8','Hour UTC+8'),T('已连接','Connected'),T('待连接','Waiting'),T('离线','Offline'),T('待确认','Unconfirmed'),T('已检查分组','Groups checked'),T('检查时间 UTC+8','Checked UTC+8')],rows.map(h=>`<tr><td>${date(h.hour_start)}</td><td>${num(h.connected)}</td><td>${num(h.waiting)}</td><td>${num(h.offline)}</td><td>${num(h.unknown)}</td><td>${num(h.groups)}</td><td>${date(h.checked_at)}</td></tr>`))}</section>`;
+}
+function ownerOverviewPanels(data){
+ const unavailable=title=>`<section class="panel"><h2>${title}</h2><p class="muted">${T('暂时无法加载，请刷新重试。','Cannot load this section. Refresh to retry.')}</p></section>`;
+ const capacity=data.overviewCapacity,hourly=data.overviewHourly;
+ return (capacity?.rows?capacityPanel(capacity.rows,capacity.rows.map(w=>w.worker_group),T('剩余名额已扣除已分配但尚未启动的账号。离线或等待资源的分组暂不计为可用。','Available slots exclude assigned accounts that have not started. Offline or resource-blocked groups are temporarily unavailable.')):unavailable(T('运行容量','Running capacity')))+(hourly?.rows?hourlyChecksPanel(hourly.rows):unavailable(T('每小时连接检查','Hourly connection checks')));
+}
 $('#language').onchange=e=>{localStorage.setItem('wa_language',e.target.value);location.reload();};$('#close-modal').onclick=()=>$('#modal').close();$('#session-retry').onclick=boot;
 $('#login-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{await api('/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await boot();}catch(err){$('#login-error').textContent=err.message;}finally{b.disabled=false;}};
 $('#logout').onclick=async()=>{try{await api('/logout',{method:'POST',body:'{}'});showLogin();}catch(e){toast(e.message,true);}};$('#refresh').onclick=()=>loadPage().catch(e=>toast(e.message,true));
@@ -245,6 +284,7 @@ setInterval(()=>{if(me&&!$('#modal').open&&!document.hidden)loadPage(true).catch
 setInterval(()=>$('#clock').textContent=date(new Date(Date.now()+clockOffset))+' · UTC+8',1000);staticText();boot();
 
 function creditLedger(rows,format=money){
+ if(me.role!=='owner')return '';
  const kinds={hold:T('发送预扣','Send hold'),charged:T('确认扣费','Charge confirmed'),refunded:T('退回余额','Refund'),adjustment:T('手动调整','Manual adjustment'),online_topup:T('FPX 充值','FPX top-up'),bank_topup:T('银行充值','Bank top-up')};
  return `<section class="panel credit-ledger"><h3>${me.role==='owner'?T('余额流水（最近 100 条）','Credit ledger (latest 100)'):T('余额流水','Credit ledger')}</h3>${table([T('时间 UTC+8','Time UTC+8'),T('类型','Type'),T('余额变动','Change'),T('可用余额','Available balance')],rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${kinds[r.kind]||esc(r.kind)}${r.recipient_id?' #'+esc(r.recipient_id):''}</td><td>${Number(r.delta_units)>0?'+':''}${format(r.delta_units)}</td><td>${format(r.balance_units)}</td></tr>`))}</section>`;
 }
@@ -256,7 +296,6 @@ function billingPage(data){
   bankData=data.banks;depositData=data.deposits;depositPage();
   $('#content').insertAdjacentHTML('afterbegin',`<div class="cards balance-only">${balanceCard}</div>`);
   $('#bank-topup').insertAdjacentHTML('afterend',paymentPanel());
-  $('#content').insertAdjacentHTML('beforeend',creditLedger(b.ledger||[],credits));
   bindPayments();return;
  }
 

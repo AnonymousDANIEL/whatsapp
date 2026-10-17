@@ -92,10 +92,11 @@ jobs:
           --mount type=bind,source="$GITHUB_WORKSPACE/test/subreaper-smoke.cjs",target=/app/test/subreaper-smoke.cjs,readonly
           --mount type=bind,source="$GITHUB_WORKSPACE/Dockerfile.worker",target=/app/Dockerfile.worker,readonly
           --entrypoint node whatsapp-worker:ci /app/test/subreaper-smoke.cjs
-      - name: Test six concurrent QR browser desktops under the production task limit
+      - name: Test seven concurrent QR browser desktops under the production task limit
         if: matrix.image == 'worker'
         run: >-
           docker run --rm --network none --cpus 2 --memory 3g --pids-limit 1000
           --mount type=bind,source="$GITHUB_WORKSPACE/test/browser-fleet-smoke.cjs",target=/app/test/browser-fleet-smoke.cjs,readonly
           --entrypoint node whatsapp-worker:ci /app/test/browser-fleet-smoke.cjs
+
 

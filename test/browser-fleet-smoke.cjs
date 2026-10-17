@@ -14,7 +14,7 @@ async function vncGreeting(port){
  const base=await fs.mkdtemp(path.join(os.tmpdir(),'wa-fleet-smoke-')),entries=new Map(),profiles=[];let peak=0;
  await fs.chmod(base,0o711);
  try{
-  for(let slot=0;slot<6;slot++){
+  for(let slot=0;slot<7;slot++){
    const uid=27100+slot,id='fleet-'+slot,folder=path.join(base,id),home=path.join(folder,'home'),profile=path.join(folder,'profile'),xauth=path.join(home,'Xauthority'),display=':'+(120+slot),port=6100+slot*2;
    await execute('groupadd',['--gid',String(uid),id]);await execute('useradd',['--uid',String(uid),'--gid',String(uid),'--no-create-home','--home-dir',home,id]);
    await fs.mkdir(folder,{mode:0o711});
@@ -46,10 +46,11 @@ async function vncGreeting(port){
   }
   await pause(1500);
   for(const entry of entries.values()){assert.equal(await entry.client.pupPage.title(),'Local fleet capacity fixture');assert.ok((await entry.client.pupPage.screenshot()).length>500);}
-  console.log('Worker fleet smoke PASS: six concurrent private UIDs, twelve localhost VNC endpoints, CPU affinity 1, canvas/screen responsive, peak tasks='+peak+'/1000; network disabled, no WhatsApp login');
+  console.log('Worker fleet smoke PASS: seven concurrent private UIDs, fourteen localhost VNC endpoints, CPU affinity 1, canvas/screen responsive, peak tasks='+peak+'/1000; network disabled, no WhatsApp login');
  }finally{
   for(const entry of [...entries.values()])await retire(entries,entry);
   for(const profile of profiles)assert.equal(await fs.readFile(path.join(profile,'keep-session.marker'),'utf8'),'preserved');
   await fs.rm(base,{recursive:true,force:true});
  }
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
