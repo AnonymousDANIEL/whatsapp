@@ -49,7 +49,7 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Check JavaScript
-        run: npm run check
+        run: npm run check && node --check src/overview.js
       - name: Test permissions, schedules and sender results
         run: npm test
       - name: Shared WhatsApp browser tests

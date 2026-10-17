@@ -9,6 +9,10 @@ const accountId='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-422
 let current;
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
 const managedUsers=[{id:'active-user',username:'Active fixture',role:'user',active:true,locked:false},{id:'inactive-user',username:'Inactive fixture',role:'user',active:false,locked:false},{id:'locked-user',username:'Locked fixture',role:'user',active:true,locked:true}];
+function groupedOverview(s){
+ const bucket=(user,counts)=>({user,counts,days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+11).padStart(2,'0'),counts:i===6?counts:{}}))});
+ return{owner:bucket({id:'ui-owner',username:'fixture-owner',role:'owner'},{submitted:2,unknown:1}),users:managedUsers.map((u,i)=>bucket(u,i===0?{submitted:8+(s.overviewRevision||0),failed:2}:i===1?{}:{read:1})),external:bucket(null,{delivered:1}),timezone:'Asia/Kuala_Lumpur'};
+}
 
 const server=http.createServer(async(req,res)=>{
  try{
@@ -29,7 +33,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers];
    else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
    else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}}]:[];
-   else if(p==='/overview')result={counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
+   else if(p==='/overview')result=s.role==='owner'&&url.searchParams.get('layout')==='2'?groupedOverview(s):{counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
    else if(p==='/send-records')result=['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+60123456789',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
@@ -112,12 +116,15 @@ async function verifyPersonalPages(page,fixture,role,language){
   }
   if(target==='overview'){
    if(role==='user')assert.doesNotMatch(text,/按首次发送日期统计|Grouped by first send date|发送成功包含|Successful includes submitted/);
-   assert.equal(await page.$$eval('.overview-cards .card',nodes=>nodes.length),4);
-   assert.equal(await page.$$eval('.overview-week>div',nodes=>nodes.length),7);
+   const scope=role==='owner'?'[data-overview-owner] ':'';
+   assert.equal(await page.$$eval(scope+'.overview-cards .card',nodes=>nodes.length),4);
+   assert.equal(await page.$$eval(scope+'.overview-week>div',nodes=>nodes.length),7);
    assert.equal(await page.$$eval('#content [data-view],#content [data-start],#content [data-account-user]',nodes=>nodes.length),0);
    assert.equal(!!await page.$('[data-capacity]'),role==='owner');
    assert.equal(!!await page.$('[data-hourly-checks]'),role==='owner');
    if(role==='user')assert.equal(fixture.requests.some(r=>['/health','/shared/hourly','/users'].includes(r.path)),false);
+   if(role==='owner')await verifyGroupedOverview(page,fixture);
+   else assert.equal(await page.$('[data-overview-user]'),null);
   }
  }
  await page.click('#nav [data-page=shared]');await waitReady(page);
@@ -176,6 +183,8 @@ async function verifyUserBilling(page,fixture,language){
 async function verifyAccountGroups(page,fixture){
  assert.equal(await page.$$eval('[data-account-user]',nodes=>nodes.length),4);
  assert.equal(await page.$$eval('[data-account-user][open]',nodes=>nodes.length),0);
+ assert.equal(await page.$eval('[data-account-user="owner"] .table-wrap',n=>n.checkVisibility()),true);
+ assert.equal(await page.$eval('[data-account-user="owner"]',n=>n.tagName),'SECTION');
  const writes=fixture.requests.filter(r=>r.method!=='GET').length;
  const colors={active:'rgb(103, 216, 177)',inactive:'rgb(255, 142, 150)',locked:'rgb(181, 188, 199)'};
  for(const [status,color]of Object.entries(colors)){
@@ -195,6 +204,7 @@ async function verifyAccountGroups(page,fixture){
  assert.equal(await page.$$eval('[data-account-user][open]',nodes=>nodes.length),1);
  await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#add-account');
  assert.equal(await page.$eval(active,n=>n.open),true);
+ assert.equal(await page.$eval('[data-account-user="owner"] .table-wrap',n=>n.checkVisibility()),true);
  await page.focus(active+' summary');await page.keyboard.press('Enter');
  await page.waitForFunction(()=>document.querySelector('[data-account-user="active-user"] summary').getAttribute('aria-expanded')==='false');
  await page.keyboard.press('Space');
@@ -210,6 +220,30 @@ async function verifyAccountGroups(page,fixture){
  await page.setViewport({width:1440,height:1000});
 }
 
+async function verifyGroupedOverview(page,fixture){
+ const active='[data-overview-user="active-user"]';
+ assert.equal(await page.$$eval('[data-overview-user]',nodes=>nodes.length),4);
+ assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),0);
+ assert.match(await page.$eval('[data-overview-owner] .overview-heading',n=>n.textContent),/fixture-owner/);
+ assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
+ assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'10');
+ assert.equal(await page.$eval('[data-overview-user="external"] .overview-cards .value',n=>n.textContent),'1');
+ assert.equal(await page.$eval(active+' .overview-actor-body',n=>n.checkVisibility()),false);
+ await page.click(active+' summary');await page.waitForFunction(()=>document.querySelector('[data-overview-user="active-user"] summary').getAttribute('aria-expanded')==='true');
+ fixture.overviewRevision=1;await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval(active,n=>n.open),true);
+ assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
+ assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-overview-owner]');
+ assert.equal(await page.$eval(active,n=>n.open),true);
+ assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),1);
+ for(const width of [390,1440]){
+  await page.setViewport({width,height:width===390?844:1000});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Per-ID overview fits mobile and desktop');
+ }
+ await page.focus(active+' summary');await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('[data-overview-user="active-user"]').open);
+ assert.equal(fixture.requests.some(r=>r.path==='/overview'&&r.query==='?layout=2'),true);
+}
 async function verifyOwnerBilling(page,language){
  await page.evaluate(()=>{page='billing';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
  assert.match(await page.$eval('.credit-ledger h3',n=>n.textContent),language==='en'?/Credit ledger \(latest 100\)/:/余额流水（最近 100 条）/);
@@ -231,12 +265,16 @@ async function verifyCapacity(page,fixture,language){
   assert.match(await page.$eval('[data-capacity] h2',n=>n.textContent),language==='en'?/Available QR slots/:/剩余可扫码/);
  }
  await summary(7,3,10,0,1);
+ assert.equal(await page.$eval('[data-capacity]',n=>n.open),false);
+ assert.equal(await page.$eval('[data-capacity] .table-wrap',n=>n.checkVisibility()),false);
+ await page.click('[data-capacity]>summary');await page.waitForFunction(()=>document.querySelector('[data-capacity] summary').getAttribute('aria-expanded')==='true');
  const now=Date.now();fixture.capacityRows=Array.from({length:20},(_,i)=>{const max=i===0?10:i>=6&&i<=15?7:5;return{worker_group:i?'fixture-group-'+(i+1):'fixture-group',max_accounts:max,accounts_running:0,assigned_accounts:0,slots_used:0,slots_available:max,slots_unavailable:0,can_start_more:true,heartbeat_at:new Date(now).toISOString()};});
  Object.assign(fixture.capacityRows[0],{accounts_running:8,assigned_accounts:8,slots_used:8,slots_available:0,slots_unavailable:2,can_start_more:false});
  Object.assign(fixture.capacityRows[1],{accounts_running:5,assigned_accounts:5,slots_used:5,slots_available:0});
  Object.assign(fixture.capacityRows[2],{accounts_running:1,assigned_accounts:2,slots_used:2,slots_available:3});
  fixture.capacityRows[3].heartbeat_at=new Date(now-120000).toISOString();
  await page.evaluate(()=>loadPage());await summary(103,15,125,7,20);
+ assert.equal(await page.$eval('[data-capacity]',n=>n.open),true);
  for(const width of [390,1440]){
   await page.setViewport({width,height:width===390?844:1000});
   assert.equal(await page.$eval('[data-capacity-available]',n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),true);
@@ -244,6 +282,9 @@ async function verifyCapacity(page,fixture,language){
  }
  Object.assign(fixture.capacityRows[2],{assigned_accounts:4,slots_used:4,slots_available:1});
  await page.evaluate(()=>loadPage(true));await summary(101,17,125,7,20);
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-capacity]');assert.equal(await page.$eval('[data-capacity]',n=>n.open),true);
+ await page.click('[data-capacity]>summary');await page.waitForFunction(()=>document.querySelector('[data-capacity] summary').getAttribute('aria-expanded')==='false');
+ await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('[data-capacity]',n=>n.open),false);
  fixture.capacityFailure=true;await page.evaluate(()=>loadPage());
  assert.ok(await page.$('.overview-chart'));assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('[data-capacity-total]'),null);
  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Cannot load this section/:/暂时无法加载/);
@@ -361,6 +402,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$$eval('#nav button',n=>n.length),0);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_nav_expanded')),null);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_account_groups')),null);
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_dashboard_open')),null);
  assert.equal(await page.$eval('#content',n=>n.textContent),'');
  assert.deepEqual(errors,[]);
  await context.close();console.log('Browser PASS: '+role+' / '+language+' / desktop + mobile');

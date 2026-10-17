@@ -6,6 +6,7 @@ const payments=require('./payments'),vault=require('./secrets'),banks=require('.
 const shared=require('./shared');
 const allocation=require('./account-allocation');
 const capacity=require('./capacity');
+const overview=require('./overview');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -407,6 +408,10 @@ async function start() {
     res.json((await pool.query(`SELECT a.*,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.id DESC LIMIT 100 OFFSET $1`,[(Math.max(1,Math.min(1000000,Number(req.query.page)||1))-1)*100])).rows);
   }));
   app.get('/api/overview',route(async(req,res)=>{
+    if(req.query.layout==='2'){
+      assert(req.user.role==='owner','只有 Owner 可以查看按 USER ID 分开的总览',403);
+      return res.json(await overview.readGrouped(pool,req.user.id));
+    }
     const ids=await visibleAccountIds(req.user,false);
     const {rows}=await pool.query(`WITH records AS (
       SELECT r.status, r.started_at AS sent_at FROM recipients r JOIN campaigns c ON c.id=r.campaign_id
@@ -543,6 +548,11 @@ async function start() {
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
   await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '::', resolve));
   console.log('Management service ready');
+  pool.query("SELECT id FROM users WHERE role='owner' ORDER BY created_at LIMIT 1").then(async({rows})=>{
+    if(!rows.length)return;
+    const data=await overview.readGrouped(pool,rows[0].id);
+    console.log('Overview attribution ready:',JSON.stringify({owner_partition:!!data.owner,user_groups:data.users.length,calendar_days:data.owner?.days.length,timezone:data.timezone}));
+  }).catch(e=>console.error('Overview attribution check:',e.code||e.name));
   process.on('SIGTERM', () => { for (const ws of wss.clients) ws.close(); server.close(() => pool.end().then(() => process.exit(0))); setTimeout(() => process.exit(0), 10000).unref(); });
   return server;
 }
