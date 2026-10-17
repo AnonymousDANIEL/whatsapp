@@ -307,7 +307,8 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$eval('#login',n=>n.hidden),true);
  assert.equal(await page.$eval('html',n=>n.lang),language==='en'?'en':'zh-CN');
  assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Shared WhatsApp':'共享 WhatsApp');
- assert.equal(await page.$$eval('.nav-icon',n=>n.length),0);
+ assert.equal(await page.$$eval('#nav .nav-entry',nodes=>nodes.every(n=>n.querySelectorAll('svg.nav-icon[aria-hidden=true][focusable=false]').length===1)),true);
+ assert.equal(await page.$eval('#nav [data-page=overview] .nav-icon',n=>getComputedStyle(n).width),'18px');
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script,img[onerror]').length),0);
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);

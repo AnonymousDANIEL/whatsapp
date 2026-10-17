@@ -1,3 +1,9 @@
+## Sidebar line icons — 2026-10-17 late evening
+
+- Added fixed inline SVG icons to every authorized Owner/USER root and child menu entry, with green line styling matching the reference. Root icons are 18 px, child icons 16 px; labels and independent chevrons remain intact. SVGs are decorative and nonfocusable and require no external assets.
+- Updated the existing Chrome menu assertion to expect one accessible-hidden icon per entry and the actual root size. Existing tests retain zh/en, desktop/mobile, role-specific navigation, nested menus, refresh, payment and disclosure behavior. No new database behavior, worker code or dependencies are introduced.
+- Verify exact-head CI, GitHub main and Railway SUCCESS. Read back live app/CSS hashes and compare all 20 existing browser deployment IDs and linked readiness; preserve the 125-slot configuration. Record observed results in the PR. No production messages, credentials, balance changes or profile resets as tests.
+
 ## Per-ID Owner overview and click-to-expand capacity — 2026-10-17 evening
 
 - Owner own WhatsApp accounts always display directly; USER account groups retain independent collapsed-by-default lists and status colors. Capacity counters remain visible while per-group rows default to collapsed on both Owner views. Browser coverage exercises click/keyboard, polling, page changes, reload, logout and zh/en desktop/mobile.

@@ -29,6 +29,26 @@ function showLogin(){pageRequest?.abort();pageRequestVersion++;loading=false;las
 function modal(title,html,callback){$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
 function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
+function navIcon(target){
+ const shapes={
+  overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  billing:'<path d="M20 7H6a3 3 0 0 1 0-6h12v6M3 4v14a3 3 0 0 0 3 3h14V7"/><path d="M20 11h-5v6h5m-3-3h.01"/>',
+  fpx:'<rect x="2" y="4" width="20" height="16" rx="3"/><path d="M2 9h20M6 15h5m4-1 2 2 3-3"/>',
+  banks:'<path d="m3 8 9-5 9 5H3m0 13h18M5 11v7m7-7v7m7-7v7"/>',
+  'bank-deposits':'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3m3 5h6m-6 4h6m-6 4h3"/>',
+  'bank-transactions':'<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',
+  accounts:'<path d="M21 11.5a8.5 8.5 0 0 1-12.7 7.4L3 21l1.7-5.4A8.5 8.5 0 1 1 21 11.5Z"/><path d="m8 7 2 3-1.2 1.2a7 7 0 0 0 4 4L14 14l3 2c-1 3-3.8 2.1-6.6-.1S6.3 9.6 8 7Z"/>',
+  shared:'<path d="M8 5V3h13v12h-3M3 8h13v10H8l-5 3V8Z"/><path d="M7 12h5m-5 3h3"/>',
+  tasks:'<path d="m22 2-7 20-4-9L2 9 22 2ZM11 13 22 2"/>',
+  messages:'<path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7m2-4v5l3 2"/>',
+  notices:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-9 12a3 3 0 0 0 6 0"/>',
+  users:'<circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3m1-18a4 4 0 0 1 0 8m3 10v-3a7 7 0 0 0-2-5"/>',
+  audit:'<path d="M9 3H5v18h14V3h-4m-6-1h6v4H9V2m-1 9 1 1 2-2m2 1h3m-8 5 1 1 2-2m2 1h3"/>',
+  system:'<path d="M2 12h5l3-8 4 16 3-8h5"/>'
+ };
+ const kind=target==='shared-tasks'?'tasks':target==='shared-records'?'messages':target;
+ return `<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${shapes[kind]||shapes.overview}</svg>`;
+}
 function menuTree(){
  const node=(page,children=[])=>({page,children});
  const payments=me.role==='owner'?[node('fpx'),node('banks',[node('bank-deposits'),node('bank-transactions')])]:[];
@@ -61,7 +81,7 @@ function navigation(){
  const collect=nodes=>nodes.forEach(n=>{available.push(n.page);if(n.children.length)branches.push(n.page);collect(n.children);});collect(tree);
  if(!available.includes(page)){page=page==='fpx'?'billing':'overview';sessionStorage.setItem('wa_page',page);}
  restoreMenuState(tree);navOpen=new Set([...navOpen].filter(id=>branches.includes(id)));saveMenuState();
- const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]),branch=n.children.length>0,open=navOpen.has(n.page),control='nav-sub-'+n.page;return `<li><div class="nav-row"><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}" ${branch?`aria-expanded="${open}" aria-controls="${control}"`:''}><span class="nav-label">${esc(title)}</span></button>${branch?`<button type="button" class="nav-toggle" data-nav-toggle="${n.page}" aria-expanded="${open}" aria-controls="${control}" aria-label="${esc(T(open?'收起':'展开',open?'Collapse':'Expand')+' '+title)}"><span class="nav-chevron" aria-hidden="true">›</span></button>`:''}</div>${branch?render(n.children,depth+1).replace('<ul class="nav-children">',`<ul class="nav-children" id="${control}" ${open?'':'hidden'}>`):''}</li>`;}).join('')}</ul>`;
+ const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]),branch=n.children.length>0,open=navOpen.has(n.page),control='nav-sub-'+n.page;return `<li><div class="nav-row"><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}" ${branch?`aria-expanded="${open}" aria-controls="${control}"`:''}>${navIcon(n.page)}<span class="nav-label">${esc(title)}</span></button>${branch?`<button type="button" class="nav-toggle" data-nav-toggle="${n.page}" aria-expanded="${open}" aria-controls="${control}" aria-label="${esc(T(open?'收起':'展开',open?'Collapse':'Expand')+' '+title)}"><span class="nav-chevron" aria-hidden="true">›</span></button>`:''}</div>${branch?render(n.children,depth+1).replace('<ul class="nav-children">',`<ul class="nav-children" id="${control}" ${open?'':'hidden'}>`):''}</li>`;}).join('')}</ul>`;
  const html=render(tree),signature=JSON.stringify([tree,WA_LANG]);
  $('#identity').textContent=me.username;$('#role').textContent=me.role==='owner'?T('Owner · 总管理员','Owner · Administrator'):'USER ID';$('#password-btn').hidden=me.role!=='owner';
  const nav=$('#nav');nav.setAttribute('aria-label',T('主菜单','Main menu'));
