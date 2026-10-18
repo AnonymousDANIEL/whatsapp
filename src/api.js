@@ -7,6 +7,7 @@ const shared=require('./shared');
 const allocation=require('./account-allocation');
 const capacity=require('./capacity');
 const overview=require('./overview');
+const ownerHistory=require('./owner-history'),sharedConsole=require('./shared-console');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -24,7 +25,7 @@ const SESSION_HOURS = 168;
 const routes = JSON.parse(process.env.WORKER_ROUTES_JSON || '{}');
 const sharedGroups=JSON.parse(process.env.SHARED_WORKER_GROUPS_JSON||'[]');
 assert(Array.isArray(sharedGroups)&&sharedGroups.every(g=>typeof g==='string'&&Object.hasOwn(routes,g)),'共享运行分组配置无效',500);
-const sharedOnly=new Set(sharedGroups),poolRoutes=sharedGroups.length?Object.fromEntries(sharedGroups.map(g=>[g,routes[g]])):routes;
+const sharedOnly=new Set(sharedGroups),poolRoutes=Object.fromEntries(sharedGroups.map(g=>[g,routes[g]]));
 const browser = createWorkerConnection(routes, process.env.INTERNAL_SECRET);
 const personalGroups=Object.keys(routes).filter(g=>!sharedOnly.has(g));
 const rebalanceAccounts=allocation.createRebalancer(routes,browser,personalGroups);
@@ -130,7 +131,9 @@ async function ensureLoginActivity() {
 }
 async function start() {
   await ensureLoginActivity();
+  await sharedConsole.ensureOptions();
   console.log('Login activity metadata ready: v1');
+  console.log('Shared console ready: '+JSON.stringify({dedicated_groups:sharedGroups.length}));
   const app = express();
   app.set('trust proxy', security.proxyHops(process.env.TRUST_PROXY_HOPS));
   app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], frameSrc: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'self'"] } }, crossOriginEmbedderPolicy: false }));
@@ -176,6 +179,8 @@ async function start() {
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
   banks.routes(app,route);
+  sharedConsole.routes(app,route,poolRoutes);
+  ownerHistory.routes(app,route);
   shared.routes(app,route,uuid,poolRoutes,workerCommand);
   app.get('/api/notice',route(async(req,res)=>{
     const notice=(await pool.query('SELECT enabled,content_zh,content_en,updated_at FROM workspace_notice WHERE id=1')).rows[0];
@@ -357,7 +362,7 @@ async function start() {
     const a = await access(req.user, b.account_id, true); assert(a.enabled, '账号已停用');
     assert(!a.shared_pool,'请使用共享 WhatsApp 发送入口');
     if(b.require_connected===true){const connection=await browser.status(a);assert(connection.connected,'请先扫码连接 WhatsApp 账号，再立刻发送',409);}
-    assert(typeof b.title === 'string' && b.title.trim().length && b.title.length <= 120, '请输入任务名称');
+    b.title=sharedConsole.taskTitle(b.title,crypto.randomUUID());
     const media=validateImage(b.media);
     assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
     assert(b.opt_in_confirmed === true, '请确认这些联系人同意接收消息');

@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),{randomUU
 test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recovery',{skip:!process.env.TEST_DATABASE_URL},async t=>{
  const {Pool}=require('pg'),admin=new Pool({connectionString:process.env.TEST_DATABASE_URL}),name='wa_shared_'+randomUUID().replaceAll('-','');
  if(!process.env.TEST_SINGLE_DATABASE)await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);if(!process.env.TEST_SINGLE_DATABASE)url.pathname='/'+name;
- Object.assign(process.env,{APP_VAULT_KEY:'22'.repeat(32),DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',WORKER_GROUP:'group-a',INTERNAL_SECRET:'shared-disposable-test-secret',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'shared-owner-test-password',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9","group-b":"http://127.0.0.1:9"}'});
+ Object.assign(process.env,{APP_VAULT_KEY:'22'.repeat(32),DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',WORKER_GROUP:'group-a',SHARED_WORKER_GROUPS_JSON:'["group-a","group-b"]',INTERNAL_SECRET:'shared-disposable-test-secret',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'shared-owner-test-password',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9","group-b":"http://127.0.0.1:9"}'});
  const db=require('../src/db');let server;t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});
  await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body===null?{}:{body:JSON.stringify(body)})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
@@ -51,6 +51,35 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID()},user1)).status,503);await db.pool.query('UPDATE worker_health SET heartbeat_at=now()');
   await db.pool.query("UPDATE accounts SET shared_checked_at=now()-interval '2 hours' WHERE id=$1",[a1]);assert.equal((await request('/shared/status','GET',null,user1)).data.summary.connected,1);await db.pool.query('UPDATE accounts SET shared_checked_at=now() WHERE id=$1',[a1]);
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID(),opt_in_confirmed:false},user1)).status,400);
+ });
+ await t.test('Owner image switch blocks only new USER photos; nameless retries stay idempotent and never alter wallet or pricing',async()=>{
+  assert.deepEqual((await request('/shared/options','GET',null,user2)).data,{images_enabled:true});
+  const before=(await db.pool.query(`SELECT jsonb_build_object('wallets',(SELECT jsonb_agg(jsonb_build_array(id,credit_units) ORDER BY id) FROM users),'personal',(SELECT to_jsonb(s) FROM billing_settings s),'shared',(SELECT to_jsonb(s) FROM shared_settings s),'hours',(SELECT jsonb_agg(p ORDER BY hour) FROM shared_hour_prices p),'charges',(SELECT count(*) FROM message_charges),'ledger',(SELECT count(*) FROM credit_ledger)) value`)).rows[0].value;
+  assert.equal((await request('/shared/options','PUT',{images_enabled:false},user2)).status,403);
+  assert.equal((await request('/shared/options','PUT',{images_enabled:false},{...owner,csrf:'wrong'})).status,403);
+  assert.equal((await request('/shared/options','PUT',{images_enabled:'false'},owner)).status,400);
+  const ids=[];const media={mimetype:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='};
+  const unnamed={...template,title:undefined,media};
+  try{
+   assert.equal((await request('/shared/options','PUT',{images_enabled:false},owner)).status,200);
+   assert.equal((await request('/shared/status?layout=2','GET',null,user2)).data.images_enabled,false);
+   const rejectedId=randomUUID();assert.equal((await request('/shared/send','POST',{...unnamed,request_id:rejectedId},user2)).status,403);
+   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE shared_request_id=$1',[rejectedId])).rowCount,0);
+   const owned=await request('/shared/send','POST',{...unnamed,request_id:randomUUID()},owner);assert.equal(owned.status,201);ids.push(owned.data.id);
+   const text=await request('/shared/send','POST',{...unnamed,media:null,request_id:randomUUID()},user2);assert.equal(text.status,201);ids.push(text.data.id);
+   assert.equal((await request('/shared/options','PUT',{images_enabled:true},owner)).status,200);
+   const requestId=randomUUID(),body={...unnamed,request_id:requestId};
+   const first=await request('/shared/send','POST',body,user2);assert.equal(first.status,201);ids.push(first.data.id);
+   const title=(await db.pool.query('SELECT title FROM campaigns WHERE id=$1',[first.data.id])).rows[0].title;assert.equal(title,'Shared WhatsApp '+requestId);
+   assert.equal((await request('/shared/options','PUT',{images_enabled:false},owner)).status,200);
+   const replay=await request('/shared/send','POST',body,user2);assert.equal(replay.status,201);assert.equal(replay.data.id,first.data.id);
+   assert.equal((await request('/shared/send','POST',{...body,body:'Different synthetic message'},user2)).status,409);
+   assert.equal((await db.pool.query('SELECT count(*)::int n FROM campaigns WHERE shared_request_id=$1',[requestId])).rows[0].n,1);
+   const after=(await db.pool.query(`SELECT jsonb_build_object('wallets',(SELECT jsonb_agg(jsonb_build_array(id,credit_units) ORDER BY id) FROM users),'personal',(SELECT to_jsonb(s) FROM billing_settings s),'shared',(SELECT to_jsonb(s) FROM shared_settings s),'hours',(SELECT jsonb_agg(p ORDER BY hour) FROM shared_hour_prices p),'charges',(SELECT count(*) FROM message_charges),'ledger',(SELECT count(*) FROM credit_ledger)) value`)).rows[0].value;assert.deepEqual(after,before);
+  }finally{
+   await request('/shared/options','PUT',{images_enabled:true},owner);
+   if(ids.length){await db.pool.query('DELETE FROM recipients WHERE campaign_id=ANY($1::uuid[])',[ids]);await db.pool.query('DELETE FROM campaigns WHERE id=ANY($1::uuid[])',[ids]);await db.pool.query('DELETE FROM audit WHERE entity_id=ANY($1::text[])',[ids]);}
+  }
  });
  await t.test('concurrent replay creates one task and never exposes another USER task or enables USER edits',async()=>{
   const body={...template,request_id:randomUUID()},before=(await request('/billing','GET',null,user1)).data.user.credit_units;
@@ -162,3 +191,4 @@ await t.test('Personal numbers never enter shared dispatch, and shared pages omi
   }finally{await db.pool.query('DELETE FROM accounts WHERE id=ANY($1::uuid[])',[[...seeds.map(s=>s.id),...(created?[created]:[])]]);}
  });
 });
+

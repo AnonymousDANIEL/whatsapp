@@ -10,6 +10,15 @@ let current;
 const ledgerNote='Synthetic transfer remark <img src=x onerror=alert(1)>\nSecond line';
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
 const managedUsers=[{id:'active-user',username:'Active fixture',role:'user',active:true,locked:false},{id:'inactive-user',username:'Inactive fixture',role:'user',active:false,locked:false},{id:'locked-user',username:'Locked fixture',role:'user',active:true,locked:true}];
+function personalTask(s){return {id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}};}
+function personalRecords(s){return ['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+15555550101',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));}
+function senderGroups(s,kind){return {kind,groups:[{user:{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},total:kind==='tasks'?(s.taskReview?1:0):5},...managedUsers.map(u=>({user:u,total:u.id==='active-user'?2:0})),...(kind==='messages'?[{user:null,total:1}]:[])]};}
+function senderItems(s,kind,actor,page){
+ if(actor==='ui-owner')return{kind,actor_id:actor,rows:kind==='tasks'?(s.taskReview?[personalTask(s)]:[]):personalRecords(s),total:kind==='tasks'?(s.taskReview?1:0):5,page,size:100};
+ const text='Synthetic USER '+(kind==='tasks'?'task':'message')+' page '+page;
+ const row=kind==='tasks'?{...personalTask(s),id:page===1?'33333333-3333-4333-8333-333333333333':'44444444-4444-4444-8444-444444444444',created_by:actor,creator:'Active fixture',body:text}:{...personalRecords(s)[0],actor:'Active fixture',body:text};
+ return{kind,actor_id:actor,rows:actor==='active-user'?[row]:[],total:actor==='active-user'?2:0,page,size:1};
+}
 function groupedOverview(s){
  const bucket=(user,counts)=>({user,counts,days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+11).padStart(2,'0'),counts:i===6?counts:{}}))});
  return{owner:bucket({id:'ui-owner',username:'fixture-owner',role:'owner'},{submitted:2,unknown:1}),users:managedUsers.map((u,i)=>bucket(u,i===0?{submitted:8+(s.overviewRevision||0),failed:2}:i===1?{}:{read:1})),external:bucket(null,{delivered:1}),timezone:'Asia/Kuala_Lumpur'};
@@ -32,18 +41,25 @@ const server=http.createServer(async(req,res)=>{
     result=s.role==='owner'?[...managedUsers.map((u,i)=>({...personal,id:i?'account-'+i:accountId,assigned_users:[{id:u.id,username:u.username,active:u.active}]})),{...personal,id:'owner-account',assigned_users:[]}]:[personal];
    }
    else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers].map(u=>({...u,last_login_at:s.loginDates[u.id]??null}));
+   else if(p==='/owner/send-groups')result=senderGroups(s,url.searchParams.get('kind'));
+   else if(p==='/owner/send-items'){
+    const actor=url.searchParams.get('actor_id');if(s.failSendGroup===actor){res.statusCode=503;result={error:'Synthetic group unavailable'};}else result=senderItems(s,url.searchParams.get('kind'),actor,Number(url.searchParams.get('page')||1));
+   }
+   else if(p==='/shared/options'){
+    if(req.method==='PUT')s.imagesEnabled=body.images_enabled;result={images_enabled:s.imagesEnabled!==false};
+   }
    else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
-   else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}}]:[];
+   else if(p==='/campaigns')result=s.taskReview?[personalTask(s)]:[];
    else if(p==='/overview')result=s.role==='owner'&&url.searchParams.get('layout')==='2'?groupedOverview(s):{counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
-   else if(p==='/send-records')result=['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+60123456789',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));
+   else if(p==='/send-records')result=personalRecords(s);
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
-    result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
-    if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:capacityRows(s).map(w=>w.worker_group),workers:capacityRows(s)});
+    result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
+    if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:(s.sharedCapacityRows||capacityRows(s)).map(w=>w.worker_group),workers:s.sharedCapacityRows||capacityRows(s)});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
    else if(p==='/shared/settings')result={ok:true};
@@ -90,11 +106,64 @@ async function verifyAccountIdentity(page,fixture,role,language){
  console.log('Account identity PASS: '+role+' / '+language+' / old number hidden while awaiting scan and syncing; new number appears through automatic polling');
 }
 
+async function verifySenderGroups(page,fixture,kind,language){
+ const start=fixture.requests.length,writes=fixture.requests.filter(r=>r.method!=='GET').length,own='[data-owner-send-actor="ui-owner"]',other='[data-owner-send-actor="active-user"]';
+ assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.length),kind==='tasks'?4:5);
+ assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.every(n=>!n.open)),true);
+ assert.equal(await page.$$eval('#content tbody tr',nodes=>nodes.length),0);
+ assert.equal(fixture.requests.slice(start).some(r=>r.path==='/owner/send-items'),false);
+ await page.click(other+' > summary');
+ await page.waitForFunction(({selector,text})=>!loading&&document.querySelector(selector)?.textContent.includes(text),{}, {selector:other,text:'Synthetic USER '+(kind==='tasks'?'task':'message')+' page 1'});
+ assert.equal(await page.$eval(own,n=>n.open),false);
+ await page.click(other+' [data-send-page="1"]');
+ await page.waitForFunction(({selector,text})=>!loading&&document.querySelector(selector)?.textContent.includes(text),{}, {selector:other,text:'Synthetic USER '+(kind==='tasks'?'task':'message')+' page 2'});
+ // One failed group never hides the other groups or invents an empty result.
+ fixture.failSendGroup='active-user';await page.evaluate(()=>loadPage(true));
+ assert.match(await page.$eval(other,n=>n.textContent),language==='en'?/Cannot load this group/:/暂时无法加载这组记录/);
+ assert.ok(await page.$(own));fixture.failSendGroup=null;await page.evaluate(()=>loadPage(true));
+ await page.click(other+' > summary');await page.waitForFunction(selector=>!document.querySelector(selector).open,{},other);
+ const closedAt=fixture.requests.length;
+ await page.click(own+' > summary');await page.waitForFunction(selector=>!loading&&document.querySelector(selector)?.querySelector('tbody tr'),{},own);
+ assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Synthetic USER (task|message) page/);
+ await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval(other,n=>n.open),false);
+ assert.equal(fixture.requests.slice(closedAt).some(r=>r.path==='/owner/send-items'&&r.query.includes('actor_id=active-user')),false);
+ await page.reload({waitUntil:'networkidle0'});await page.waitForFunction(selector=>!loading&&document.querySelector(selector)?.querySelector('tbody tr'),{},own);
+ assert.equal(await page.$eval(other,n=>n.open),false);assert.equal(await page.$eval(own,n=>n.open),true);
+ for(const width of [390,1440]){await page.setViewport({width,height:width===390?844:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);
+ console.log('Owner per-ID '+kind+' PASS: '+language+' / collapsed lazy groups, independent pages, partial failure, saved state, read-only and mobile');
+}
+async function verifySharedPhotos(page,fixture,role,language){
+ assert.equal(await page.$('#shared-send-form input[name=title]'),null);
+ if(role==='owner'){
+  assert.equal(await page.$eval('[data-owner-shared-send]',n=>!!n.querySelector('form')&&!n.closest('details')),true);
+  assert.ok(await page.$('#shared-send-form input[name=photo]'));
+  const original={enabled:fixture.enabled,available:fixture.available};
+  await page.click('#shared-photo-toggle');await page.waitForFunction(()=>document.querySelector('#shared-photo-toggle').getAttribute('aria-pressed')==='false');
+  assert.equal(fixture.imagesEnabled,false);assert.ok(await page.$('#shared-send-form input[name=photo]'));
+  await page.click('#shared-photo-toggle');await page.waitForFunction(()=>document.querySelector('#shared-photo-toggle').getAttribute('aria-pressed')==='true');
+  assert.deepEqual({enabled:fixture.enabled,available:fixture.available},original);
+  fixture.sharedCapacityRows=Array.from({length:6},(_,i)=>({worker_group:'fixture-shared-'+i,max_accounts:5,slots_used:0,slots_available:5,heartbeat_at:new Date().toISOString()}));
+  await page.evaluate(()=>loadPage());assert.deepEqual(await page.$$eval('.shared-cards .value',nodes=>nodes.slice(-3).map(n=>n.textContent)),['30','0','30']);
+  fixture.sharedCapacityRows=null;await page.evaluate(()=>loadPage());
+ }else{
+  assert.equal(await page.$('#shared-photo-toggle'),null);assert.ok(await page.$('#shared-send-form input[name=photo]'));
+  await page.$eval('#shared-send-form',f=>{const body=f.elements.namedItem('body');body.value='Retained synthetic draft';body.dispatchEvent(new Event('input',{bubbles:true}));f.dataset.requestId='55555555-5555-4555-8555-555555555555';body.focus();});
+  fixture.imagesEnabled=false;await page.evaluate(()=>loadPage(true));
+  assert.equal(await page.$('#shared-send-form input[name=photo]'),null);assert.equal(await page.$eval('#shared-send-form textarea[name=body]',n=>n.value),'Retained synthetic draft');
+  assert.equal(await page.$eval('#shared-send-form',n=>n.dataset.requestId),'55555555-5555-4555-8555-555555555555');
+  fixture.imagesEnabled=true;await page.evaluate(()=>loadPage(true));assert.ok(await page.$('#shared-send-form input[name=photo]'));
+  await page.$eval('#shared-send-form',f=>{f.reset();delete f.dataset.dirty;delete f.dataset.requestId;document.activeElement?.blur();});
+  assert.equal(fixture.requests.some(r=>r.path==='/shared/options'&&r.method==='PUT'),false);
+ }
+ console.log('Shared photos PASS: '+role+' / '+language+' / Owner toggle, USER visibility, draft and request ID retained; task title omitted');
+}
+
 async function verifyPersonalPages(page,fixture,role,language){
  const pages=[
   ['accounts','#add-account',/画面断开不代表|A disconnected screen does not mean/],
   ['tasks','#add-task',/USER 发送前须充值|USERs need credit before sending/],
-  ['messages','#history-prev',/按号码显示任务|Shows per-number waiting/],
+  ['messages',role==='owner'?'[data-owner-send-actor]':'#history-prev',/按号码显示任务|Shows per-number waiting/],
   ['overview','.overview-chart',/真实消息数据|Live message data/]
  ];
  for(const [target,ready,explanation]of pages){
@@ -102,6 +171,7 @@ async function verifyPersonalPages(page,fixture,role,language){
   if(target==='tasks')fixture.taskReview=true;
   await page.evaluate(target=>{page=target;sessionStorage.setItem('wa_page',target);navigation();return loadPage();},target);
   await page.waitForSelector(ready);
+  if(role==='owner'&&['tasks','messages'].includes(target))await verifySenderGroups(page,fixture,target,language);
   const text=await page.$eval('#content',n=>n.textContent);
   if(role==='owner')assert.match(text,explanation);else assert.doesNotMatch(text,explanation);
   if(target==='accounts'){await verifyAccountIdentity(page,fixture,role,language);if(role==='owner')await verifyAccountGroups(page,fixture);}
@@ -126,10 +196,11 @@ async function verifyPersonalPages(page,fixture,role,language){
    assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Needs review/:/结果待核对/);
    assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');
    await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
-   await page.$eval('#modal form',f=>{f.elements.namedItem('title').value='New independent task';f.elements.namedItem('body').value='Synthetic message';f.elements.namedItem('recipients').value='0123456789';f.elements.namedItem('opt_in').checked=true;});
+   assert.equal(await page.$('#modal input[name=title]'),null);
+   await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Synthetic message';f.elements.namedItem('recipients').value='0123456789';f.elements.namedItem('opt_in').checked=true;});
    const created=page.waitForResponse(r=>r.url().endsWith('/api/campaigns')&&r.request().method()==='POST');
    await page.click('#modal button[value=now]');await created;await page.waitForFunction(()=>!document.querySelector('#modal').open);
-   const newTask=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(newTask.body.send_now,true);assert.equal(newTask.body.require_connected,true);
+   const newTask=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(newTask.body.send_now,true);assert.equal(newTask.body.require_connected,true);assert.equal(newTask.body.title,undefined);
    assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);fixture.taskReview=false;
   }
   if(target==='messages'){
@@ -431,10 +502,10 @@ async function runCase(browser,base,role,language){
   assert.equal(fixture.requests.findLast(r=>r.path==='/shared/accounts'&&r.method==='POST').body.groups[0],'fixture-group');
  }
  await verifyPersonalPages(page,fixture,role,language);
- if(role==='owner')await page.click('details.panel > summary');
+ await verifySharedPhotos(page,fixture,role,language);
  await page.evaluate(()=>{
   const f=document.querySelector('#shared-send-form');
-  for(const [name,value]of Object.entries({title:'fixture shared task',body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
+  for(const [name,value]of Object.entries({body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
    f.elements.namedItem(name).value=value;f.elements.namedItem(name).dispatchEvent(new Event('input',{bubbles:true}));
   }
   f.elements.namedItem('opt_in').checked=true;
@@ -443,12 +514,12 @@ async function runCase(browser,base,role,language){
   f.elements.namedItem('photo').dispatchEvent(new Event('change',{bubbles:true}));document.activeElement?.blur();
  });
  fixture.available=1;await page.evaluate(()=>loadPage(true));
- assert.equal(await page.$eval('#shared-send-form input[name=title]',n=>n.value),'fixture shared task');
+ assert.equal(await page.$('#shared-send-form input[name=title]'),null);assert.equal(await page.$eval('#shared-send-form textarea[name=body]',n=>n.value),'fake UI message');
  fixture.failNext=true;await page.click('#shared-send-form button[type=submit]');
  await page.waitForFunction(()=>document.querySelector('#toast').textContent==='Fixture retry'&&!document.querySelector('#shared-send-form').dataset.busy);
  assert.equal(fixture.sends.length,1);
  await page.click('#shared-send-form button[type=submit]');await waitReady(page,'shared-tasks');
- assert.equal(fixture.sends.length,2);assert.equal(fixture.sends[0].request_id,fixture.sends[1].request_id);
+ assert.equal(fixture.sends.length,2);assert.equal(fixture.sends[1].title,undefined);assert.equal(fixture.sends[0].request_id,fixture.sends[1].request_id);
  assert.equal(fixture.sends[1].opt_in_confirmed,true);assert.equal(fixture.sends[1].media.mimetype,'image/png');assert.ok(fixture.sends[1].media.data);
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script').length),0);
  if(role==='user')assert.equal(await page.$('[data-shared-pause]'),null);

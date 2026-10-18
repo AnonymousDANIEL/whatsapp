@@ -1,0 +1,33 @@
+{
+  "state": "blocked_by_project_volume_quota",
+  "requested_shared_slots": 30,
+  "current_personal_slots_preserved": 125,
+  "worker_count": 6,
+  "slots_per_worker": 5,
+  "separate_volumes_required": 6,
+  "volume_max_mb_per_worker": 10000,
+  "vcpus_per_worker": 2,
+  "memory_gb_per_worker": 4,
+  "db_pool_size_per_worker": 1,
+  "application_pool_ceiling_before": 87,
+  "application_pool_ceiling_after": 93,
+  "region": "us-east4-eqdc4a",
+  "source": "AnonymousDANIEL/whatsapp",
+  "branch": "main",
+  "dockerfile": "Dockerfile.worker",
+  "mount_path": "/data",
+  "replicas_per_worker": 1,
+  "workers": [
+    {"group": "shared-01", "service": "whatsapp-shared-01"},
+    {"group": "shared-02", "service": "whatsapp-shared-02"},
+    {"group": "shared-03", "service": "whatsapp-shared-03"},
+    {"group": "shared-04", "service": "whatsapp-shared-04"},
+    {"group": "shared-05", "service": "whatsapp-shared-05"},
+    {"group": "shared-06", "service": "whatsapp-shared-06"}
+  ],
+  "secret_reference_policy": "Use same-project whatsapp.DATABASE_URL and whatsapp.INTERNAL_SECRET references; never read, copy or rotate their values.",
+  "routing_policy": "Merge the six new private-domain/PORT references into existing WORKER_ROUTES_JSON; set SHARED_WORKER_GROUPS_JSON to these six groups only after all independent volumes and healthy workers exist.",
+  "activation_policy": "Owner alone registers, connects and scans shared accounts. USERs may only submit their own consented sends. Do not auto-enable shared sending or change pricing.",
+  "platform_block": "Railway rejected an unattached staged blank volume with: You can only have 20 volumes per project.",
+  "next_action": "Increase the existing project's volume quota before provisioning. Do not reuse personal slots, existing profiles or an ephemeral disk. This plan is not active capacity."
+}

@@ -1,3 +1,13 @@
+## Dedicated shared expansion request — 2026-10-18
+
+Requested additional capacity is **30 shared-only QR slots**, planned as six independent services `whatsapp-shared-01` through `whatsapp-shared-06`, groups `shared-01` through `shared-06`, five browsers each. Each would have its own /data volume, one replica, 2 vCPU / 4 GB, the tested worker image and DB_POOL_SIZE=1. The configured application DB pool ceiling would be 87 + 6 = 93, without modifying PostgreSQL settings. Preserve all twenty existing personal workers and their 125 configured slots.
+
+**This expansion is not active.** Railway rejected an unattached staged 1GB blank volume with `You can only have 20 volumes per project`. No new volume, service, browser or slot was created. Automatic approval review had first blocked a direct 10GB mount because of deployment/mount/storage risks; the safer unattached preflight proved the actual platform quota. The original empty `whatsapp-worker-u` remains unmodified and unused. config/shared-capacity-plan.json is the concrete inactive plan.
+
+After the project receives sufficient volume allowance, create six new empty services with six new independent persistent volumes before attaching source. Use same-project references to `whatsapp.DATABASE_URL` and `whatsapp.INTERNAL_SECRET`; do not copy secrets. Verify healthy authenticated private routing, profile mounts and five-slot reports before merging new routes into the existing API map and declaring these exact six groups in SHARED_WORKER_GROUPS_JSON. Do not enable shared sending or change prices automatically. Verify all twenty existing active browser deployment IDs remain unchanged.
+
+An absent/empty SHARED_WORKER_GROUPS_JSON now yields **zero shared runtime groups**. It never borrows personal routes or scan slots. Shared counters display live configured capacity, not the requested 30. Owner alone registers/scans/controls shared accounts; USERs only send consented messages through that independent pool. Physical phones/WhatsApp registration and real linked capacity still require actual Owner linking.
+
 # QR fleet capacity
 
 ## Production topology — 2026-10-17

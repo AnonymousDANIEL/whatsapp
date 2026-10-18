@@ -44,6 +44,13 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.deepEqual((await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u ORDER BY id')).rows,before);
  });
  const template={title:'Task',account_id:a,body:'Authorized fake message',recipients:'0123456789\n+60123456789\nwrong',opt_in_confirmed:true,timezone:'Asia/Kuala_Lumpur',window_start:'09:00',window_end:'18:00',scheduled_at:'2030-10-02T09:15',expires_at:'2030-10-03T18:00',weekdays:[1,2,3,4,5,6,7],interval_ms:10000};
+ await t.test('unconfigured shared capacity never falls back to personal browser groups',async()=>{
+  const data=(await request('/shared/status?layout=2','GET',null,owner)).data;assert.deepEqual(data.groups,[]);assert.deepEqual(data.workers,[]);assert.equal(data.summary.available,0);
+  const count=(await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n;
+  assert.equal((await request('/shared/accounts','POST',{phones:'+15555550101',groups:['group-a']},owner)).status,400);
+  assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n,count);
+  assert.deepEqual((await request('/me','GET',null,owner)).data.worker_groups,['group-a']);
+ });
  await t.test('account numbers are visible only while linked and refresh to the new identity without altering retained data',async()=>{
   const original=(await db.pool.query('SELECT status,phone,enabled,deleted_at,heartbeat_at FROM accounts WHERE id=$1',[a])).rows[0];
   assert.equal((await db.pool.query("SELECT 1 FROM worker_health WHERE worker_group='group-a'")).rowCount,0);

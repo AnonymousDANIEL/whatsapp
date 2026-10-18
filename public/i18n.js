@@ -119,6 +119,14 @@ window.translateError=(message)=>{
  '任务存在待核对号码，请先查看明细核对，系统不会自动重发。':'This task has recipients that need review. Check the details first; the system will not resend them automatically.',
  '任务正在发送，请暂停后再删除':'A message is being sent. Pause the task and wait before deleting.',
  '请输入 DELETE HISTORY 确认':'Type DELETE HISTORY to confirm.',
+ '共享图片发送已关闭':'Shared photo sending is disabled.',
+ '只有 Owner 可以设置共享图片发送':'Only the Owner can change shared photo sending.',
+ '请选择图片发送开关':'Choose whether photo sending is on or off.',
+ '发送列表类型无效':'Invalid send-list type.',
+ '只有 Owner 可以查看按 USER ID 分组的发送记录':'Only the Owner can view sends grouped by USER ID.',
+ 'USER ID 无效':'Invalid USER ID.',
+ '任务名称无效':'Invalid task title.',
+ '任务名称最多 120 个字符':'Task titles can contain at most 120 characters.',
  '请输入任务名称':'Enter a task title.',
  '消息需要 1–4000 个字符':'Messages must contain 1–4000 characters.',
  '请确认这些联系人同意接收消息':'Confirm that these contacts agreed to receive your message.',
@@ -157,4 +165,5 @@ window.connectionText=info=>({
  SCREEN_READY:info.connected?T('WhatsApp 已连接','WhatsApp is connected.'):T('浏览器画面已准备好，请用手机扫码','The browser is ready. Link it using WhatsApp on your phone.'),
  BROWSER_NOT_READY:T('浏览器正在准备，请稍后重试；持续失败时查看服务日志','The browser is preparing. Retry shortly; check service logs if it keeps failing.')
 }[info.code]||translateError(info.message||''));
+
 
