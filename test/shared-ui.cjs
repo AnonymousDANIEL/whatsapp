@@ -97,6 +97,7 @@ async function verifyPersonalPages(page,fixture,role,language){
   ['overview','.overview-chart',/真实消息数据|Live message data/]
  ];
  for(const [target,ready,explanation]of pages){
+  const requestStart=fixture.requests.length;
   if(target==='tasks')fixture.taskReview=true;
   await page.evaluate(target=>{page=target;sessionStorage.setItem('wa_page',target);navigation();return loadPage();},target);
   await page.waitForSelector(ready);
@@ -142,8 +143,9 @@ async function verifyPersonalPages(page,fixture,role,language){
    assert.equal(await page.$$eval(scope+'.overview-cards .card',nodes=>nodes.length),4);
    assert.equal(await page.$$eval(scope+'.overview-week>div',nodes=>nodes.length),7);
    assert.equal(await page.$$eval('#content [data-view],#content [data-start],#content [data-account-user]',nodes=>nodes.length),0);
-   assert.equal(!!await page.$('[data-capacity]'),role==='owner');
-   assert.equal(!!await page.$('[data-hourly-checks]'),role==='owner');
+   assert.equal(await page.$('[data-capacity]'),null);
+   assert.equal(await page.$('[data-hourly-checks]'),null);
+   assert.equal(fixture.requests.slice(requestStart).some(r=>['/health','/shared/hourly'].includes(r.path)),false);
    if(role==='user')assert.equal(fixture.requests.some(r=>['/health','/shared/hourly','/users'].includes(r.path)),false);
    if(role==='owner')await verifyGroupedOverview(page,fixture);
    else assert.equal(await page.$('[data-overview-user]'),null);
@@ -278,8 +280,15 @@ async function verifyCapacity(page,fixture,language){
  assert.equal(await page.$('[data-capacity]'),null);
  assert.equal(await page.$('[data-hourly-checks]'),null);
  assert.equal(fixture.requests.some(r=>r.path==='/shared/hourly'),false);
+ const overviewStart=fixture.requests.length;
  await page.evaluate(()=>{page='overview';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
- assert.ok(await page.$('[data-hourly-checks]'));
+ assert.ok(await page.$('.overview-chart'));
+ assert.equal(await page.$('[data-capacity]'),null);assert.equal(await page.$('[data-hourly-checks]'),null);
+ assert.equal(fixture.requests.slice(overviewStart).some(r=>['/health','/shared/hourly'].includes(r.path)),false);
+ if(await page.$eval('#nav [data-nav-toggle=users]',n=>n.getAttribute('aria-expanded'))==='false')await page.click('#nav [data-nav-toggle=users]');
+ await page.click('#nav [data-page=system]');await page.waitForSelector('[data-capacity]');
+ assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('.overview-chart'),null);
+ assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Service status':'服务状态');
  assert.equal(await page.$$eval('[data-account-user],[data-view]',nodes=>nodes.length),0);
  async function summary(available,used,total,unavailable,rows){
   for(const [key,value] of Object.entries({available,used,total,unavailable}))assert.equal(await page.$eval('[data-capacity-'+key+']',n=>Number(n.textContent.replaceAll(',',''))),value);
@@ -308,11 +317,14 @@ async function verifyCapacity(page,fixture,language){
  await page.click('[data-capacity]>summary');await page.waitForFunction(()=>document.querySelector('[data-capacity] summary').getAttribute('aria-expanded')==='false');
  await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('[data-capacity]',n=>n.open),false);
  fixture.capacityFailure=true;await page.evaluate(()=>loadPage());
- assert.ok(await page.$('.overview-chart'));assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('[data-capacity-total]'),null);
+ assert.equal(await page.$('.overview-chart'),null);assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('[data-capacity-total]'),null);
  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Cannot load this section/:/暂时无法加载/);
- fixture.capacityFailure=false;
- await page.evaluate(()=>{page='system';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await summary(101,17,125,7,20);
+ fixture.capacityFailure=false;await page.evaluate(()=>loadPage());await summary(101,17,125,7,20);
  fixture.capacityRows=null;await page.evaluate(()=>loadPage());await summary(7,3,10,0,1);
+ const returnStart=fixture.requests.length;
+ await page.click('#nav [data-page=overview]');await page.waitForSelector('[data-overview-owner]');
+ assert.equal(await page.$('[data-capacity]'),null);assert.equal(await page.$('[data-hourly-checks]'),null);
+ assert.equal(fixture.requests.slice(returnStart).some(r=>['/health','/shared/hourly'].includes(r.path)),false);
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 

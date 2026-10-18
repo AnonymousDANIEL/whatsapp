@@ -1,3 +1,9 @@
+## Capacity and hourly checks moved to Service status — 2026-10-18
+
+- Moved both Owner infrastructure panels and their reads from Overview into Service status. Overview retains message statistics, per-ID groups and charts without calling /health or /shared/hourly. Service status retains click-to-expand capacity, current counters and automatic refresh, and independently handles unavailable sections.
+- Updated the existing real-Chrome Owner/USER zh/en checks for panel/request absence on Overview and actual sidebar navigation to Service status. Existing 125-slot arithmetic, collapsed/expanded state, refresh/reload persistence, mobile layout and partial read failure checks now run in Service status. No new database behavior or test files were added.
+- Verify exact-head CI, GitHub main, Railway SUCCESS, matching live assets and unchanged browser deployment IDs. Preserve the previous login-heading removal, green menu icons and linked-number masking. No production messages, phone scans, profile resets, capacity or financial changes are used as tests. Record final observed release results in the PR.
+
 ## Current linked-number display — 2026-10-17 night
 
 - Personal account API responses mask a retained phone unless the account is enabled, not deleted and displayed as ready on a fresh worker. The account table also guards against stale phone payloads. Names and stored identities/history remain unchanged.

@@ -123,18 +123,15 @@ async function loadPage(quiet=false){
   if(['overview','accounts','tasks','messages'].includes(requested))jobs.accounts=get('/accounts');
   if(requested==='accounts'&&me.role==='owner')jobs.accountUsers=get('/users');
   if(me.role!=='owner'||requested==='notices')jobs.notice=get('/notice');
-  if(requested==='overview'){
-   jobs.overview=get(me.role==='owner'?'/overview?layout=2':'/overview');
-   if(me.role==='owner'){
-    const optional=promise=>promise.then(rows=>({rows})).catch(e=>{if(e.status===401||controller.signal.aborted)throw e;return{unavailable:true};});
-    jobs.overviewCapacity=optional(get('/health'));jobs.overviewHourly=optional(get('/shared/hourly'));
-   }
-  }
+  if(requested==='overview')jobs.overview=get(me.role==='owner'?'/overview?layout=2':'/overview');
   if(requested==='tasks')jobs.campaigns=get('/campaigns');
   if(requested==='users')jobs.users=get('/users'+(showUserPasswords?'?passwords=true':''));
   if(requested==='audit')jobs.audit=get('/audit?page='+historyPages.audit);
   if(requested==='messages')jobs.messages=get('/send-records?page='+historyPages.messages);
-  if(requested==='system')jobs.system=get('/health');
+  if(requested==='system'&&me.role==='owner'){
+   const optional=promise=>promise.then(rows=>({rows})).catch(e=>{if(e.status===401||controller.signal.aborted)throw e;return{unavailable:true};});
+   jobs.systemCapacity=optional(get('/health'));jobs.systemHourly=optional(get('/shared/hourly'));
+  }
   if(requested==='billing'){
    if(me.role==='owner')jobs.users=get('/users?compact=true');
    jobs.billing=get('/billing'+(billingUser?'?user_id='+encodeURIComponent(billingUser):''));
@@ -158,7 +155,7 @@ async function loadPage(quiet=false){
   if(['banks','bank-deposits','bank-transactions'].includes(requested))renderBankPage(requested,data);
   if(['shared','shared-tasks','shared-records'].includes(requested))renderSharedPage(requested,data);
   if(requested==='overview')overview(data);if(requested==='accounts')accountPage();if(requested==='tasks')taskPage();if(requested==='users')userPage();
-  if(requested==='fpx')fpxPage();if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage(data);if(requested==='system')systemPage(data.system);if(requested==='notices')noticePage();
+  if(requested==='fpx')fpxPage();if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage(data);if(requested==='system')systemPage(data);if(requested==='notices')noticePage();
   lastRenderedPage=requested;lastRenderSignature=signature;
   if(quiet){document.querySelectorAll('#content .table-wrap').forEach((n,i)=>{n.scrollLeft=tableScroll[i]||0;});window.scrollTo(scrollX,scrollY);}
  }catch(error){
@@ -220,7 +217,7 @@ function overview(data){
   const id=external?'external':item.user.id,key='actor:'+id,open=dashboardOpen.has(key),status=external?null:userState(item.user),name=external?T('外部 / 未归属','External / unattributed'):item.user.username,total=Object.values(item.counts).reduce((n,v)=>n+Number(v),0);
   return `<details class="panel overview-actor" data-overview-user="${esc(id)}" data-dashboard-key="${esc(key)}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="overview-user-${esc(id)}"><span class="account-group-heading"><span class="account-group-name">${esc(name)}</span>${external?'':`<span class="badge account-user-state ${status}"><span class="status-dot" aria-hidden="true"></span>${status.toUpperCase()}</span><span class="muted">${item.user.role==='owner'?'Owner':'USER ID'}</span>`}</span><span class="muted">${T('全部消息','All messages')} <strong>${num(total)}</strong></span></summary><div class="overview-actor-body" id="overview-user-${esc(id)}">${overviewMarkup(item,name)}</div></details>`;
  };
- $('#content').innerHTML=`<section data-overview-owner>${overviewMarkup(overviewData.owner,me.username+' · '+T('我的消息','My messages'))}</section><section class="overview-users"><h2>${T('USER ID 消息总览','Messages by USER ID')}</h2><p class="muted">${T('按任务创建人和手动发送操作人分开统计，点击 USER ID 查看。统计普通 WhatsApp 消息。','Personal WhatsApp messages are grouped by task creator or manual sender. Select a USER ID to view its data.')}</p>${overviewData.users.map(u=>actorGroup(u)).join('')}${Object.keys(overviewData.external.counts).length?actorGroup(overviewData.external,true):''}</section>${ownerOverviewPanels(data)}`;
+ $('#content').innerHTML=`<section data-overview-owner>${overviewMarkup(overviewData.owner,me.username+' · '+T('我的消息','My messages'))}</section><section class="overview-users"><h2>${T('USER ID 消息总览','Messages by USER ID')}</h2><p class="muted">${T('按任务创建人和手动发送操作人分开统计，点击 USER ID 查看。统计普通 WhatsApp 消息。','Personal WhatsApp messages are grouped by task creator or manual sender. Select a USER ID to view its data.')}</p>${overviewData.users.map(u=>actorGroup(u)).join('')}${Object.keys(overviewData.external.counts).length?actorGroup(overviewData.external,true):''}</section>`;
  bindDashboardDisclosures();
 }
 function accountTable(items=accounts){
@@ -320,14 +317,15 @@ function capacityPanel(rows,groups,note=''){
  const status={offline:T('离线','Offline'),full:T('已满','Full'),available:T('可用','Available'),resource_wait:T('等待资源','Waiting for capacity')};
  return `<details class="panel capacity-panel" data-capacity data-dashboard-key="${key}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="capacity-list-${page}"><div class="toolbar toolbar-wrap capacity-heading"><h2>${T('运行容量','Running capacity')}<span class="badge ${total.available?'green':'blue'}">${T('剩余可扫码','Available QR slots')} <strong data-capacity-available aria-live="polite">${num(total.available)}</strong></span></h2><div class="summary-line"><span>${T('已占用','Occupied')} <strong data-capacity-used>${num(total.used)}</strong></span><span>${T('总名额','Total slots')} <strong data-capacity-total>${num(total.max)}</strong></span><span>${T('暂不可用','Temporarily unavailable')} <strong data-capacity-unavailable>${num(total.unavailable)}</strong></span></div></div></summary><div class="capacity-body" id="capacity-list-${page}">${table([T('分组','Group'),T('运行账号 / 容量','Running accounts / capacity'),T('已占用','Occupied'),T('剩余可扫码','Available QR slots'),T('状态','Status'),T('最近在线 UTC+8','Last heartbeat UTC+8')],items.map(w=>`<tr><td>${esc(w.label)}</td><td>${num(w.r.accounts_running||0)} / ${w.r.max_accounts==null?'—':num(w.max)}</td><td>${num(w.used)}</td><td><strong class="${w.available?'success':''}" data-slots-available>${num(w.available)}</strong></td><td>${esc(status[w.state])}${w.r.pids_current!=null?`<br><small>${num(w.r.pids_current)} / ${w.r.pids_limit==null?'—':num(w.r.pids_limit)}</small>`:''}</td><td>${date(w.r.heartbeat_at)}</td></tr>`))}${note?`<p class="muted">${esc(note)}</p>`:''}</div></details>`;
 }
-function systemPage(rows){$('#content').innerHTML=capacityPanel(rows,rows.map(w=>w.worker_group));bindDashboardDisclosures();}
 function hourlyChecksPanel(rows){
  return `<section class="panel" data-hourly-checks><h2>${T('每小时连接检查','Hourly connection checks')}</h2>${table([T('小时 UTC+8','Hour UTC+8'),T('已连接','Connected'),T('待连接','Waiting'),T('离线','Offline'),T('待确认','Unconfirmed'),T('已检查分组','Groups checked'),T('检查时间 UTC+8','Checked UTC+8')],rows.map(h=>`<tr><td>${date(h.hour_start)}</td><td>${num(h.connected)}</td><td>${num(h.waiting)}</td><td>${num(h.offline)}</td><td>${num(h.unknown)}</td><td>${num(h.groups)}</td><td>${date(h.checked_at)}</td></tr>`))}</section>`;
 }
-function ownerOverviewPanels(data){
+function systemPage(data){
+ if(me.role!=='owner')return;
  const unavailable=title=>`<section class="panel"><h2>${title}</h2><p class="muted">${T('暂时无法加载，请刷新重试。','Cannot load this section. Refresh to retry.')}</p></section>`;
- const capacity=data.overviewCapacity,hourly=data.overviewHourly;
- return (capacity?.rows?capacityPanel(capacity.rows,capacity.rows.map(w=>w.worker_group),T('剩余名额已扣除已分配但尚未启动的账号。离线或等待资源的分组暂不计为可用。','Available slots exclude assigned accounts that have not started. Offline or resource-blocked groups are temporarily unavailable.')):unavailable(T('运行容量','Running capacity')))+(hourly?.rows?hourlyChecksPanel(hourly.rows):unavailable(T('每小时连接检查','Hourly connection checks')));
+ const capacity=data.systemCapacity,hourly=data.systemHourly;
+ $('#content').innerHTML=(capacity?.rows?capacityPanel(capacity.rows,capacity.rows.map(w=>w.worker_group),T('剩余名额已扣除已分配但尚未启动的账号。离线或等待资源的分组暂不计为可用。','Available slots exclude assigned accounts that have not started. Offline or resource-blocked groups are temporarily unavailable.')):unavailable(T('运行容量','Running capacity')))+(hourly?.rows?hourlyChecksPanel(hourly.rows):unavailable(T('每小时连接检查','Hourly connection checks')));
+ bindDashboardDisclosures();
 }
 $('#language').onchange=e=>{localStorage.setItem('wa_language',e.target.value);location.reload();};$('#close-modal').onclick=()=>$('#modal').close();$('#session-retry').onclick=boot;
 $('#login-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{await api('/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await boot();}catch(err){$('#login-error').textContent=err.message;}finally{b.disabled=false;}};
