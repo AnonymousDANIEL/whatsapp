@@ -1,5 +1,5 @@
 {
-  "state": "quota_approved_provisioning",
+  "state": "active",
   "requested_shared_slots": 30,
   "current_personal_slots_preserved": 125,
   "worker_count": 6,
@@ -19,12 +19,48 @@
   "mount_path": "/data",
   "replicas_per_worker": 1,
   "workers": [
-    {"group": "shared-01", "service": "whatsapp-shared-01"},
-    {"group": "shared-02", "service": "whatsapp-shared-02"},
-    {"group": "shared-03", "service": "whatsapp-shared-03"},
-    {"group": "shared-04", "service": "whatsapp-shared-04"},
-    {"group": "shared-05", "service": "whatsapp-shared-05"},
-    {"group": "shared-06", "service": "whatsapp-shared-06"}
+    {
+      "group": "shared-01",
+      "service": "whatsapp-shared-01",
+      "service_id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "volume_id": "dbafc735-ef60-4852-9a42-67084252a225",
+      "deployment_id": "b960a629-ef8c-4e7b-9eaa-5ae997d0a474"
+    },
+    {
+      "group": "shared-02",
+      "service": "whatsapp-shared-02",
+      "service_id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "volume_id": "4d841951-2763-40ea-afa7-460e62cc172b",
+      "deployment_id": "57f2f826-61dd-415e-93b3-720c00e7aced"
+    },
+    {
+      "group": "shared-03",
+      "service": "whatsapp-shared-03",
+      "service_id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "volume_id": "193f5e3b-7410-459f-a956-01e1e074fb00",
+      "deployment_id": "eb935be3-8736-47c6-bd87-ab62713cddba"
+    },
+    {
+      "group": "shared-04",
+      "service": "whatsapp-shared-04",
+      "service_id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "volume_id": "69e8d53c-9425-4d1d-87f5-d32426901dd4",
+      "deployment_id": "75ed7ad1-d0d9-4873-b75b-c68322668639"
+    },
+    {
+      "group": "shared-05",
+      "service": "whatsapp-shared-05",
+      "service_id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "volume_id": "d84a6747-dff4-410e-b6fd-546f5c98abdc",
+      "deployment_id": "3d4b8320-2a8b-4a64-8325-98329502b2c4"
+    },
+    {
+      "group": "shared-06",
+      "service": "whatsapp-shared-06",
+      "service_id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "volume_id": "1db63e31-6e23-4554-b0bb-5901c27f25b3",
+      "deployment_id": "737a4664-462b-448e-b35c-bb2f5b61aaed"
+    }
   ],
   "secret_reference_policy": "Use same-project whatsapp.DATABASE_URL and whatsapp.INTERNAL_SECRET references; never read, copy or rotate their values.",
   "routing_policy": "Preserve WORKER_ROUTES_JSON exactly. Add the six new private-domain/PORT references using SHARED_WORKER_ROUTES_JSON and declare only these six groups in SHARED_WORKER_GROUPS_JSON after independent volumes and healthy workers exist. Duplicate legacy group keys fail closed.",
@@ -32,5 +68,20 @@
   "quota_approval": "Railway support confirmed the project volume limit was increased to 27 on 2026-10-18. Creation of six new independent 10GB volumes succeeded.",
   "support_thread": "https://station.railway.com/support/request-to-increase-project-volume-quota-26c447ae",
   "connection_budget": "Each worker keeps one pool connection for its ownership lock, so DB_POOL_SIZE=1 cannot start. Six pools of two plus the unchanged 72 personal-worker connections and API pool 10 yield ceiling 94; do not change PostgreSQL settings or existing workers.",
-  "next_action": "Verify six deployed workers and authenticated private routing, then verify the real separate 30-slot capacity. This plan does not certify real phone logins or WhatsApp availability."
+  "next_action": "Owner may create a shared account using Add account / Automatic allocation and link a real phone. Counters use live database heartbeats, not this historical verification snapshot. No production phone login or customer message was used as a test.",
+  "verified_at": "2026-10-18T14:04:51.639701421Z",
+  "release_commit": "035ff4ad7915a7436b9885d7e8fdd92a3812edbf",
+  "api_deployment_id": "16c94d8a-de17-4811-9a6f-935f07f458a6",
+  "release_ci_run": 39133716394,
+  "main_ci_run": 39133994123,
+  "verified_capacity_snapshot": {
+    "groups": 6,
+    "total": 30,
+    "used": 0,
+    "available": 30,
+    "unavailable": 0,
+    "all_fresh": true
+  },
+  "personal_workers_preserved": 20,
+  "original_active_deployments_unchanged": true
 }

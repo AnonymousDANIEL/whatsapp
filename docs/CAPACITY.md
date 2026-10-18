@@ -1,8 +1,8 @@
 ## Dedicated shared expansion after quota approval — 2026-10-18
 
-Railway support confirmed the project volume quota increased to **27** in https://station.railway.com/support/request-to-increase-project-volume-quota-26c447ae. Six fresh services whatsapp-shared-01 through whatsapp-shared-06 now have independent 10GB /data volumes. Source deployment and authenticated private capacity verification are still required; a created volume is not a working QR session.
+Railway support confirmed the project volume quota increased to **27** in https://station.railway.com/support/request-to-increase-project-volume-quota-26c447ae. All six services whatsapp-shared-01 through whatsapp-shared-06 are deployed SUCCESS with independent 10GB /data volumes. Authenticated API checks verified each max-five endpoint. At 2026-10-18T14:04:51.639701421Z, the API used the same database-backed capacity reader as the Owner view and observed total 30, used 0, available 30, unavailable 0, all six heartbeats fresh. The twenty original active browser deployment IDs and mounts were unchanged. This is an observed snapshot, not a static counter or proof of a real phone login.
 
-The target is **30 additional shared-only QR slots**, six distinct groups shared-01 through shared-06 at five browsers each, one replica, 2 vCPU / 4GB. Preserve all twenty original browser workers and their 125 personal slots. Use same-project whatsapp.DATABASE_URL and whatsapp.INTERNAL_SECRET references; never copy or read their values.
+The deployed addition is **30 shared-only QR slots**, six distinct groups shared-01 through shared-06 at five browsers each, one replica, 2 vCPU / 4GB. Preserve all twenty original browser workers and their 125 personal slots. Use same-project whatsapp.DATABASE_URL and whatsapp.INTERNAL_SECRET references; never copy or read their values.
 
 Each worker keeps one pool connection for its lifetime ownership lock. A one-connection pool cannot execute startup queries, so the corrected configuration is DB_POOL_SIZE=2 per new worker and API DB_POOL_SIZE=10. Existing personal-worker pools remain 72 in total, yielding an aggregate application ceiling of **94**, compared with 87 before expansion. This does not alter PostgreSQL settings and is not a measured database throughput claim.
 
@@ -25,7 +25,7 @@ The 2026-10-16 increment added 10 × 6 + 4 × 5 = **80 slots**, taking configure
 
 Every worker has one replica, a distinct WORKER_GROUP, its own persistent volume at /data and private authenticated routing. New volumes are capped at 10,000 MB, with growth available when needed. No login profiles are copied or shared between workers. The API and PostgreSQL remain separate services.
 
-Before shared expansion, the API default DB pool was 15, the six original worker pools totaled 30, and the fourteen newer personal pools totaled 42: a historical aggregate application pool ceiling of **87 connections**. The approved shared target above uses API pool 10 and six additional pools of two, for 94. This is a configured ceiling, not an assertion of measured database capacity. Recalculate it before adding more workers; do not increase PostgreSQL settings as a test.
+Before shared expansion, the API default DB pool was 15, the six original worker pools totaled 30, and the fourteen newer personal pools totaled 42: a historical aggregate application pool ceiling of **87 connections**. The deployed shared addition above uses API pool 10 and six additional pools of two, for 94. This is a configured ceiling, not an assertion of measured database capacity. Recalculate it before adding more workers; do not increase PostgreSQL settings as a test.
 
 ## Platform quota and further expansion
 
@@ -42,4 +42,4 @@ Never replace persistent profiles with ephemeral storage, clone a worker against
 - Owner Service status shows personal live remaining slots; Shared WhatsApp has its own independent capacity panel; counters stay visible and group rows are click-to-expand. Hourly connection checks remain on Owner Service status; Overview contains message statistics only. New groups appear from current health responses without another login. USER responses must not expose worker inventory or infrastructure capacity.
 - Inspect fresh heartbeat, process headroom, real QR state and failures after rollout. Only never-started accounts without bound profiles/identities/phone/send history may be handed off. Never send real messages, reset accounts or change funds to verify capacity.
 
-See the expansion PR for final deployment IDs and authenticated-route evidence. Browser health, QR waiting, linked state and message delivery are separate outcomes.
+See config/shared-capacity-plan.json and PR #29 for final deployment IDs and authenticated-route evidence. API runtime/image/assets watches exclude documentation and tests; all worker watches retain their existing dependency manifest. Browser health, QR waiting, linked state and message delivery are separate outcomes.
