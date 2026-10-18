@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),{randomUU
 test('PostgreSQL: Owner shared QR creation uses independent capacity and binds only the first valid linked identity',{skip:!process.env.TEST_DATABASE_URL},async t=>{
  const {Pool}=require('pg'),admin=new Pool({connectionString:process.env.TEST_DATABASE_URL}),name='wa_shared_scan_'+randomUUID().replaceAll('-','');
  await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);url.pathname='/'+name;
- const starts=[],worker=http.createServer((req,res)=>{assert.equal(req.headers.authorization,'Bearer synthetic-shared-scan-secret-32-chars');starts.push(req.url);res.setHeader('Content-Type','application/json');res.end('{"ok":true}');});
+ const starts=[],worker=http.createServer((req,res)=>{assert.equal(req.headers.authorization,'Bearer synthetic-shared-scan-secret-32-chars');if(/^\/accounts\/[a-f\d-]+\/start$/.test(req.url))starts.push(req.url);res.setHeader('Content-Type','application/json');res.end('{"ok":true}');});
  await new Promise(r=>worker.listen(0,'127.0.0.1',r));const address='http://127.0.0.1:'+worker.address().port;
  const groups=Array.from({length:6},(_,i)=>'shared-'+(i+1));
  Object.assign(process.env,{DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'synthetic-shared-scan-secret-32-chars',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'synthetic-owner-password-123',APP_VAULT_KEY:'88'.repeat(32),WORKER_ROUTES_JSON:JSON.stringify(Object.fromEntries(['personal',...groups].map(g=>[g,address]))),SHARED_WORKER_GROUPS_JSON:JSON.stringify(groups)});
@@ -31,7 +31,7 @@ test('PostgreSQL: Owner shared QR creation uses independent capacity and binds o
   assert.deepEqual(await protectedRows(),before);
  });
  await t.test('dedicated fresh capacity creates a QR slot without a number and identical retries never restart it',async()=>{
-  for(const group of ['personal',...groups])await db.pool.query('INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES($1,now(),0,20,$2,true)',[group,group==='personal'?125:5]);
+  for(const group of ['personal',...groups])await db.pool.query('INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES($1,now(),0,20,$2,true)',[group,group==='personal'?10:5]);
   const b=body();first=(await request('/shared/accounts/scan',owner,'POST',b));assert.equal(first.status,201);assert.equal(first.data.started,true);assert.equal(first.data.id,b.request_id);
   let row=(await db.pool.query('SELECT * FROM accounts WHERE id=$1',[b.request_id])).rows[0];assert.equal(row.shared_pool,true);assert.equal(row.shared_scan_unbound,true);assert.equal(row.registration_phone,null);assert.equal(row.phone,null);assert.ok(groups.includes(row.worker_group));assert.equal(row.enabled,true);
   assert.deepEqual(starts,['/accounts/'+row.id+'/start']);
