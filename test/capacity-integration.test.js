@@ -18,15 +18,16 @@ test('PostgreSQL: Owner QR slots reserve pending accounts, honor live resources 
  await db.pool.query("INSERT INTO accounts(id,label,worker_group,deleted_at) VALUES($1,'Deleted fixture','group-b',now())",[randomUUID()]);
  async function state(){return {accounts:(await db.pool.query('SELECT id,enabled,status,profile_bound FROM accounts ORDER BY id')).rows,wallets:(await db.pool.query('SELECT id,credit_units,account_limit FROM users ORDER BY id')).rows,ledger:(await db.pool.query('SELECT count(*)::int n FROM credit_ledger')).rows};}
  const before=await state();
- await t.test('Owner health counts active personal and shared assignments and excludes unconfigured groups',async()=>{
-  const r=await request('/health','GET',null,owner);assert.equal(r.status,200);assert.deepEqual(r.data.map(w=>w.worker_group),['group-a','group-b','group-c','group-d']);
-  const [a,b,c,d]=r.data;assert.equal(a.slots_available,0);assert.equal(a.slots_unavailable,2);assert.equal(a.capacity_state,'resource_wait');
-  assert.equal(b.accounts_running,2);assert.equal(b.assigned_accounts,3);assert.equal(b.slots_used,3);assert.equal(b.slots_available,2);
+ await t.test('Owner personal health excludes dedicated shared groups while preserving resource accounting',async()=>{
+  const r=await request('/health','GET',null,owner);assert.equal(r.status,200);assert.deepEqual(r.data.map(w=>w.worker_group),['group-a','group-c','group-d']);
+  const [a,c,d]=r.data;assert.equal(a.slots_available,0);assert.equal(a.slots_unavailable,2);assert.equal(a.capacity_state,'resource_wait');
   assert.equal(c.slots_available,0);assert.equal(c.slots_unavailable,3);assert.equal(c.capacity_state,'offline');assert.equal(d.slots_available,0);assert.equal(d.capacity_state,'offline');
-  assert.equal(r.data.reduce((n,w)=>n+w.slots_available,0),2);
+  assert.equal(r.data.reduce((n,w)=>n+w.slots_available,0),0);
  });
  await t.test('shared capacity uses only its configured groups and is never returned to USER',async()=>{
   const r=await request('/shared/status?layout=2','GET',null,owner);assert.equal(r.status,200);assert.deepEqual(r.data.groups,['group-b']);assert.equal(r.data.workers.length,1);assert.equal(r.data.workers[0].slots_available,2);
+  const b=r.data.workers[0];assert.equal(b.accounts_running,2);assert.equal(b.assigned_accounts,3);assert.equal(b.slots_used,3);
+  const personal=(await request('/health','GET',null,owner)).data;assert.ok(personal.every(w=>!r.data.groups.includes(w.worker_group)));assert.equal([...personal,...r.data.workers].reduce((n,w)=>n+Number(w.max_accounts||0),0),20);
   assert.equal((await request('/health','GET',null,user)).status,403);
   const mine=(await request('/shared/status?layout=2','GET',null,user)).data;for(const key of ['workers','groups','slots_available','slots_used','slots_unavailable'])assert.equal(mine[key],undefined);
  });
