@@ -390,7 +390,7 @@ async function verifyOwnerBilling(page,language){
 }
 
 async function verifyCapacity(page,fixture,language){
- assert.equal(await page.$('[data-capacity]'),null);
+ assert.equal(await page.$('[data-capacity-scope=personal]'),null);assert.ok(await page.$('[data-capacity-scope=shared]'));
  assert.equal(await page.$('[data-hourly-checks]'),null);
  assert.equal(fixture.requests.some(r=>r.path==='/shared/hourly'),false);
  const overviewStart=fixture.requests.length;
