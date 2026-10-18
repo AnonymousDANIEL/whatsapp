@@ -1,5 +1,5 @@
 {
-  "state": "blocked_by_project_volume_quota",
+  "state": "quota_approved_provisioning",
   "requested_shared_slots": 30,
   "current_personal_slots_preserved": 125,
   "worker_count": 6,
@@ -8,9 +8,10 @@
   "volume_max_mb_per_worker": 10000,
   "vcpus_per_worker": 2,
   "memory_gb_per_worker": 4,
-  "db_pool_size_per_worker": 1,
+  "db_pool_size_per_worker": 2,
+  "api_db_pool_size_after": 10,
   "application_pool_ceiling_before": 87,
-  "application_pool_ceiling_after": 93,
+  "application_pool_ceiling_after": 94,
   "region": "us-east4-eqdc4a",
   "source": "AnonymousDANIEL/whatsapp",
   "branch": "main",
@@ -26,8 +27,10 @@
     {"group": "shared-06", "service": "whatsapp-shared-06"}
   ],
   "secret_reference_policy": "Use same-project whatsapp.DATABASE_URL and whatsapp.INTERNAL_SECRET references; never read, copy or rotate their values.",
-  "routing_policy": "Merge the six new private-domain/PORT references into existing WORKER_ROUTES_JSON; set SHARED_WORKER_GROUPS_JSON to these six groups only after all independent volumes and healthy workers exist.",
+  "routing_policy": "Preserve WORKER_ROUTES_JSON exactly. Add the six new private-domain/PORT references using SHARED_WORKER_ROUTES_JSON and declare only these six groups in SHARED_WORKER_GROUPS_JSON after independent volumes and healthy workers exist. Duplicate legacy group keys fail closed.",
   "activation_policy": "Owner alone registers, connects and scans shared accounts. USERs may only submit their own consented sends. Do not auto-enable shared sending or change pricing.",
-  "platform_block": "Railway rejected an unattached staged blank volume with: You can only have 20 volumes per project.",
-  "next_action": "Increase the existing project's volume quota before provisioning. Do not reuse personal slots, existing profiles or an ephemeral disk. This plan is not active capacity."
+  "quota_approval": "Railway support confirmed the project volume limit was increased to 27 on 2026-10-18. Creation of six new independent 10GB volumes succeeded.",
+  "support_thread": "https://station.railway.com/support/request-to-increase-project-volume-quota-26c447ae",
+  "connection_budget": "Each worker keeps one pool connection for its ownership lock, so DB_POOL_SIZE=1 cannot start. Six pools of two plus the unchanged 72 personal-worker connections and API pool 10 yield ceiling 94; do not change PostgreSQL settings or existing workers.",
+  "next_action": "Verify six deployed workers and authenticated private routing, then verify the real separate 30-slot capacity. This plan does not certify real phone logins or WhatsApp availability."
 }

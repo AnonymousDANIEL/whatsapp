@@ -1,3 +1,10 @@
+# 2026-10-18: independent shared provisioning after Railway quota approval
+
+- Six new services and six fresh independent 10GB volumes were created after Railway support confirmed quota 27. This is provisioning evidence, not deployed QR or real-phone verification. Existing twenty worker deployment IDs and mounts are the baseline for preservation checks.
+- Added API-only shared-routing support so six new dedicated endpoints can be configured without reading, reconstructing or overwriting the OAuth-redacted original route variable. Reject route collisions, undeclared dedicated groups, malformed maps and credentialed/non-origin endpoints; retain legacy combined-map support and no personal-capacity fallback.
+- Corrected the pool budget from one connection to two per new worker because the lifetime ownership lock consumes one. API pool 10 plus unchanged personal pools 72 plus new pools 12 gives configured ceiling 94. No worker source/schema, PostgreSQL setting, account/profile, fund, price or sending switch is changed.
+- Verification required before release: ordinary syntax/tests, actual disposable PostgreSQL worker startup/ownership/heartbeat/authenticated capacity with the planned two-connection pool, existing native shared-scan invariants with additive route configuration, real Chrome Owner/USER zh/en desktop/mobile and both production images. Then verify exact-head/main CI, Railway terminal SUCCESS, all six authenticated private max-five routes, fresh separate capacity totals, and unchanged twenty original active deployments/mounts. Record observed results in the PR; no real phone scan or customer send is a test.
+
 # 2026-10-18: separate shared QR account creation and running capacity
 
 This release adds an Owner-only no-number shared QR creation flow and an independent capacity panel, while retaining legacy bulk registrations and all personal workers. The API-owned first-link migration defaults every historical record to unbound=false, and only binds the first valid trusted ready identity for new shared slots. Registration conflicts remain unavailable, and repeat requests never restart an account.
