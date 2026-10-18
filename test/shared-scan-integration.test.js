@@ -71,6 +71,7 @@ test('PostgreSQL: Owner shared QR creation uses independent capacity and binds o
   const results=await Promise.all(Array.from({length:7},()=>request('/shared/accounts/scan',owner,'POST',body('Concurrent capacity'))));
   assert.equal(results.filter(r=>r.status===201).length,6);assert.equal(results.filter(r=>r.status===503).length,1);
   const rows=(await db.pool.query('SELECT worker_group,count(*)::int n FROM accounts WHERE shared_pool AND enabled AND deleted_at IS NULL GROUP BY worker_group')).rows;assert.equal(rows.length,6);assert.ok(rows.every(r=>r.n===1&&groups.includes(r.worker_group)));
+  const personalCapacity=(await request('/health',owner)).data;assert.deepEqual(personalCapacity.map(w=>w.worker_group),['personal']);assert.equal(personalCapacity[0].max_accounts,10);
   let status=(await request('/shared/status?layout=2',owner)).data;assert.equal(status.workers.reduce((n,w)=>n+w.max_accounts,0),6);assert.equal(status.workers.reduce((n,w)=>n+w.slots_available,0),0);assert.ok(status.groups.every(g=>g!=='personal'));
   await db.pool.query("UPDATE worker_health SET max_accounts=5,heartbeat_at=CASE WHEN worker_group='shared-1' THEN now()+interval '1 hour' ELSE now()-interval '2 minutes' END WHERE worker_group=ANY($1::text[])",[groups]);
   assert.equal((await request('/shared/accounts/scan',owner,'POST',body())).status,503);

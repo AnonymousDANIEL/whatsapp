@@ -531,7 +531,7 @@ async function start() {
   }));
   app.get('/api/health', route(async (req, res) => {
     assert(req.user.role === 'owner', '只有 Owner 可以查看服务信息', 403);
-    res.json(await capacity.read(pool,Object.keys(routes)));
+    res.json(await capacity.read(pool,personalGroups));
   }));
   app.use('/novnc', express.static(path.resolve('node_modules/@novnc/novnc'), { maxAge: '1d' }));
   app.use(express.static(path.join(__dirname, '../public'), { etag: true }));
