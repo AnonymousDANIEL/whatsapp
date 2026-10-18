@@ -3,7 +3,29 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  const {Pool}=require('pg'),admin=new Pool({connectionString:process.env.TEST_DATABASE_URL}),name='wa_test_'+randomUUID().replaceAll('-','');
  if(!process.env.TEST_SINGLE_DATABASE)await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);if(!process.env.TEST_SINGLE_DATABASE)url.pathname='/'+name;
  Object.assign(process.env,{APP_VAULT_KEY:'11'.repeat(32),DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'test-internal-secret-thirty-two-characters',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'test-owner-password-123',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9"}'});
- const db=require('../src/db');let server; t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
+ const db=require('../src/db');let server; t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});await db.migrate();
+ const legacyLogin=randomUUID(),noLogin=randomUUID();
+ await db.pool.query(`INSERT INTO users(id,username,password_hash,role,created_at,password_changed_at)
+  SELECT v.id,v.username,u.password_hash,'user',timestamptz '2000-01-01',timestamptz '2025-01-01'
+  FROM users u CROSS JOIN (VALUES($1::uuid,'legacy-login'),($2::uuid,'legacy-no-login')) v(id,username) WHERE u.role='owner'`,[legacyLogin,noLogin]);
+ await db.pool.query(`INSERT INTO audit(actor_id,action,created_at) VALUES
+  ($1,'login','2023-01-01'),($1,'login','2020-01-01'),($1,'password.change','2025-01-01'),($2,'user.create','2025-01-01')`,[legacyLogin,noLogin]);
+ const legacyBefore=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[ [legacyLogin,noLogin] ])).rows;
+ const api=require('../src/api');await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity()]);server=await api.start();const base='http://127.0.0.1:'+server.address().port;
+ await t.test('login metadata migrates real history once, survives audit removal and never downgrades concurrent logins',async()=>{
+  try{
+   const first=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[[legacyLogin,noLogin]])).rows;
+   for(const row of first){const {last_login_at,...original}=row.snapshot;assert.deepEqual(original,legacyBefore.find(r=>r.id===row.id).snapshot);if(row.id===legacyLogin)assert.equal(+new Date(last_login_at),Date.parse('2023-01-01T00:00:00Z'));else assert.equal(last_login_at,null);}
+   const loginTime=async id=>(await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[id])).rows[0].last_login_at?.toISOString()??null;
+   await db.audit(noLogin,'password.change',noLogin);assert.equal(await loginTime(noLogin),null);
+   await Promise.all(['2026-01-03','2024-01-01','2026-01-02'].map(time=>db.pool.query("INSERT INTO audit(actor_id,action,created_at) VALUES($1,'login',$2)",[legacyLogin,time])));
+   assert.equal(await loginTime(legacyLogin),'2026-01-03T00:00:00.000Z');
+   await db.pool.query('DELETE FROM audit WHERE actor_id=ANY($1::uuid[])',[[legacyLogin,noLogin]]);
+   await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity(),db.migrate()]);
+   assert.equal(await loginTime(legacyLogin),'2026-01-03T00:00:00.000Z');assert.equal(await loginTime(noLogin),null);
+   assert.equal((await db.pool.query("SELECT count(*)::int n FROM pg_trigger WHERE tgrelid='audit'::regclass AND tgname='wa_capture_login_at_v1'")).rows[0].n,1);
+  }finally{await db.pool.query('DELETE FROM audit WHERE actor_id=ANY($1::uuid[])',[[legacyLogin,noLogin]]);await db.pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[legacyLogin,noLogin]]);}
+ });
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body!==null?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  async function login(username,password='user-password-123'){const r=await request('/login','POST',{username,password});assert.equal(r.status,200);const s={cookie:r.cookie};s.csrf=(await request('/me','GET',null,s)).data.csrf;return s;}
  const owner=await login('owner','test-owner-password-123');
@@ -11,6 +33,16 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  const uid=(await request('/users','POST',{username:'user1',password:'user-password-123',role:'user',grants:[{account_id:a}]},owner)).data.id;
  const uid2=(await request('/users','POST',{username:'user2',password:'user-password-123',role:'user',grants:[{account_id:b}]},owner)).data.id;
  const user=await login('user1'),user2=await login('user2');
+ await t.test('latest successful sign-in is Owner-only; refreshes and failed authentication do not change it',async()=>{
+  const before=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u ORDER BY id')).rows;
+  const managed=(await request('/users','GET',null,owner)).data;
+  for(const row of before){assert.ok(row.snapshot.last_login_at);assert.equal(+new Date(managed.find(u=>u.id===row.id).last_login_at),+new Date(row.snapshot.last_login_at));assert.equal(managed.find(u=>u.id===row.id).password,undefined);}
+  for(const session of [owner,user,user2]){const mine=await request('/me','GET',null,session);assert.equal(mine.status,200);assert.equal(mine.data.user.last_login_at,undefined);}
+  for(const row of (await request('/users?compact=true','GET',null,owner)).data)assert.equal(row.last_login_at,undefined);
+  assert.equal((await request('/users','GET',null,user)).status,403);
+  assert.equal((await request('/login','POST',{username:'user1',password:'wrong-synthetic-password'})).status,401);
+  assert.deepEqual((await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u ORDER BY id')).rows,before);
+ });
  const template={title:'Task',account_id:a,body:'Authorized fake message',recipients:'0123456789\n+60123456789\nwrong',opt_in_confirmed:true,timezone:'Asia/Kuala_Lumpur',window_start:'09:00',window_end:'18:00',scheduled_at:'2030-10-02T09:15',expires_at:'2030-10-03T18:00',weekdays:[1,2,3,4,5,6,7],interval_ms:10000};
  await t.test('account numbers are visible only while linked and refresh to the new identity without altering retained data',async()=>{
   const original=(await db.pool.query('SELECT status,phone,enabled,deleted_at,heartbeat_at FROM accounts WHERE id=$1',[a])).rows[0];
@@ -69,7 +101,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    assert.equal(mine.ledger.length,session===user?1:0);for(const row of mine.ledger){assert.deepEqual(Object.keys(row).sort(),['balance_units','created_at','delta_units','id','kind','recipient_id']);assert.equal(row.note,undefined);assert.equal(row.actor_id,undefined);}
   }
   const ownerView=(await request('/billing?user_id='+uid,'GET',null,owner)).data;
-  assert.equal(ownerView.user.id,uid);assert.equal(Number(ownerView.price_units),1000);assert.equal(Number(ownerView.held_units),0);assert.equal(ownerView.ledger.length,1);assert.deepEqual(ownerView.held,[]);
+  assert.equal(ownerView.user.id,uid);assert.equal(Number(ownerView.price_units),1000);assert.equal(Number(ownerView.held_units),0);assert.equal(ownerView.ledger.length,1);assert.deepEqual(ownerView.held,[]);assert.equal(ownerView.ledger[0].note,adjustment.note);assert.equal(Number(ownerView.ledger[0].delta_units),1000000);assert.equal(Number(ownerView.ledger[0].balance_units),1000000);
  });
  let task;
  await t.test('users have equal assigned capabilities and cannot administer IDs or cross scope',async()=>{
@@ -568,17 +600,19 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   let rows=(await request('/users?passwords=true','GET',null,owner)).data;
   assert.equal(rows.find(x=>x.id===uid2).password,undefined);assert.equal(rows.find(x=>x.id===uid2).password_cipher,undefined);
+  const ownerLogin=(await db.pool.query("SELECT last_login_at FROM users WHERE role='owner'")).rows[0].last_login_at;
   assert.equal((await request('/users/password-access','POST',{password:'user-password-123'},user2)).status,403);
   assert.equal((await request('/users/password-access','POST',{password:'wrong'},owner)).status,403);
   assert.equal((await request('/users/password-access','POST',{password:'test-owner-password-123'},owner)).status,200);
   assert.equal((await request('/me','GET',null,owner)).data.password_access,true);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,'user-password-123');
-  const before=(await db.pool.query('SELECT password_hash,password_cipher,password_changed_at FROM users WHERE id=$1',[uid2])).rows[0];
+  assert.deepEqual((await db.pool.query("SELECT last_login_at FROM users WHERE role='owner'")).rows[0].last_login_at,ownerLogin);
+  const before=(await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,last_login_at FROM users WHERE id=$1',[uid2])).rows[0];
   const denied=await request('/password','POST',{current_password:'user-password-123',password:'changed-user-password-123'},user2);
   assert.equal(denied.status,403);assert.equal(denied.data.error,'只有 Owner 可以修改密码');
   assert.equal((await request('/password','POST',{},user2)).status,403);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'changed-user-password-123'},user2)).status,403);
-  assert.deepEqual((await db.pool.query('SELECT password_hash,password_cipher,password_changed_at FROM users WHERE id=$1',[uid2])).rows[0],before);
+  assert.deepEqual((await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,last_login_at FROM users WHERE id=$1',[uid2])).rows[0],before);
   assert.equal((await request('/me','GET',null,user2)).status,200);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'owner-reset-user-password-123'},{...owner,csrf:'wrong'})).status,403);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:true,password:'owner-reset-user-password-123'},owner)).status,200);
@@ -587,7 +621,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.ok(!(await db.pool.query('SELECT password_cipher FROM users WHERE id=$1',[uid2])).rows[0].password_cipher.includes('owner-reset-user-password-123'));
   assert.equal((await request('/me','GET',null,user2)).status,401);
   assert.equal((await request('/login','POST',{username:'user2',password:'user-password-123'})).status,401);
+  assert.deepEqual((await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at,before.last_login_at);
   Object.assign(user2,await login('user2','owner-reset-user-password-123'));
+  assert.ok(+(await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at>+before.last_login_at);
   await db.pool.query("UPDATE sessions SET password_reveal_until=now()-interval '1 second' WHERE user_id IN(SELECT id FROM users WHERE role='owner')");
   assert.equal((await request('/me','GET',null,owner)).data.password_access,false);
   assert.equal((await request('/users?passwords=true','GET',null,owner)).data.find(x=>x.id===uid2).password,undefined);
@@ -640,10 +676,12 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const grants=(await db.pool.query('SELECT * FROM account_grants WHERE user_id=$1 ORDER BY account_id',[uid2])).rows;
   const recipients=(await db.pool.query('SELECT id,status FROM recipients WHERE campaign_id=$1 ORDER BY id',[cid])).rows;
   const other=await login('user2','owner-reset-user-password-123');
+  const lastLogin=(await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at;
   const inactive=await request(path,'PATCH',{active:false,password:'must-not-change-password',remark:'must-not-change-remark',grants:[]},owner);
   assert.equal(inactive.status,200);assert.deepEqual(inactive.data,{id:uid2,active:false,locked:false});
   for(const session of [user2,other])assert.equal((await request('/me','GET',null,session)).status,401);
   assert.equal((await request('/login','POST',{username:'user2',password:'owner-reset-user-password-123'})).status,401);
+  assert.deepEqual((await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at,lastLogin);
   assert.deepEqual((await db.pool.query('SELECT '+fields+' FROM users WHERE id=$1',[uid2])).rows[0],before);
   assert.deepEqual((await db.pool.query('SELECT * FROM account_grants WHERE user_id=$1 ORDER BY account_id',[uid2])).rows,grants);
   assert.deepEqual((await db.pool.query('SELECT enabled,pause_reason FROM campaigns WHERE id=$1',[cid])).rows[0],{enabled:false,pause_reason:null});
@@ -668,11 +706,13 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await request('/billing/adjust','POST',{user_id:uid2,amount:'1',direction:'add',note:'Synthetic lock test credit',request_id:randomUUID()},owner);
   const created=await request('/campaigns','POST',{...template,account_id:b,title:'Lock test',send_now:true,recipients:'0123456789'},user2);assert.equal(created.status,201);const cid=created.data.id;
   const before=(await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,credit_units,remark FROM users WHERE id=$1',[uid2])).rows[0];
+  const lastLogin=(await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at;
   assert.equal((await request('/users/'+uid2,'PATCH',{active:true,locked:true},owner)).status,200);
   const managed=(await request('/users','GET',null,owner)).data.find(u=>u.id===uid2);assert.equal(managed.active,true);assert.equal(managed.locked,true);
   assert.deepEqual((await db.pool.query('SELECT password_hash,password_cipher,password_changed_at,credit_units,remark FROM users WHERE id=$1',[uid2])).rows[0],before);
   assert.equal((await request('/me','GET',null,user2)).status,401);
   assert.equal((await request('/login','POST',{username:'user2',password:'owner-reset-user-password-123'})).status,401);
+  assert.deepEqual((await db.pool.query('SELECT last_login_at FROM users WHERE id=$1',[uid2])).rows[0].last_login_at,lastLogin);
   await assert.rejects(billing.canPay(uid2),e=>e.status===403);
   const blocked=await db.transaction(tx=>billing.reserveForSend(tx,uid2,900005));assert.deepEqual(blocked,{ok:false,pause_reason:null,error:'USER_LOCKED'});
   assert.equal((await db.pool.query('SELECT 1 FROM message_charges WHERE recipient_id=900005')).rowCount,0);
@@ -705,7 +745,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  await t.test('deactivation revokes sessions; purge requires Owner and explicit phrase',async()=>{
   assert.equal((await request('/users/'+uid,'PATCH',{active:false},owner)).status,200);assert.equal((await request('/me','GET',null,user)).status,401);
   assert.equal((await request('/data/purge','POST',{confirm:'wrong'},owner)).status,400);
+  const loginSnapshot=(await db.pool.query('SELECT id,last_login_at FROM users ORDER BY id')).rows;
   assert.equal((await request('/data/purge','POST',{confirm:'DELETE HISTORY'},owner)).status,200);
+  assert.deepEqual((await db.pool.query('SELECT id,last_login_at FROM users ORDER BY id')).rows,loginSnapshot);
   for(const table of ['campaigns','recipients','message_history','audit','receipts'])assert.equal((await db.pool.query('SELECT count(*)::int n FROM '+table)).rows[0].n,0);
   assert.equal((await request('/me','GET',null,owner)).status,200);assert.equal((await request('/accounts','GET',null,owner)).data.length,2);
  });

@@ -7,6 +7,7 @@ const puppeteer=require('puppeteer');
 const root=path.resolve(__dirname,'../public');
 const accountId='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-4222-8222-222222222222';
 let current;
+const ledgerNote='Synthetic transfer remark <img src=x onerror=alert(1)>\nSecond line';
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
 const managedUsers=[{id:'active-user',username:'Active fixture',role:'user',active:true,locked:false},{id:'inactive-user',username:'Inactive fixture',role:'user',active:false,locked:false},{id:'locked-user',username:'Locked fixture',role:'user',active:true,locked:true}];
 function groupedOverview(s){
@@ -30,7 +31,7 @@ const server=http.createServer(async(req,res)=>{
     const personal={id:accountId,label:'fixture personal'+(s.accountSuffix||''),enabled:true,status:s.accountStatus||'ready',phone:s.accountPhone||'15555550101',history_synced_at:null};
     result=s.role==='owner'?[...managedUsers.map((u,i)=>({...personal,id:i?'account-'+i:accountId,assigned_users:[{id:u.id,username:u.username,active:u.active}]})),{...personal,id:'owner-account',assigned_users:[]}]:[personal];
    }
-   else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers];
+   else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers].map(u=>({...u,last_login_at:s.loginDates[u.id]??null}));
    else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
    else if(p==='/campaigns')result=s.taskReview?[{id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}}]:[];
    else if(p==='/overview')result=s.role==='owner'&&url.searchParams.get('layout')==='2'?groupedOverview(s):{counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
@@ -39,7 +40,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
-   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',created_at:'2026-10-15T06:00:00Z'}]};
+   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
     result={enabled:s.enabled,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:capacityRows(s).map(w=>w.worker_group),workers:capacityRows(s)});
@@ -268,11 +269,51 @@ async function verifyGroupedOverview(page,fixture){
  await page.focus(active+' summary');await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('[data-overview-user="active-user"]').open);
  assert.equal(fixture.requests.some(r=>r.path==='/overview'&&r.query==='?layout=2'),true);
 }
+async function verifyOwnerLoginActivity(page,fixture,language){
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ await page.evaluate(()=>{page='users';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
+ assert.match(await page.$eval('#content thead',n=>n.textContent),language==='en'?/Last sign-in UTC\+8/:/最新登入时间 UTC\+8/);
+ assert.doesNotMatch(await page.$eval('#content thead',n=>n.textContent),/Password updated|密码更新时间/);
+ const active='tr:has([data-remark="active-user"]) .last-login';
+ assert.equal(await page.$$eval('.last-login',nodes=>nodes.map(n=>n.dataset.loginRecency).sort().join(',')),'green,orange');
+ assert.equal(await page.$eval('.last-login.green',n=>getComputedStyle(n).color),'rgb(103, 216, 177)');
+ assert.equal(await page.$eval(active,n=>getComputedStyle(n).color),'rgb(255, 184, 103)');
+ const expected=await page.evaluate(value=>new Date(value).toLocaleString(document.documentElement.lang==='en'?'en-GB':'zh-CN',{timeZone:'Asia/Kuala_Lumpur',hourCycle:'h23'}),fixture.loginDates['active-user']);
+ assert.equal(await page.$eval(active,n=>n.textContent),expected);
+ assert.match(await page.$eval(active,n=>n.getAttribute('aria-label')),language==='en'?/at least 1 day/:/满 1 天/);
+ await page.select('#user-status-filter','locked');
+ assert.equal(await page.$eval('.last-login',n=>n.dataset.loginRecency),'red');assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(255, 142, 150)');
+ await page.select('#user-status-filter','inactive');
+ assert.equal(await page.$eval('.last-login',n=>n.dataset.loginRecency),'neutral');
+ assert.equal(await page.$eval('.last-login',n=>n.textContent),language==='en'?'No sign-in record':'暂无登入记录');
+ assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(181, 188, 199)');
+ await page.select('#user-status-filter','active');
+ const boundaries=await page.evaluate(()=>{const now=Date.parse('2030-01-08T00:00:00Z');return [0,86400000-1,86400000,7*86400000-1,7*86400000].map(age=>loginRecency(new Date(now-age).toISOString(),now)).concat([loginRecency(null,now),loginRecency('invalid',now)]);});
+ assert.deepEqual(boundaries,['green','green','orange','orange','red','neutral','neutral']);
+ // An unchanged response still ages across 24 hours through the real quiet poll.
+ const original=fixture.loginDates['active-user'];fixture.loginDates['active-user']=new Date(Date.now()-86400000+3000).toISOString();
+ await page.evaluate(()=>{document.activeElement?.blur();return loadPage();});assert.equal(await page.$eval(active,n=>n.dataset.loginRecency),'green');
+ await page.waitForFunction(selector=>document.querySelector(selector)?.dataset.loginRecency==='orange',{timeout:15000},active);
+ fixture.loginDates['active-user']=original;await page.evaluate(()=>loadPage());
+ await page.setViewport({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.equal(await page.$eval(active,n=>n.dataset.loginRecency),'orange');
+ await page.setViewport({width:1440,height:1000});
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);assert.equal(fixture.requests.some(r=>r.path==='/users/password-access'||r.query.includes('passwords=true')),false);
+ await page.click('#nav [data-page=shared]');await waitReady(page);
+ console.log('Owner login recency PASS: '+language+' / real timestamps, green/orange/red/no-history, exact 24h/7d boundaries, automatic aging and mobile');
+}
+
 async function verifyOwnerBilling(page,language){
  await page.evaluate(()=>{page='billing';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
  assert.match(await page.$eval('.credit-ledger h3',n=>n.textContent),language==='en'?/Credit ledger \(latest 100\)/:/余额流水（最近 100 条）/);
  assert.equal(await page.$$eval('.credit-ledger tbody tr',nodes=>nodes.length),1);
  assert.match(await page.$eval('.credit-ledger',n=>n.textContent),/RM 1000\.0000/);
+ assert.equal(await page.$eval('.credit-ledger th:last-child',n=>n.textContent),language==='en'?'Remark':'备注');
+ assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>n.textContent),ledgerNote);
+ assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>getComputedStyle(n).whiteSpace),'pre-wrap');
+ assert.equal(await page.$('.credit-ledger img'),null);
+ await page.setViewport({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>n.textContent),ledgerNote);await page.setViewport({width:1440,height:1000});
+ console.log('Owner ledger remark PASS: '+language+' / escaped multiline note, unchanged balance and mobile layout');
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 
@@ -330,6 +371,7 @@ async function verifyCapacity(page,fixture,language){
 
 async function runCase(browser,base,role,language){
  current={role,language,enabled:true,available:2,requests:[],sends:[],failNext:false};
+ current.loginDates={'ui-owner':new Date(Date.now()-600000).toISOString(),'active-user':new Date(Date.now()-2*86400000).toISOString(),'locked-user':new Date(Date.now()-8*86400000).toISOString()};
  const fixture=current,context=await browser.createBrowserContext(),page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:1440,height:1000});
@@ -349,6 +391,7 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$('[data-shared-login]'),null);
   assert.equal(await page.$('[data-capacity]'),null);
   assert.equal(await page.$('#nav [data-page=users]'),null);
+  assert.equal(await page.$('.last-login'),null);assert.equal(fixture.requests.some(r=>r.path==='/users'),false);
   assert.equal(fixture.requests.some(r=>['/shared/accounts','/shared/hourly'].includes(r.path)),false);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/10000000|可用余额|Available credit|Available balance/);
   assert.equal(await page.$$eval('.shared-cards .card',n=>n.length),1);
@@ -361,6 +404,7 @@ async function runCase(browser,base,role,language){
  }else{
   await verifyCapacity(page,fixture,language);
   await verifyOwnerBilling(page,language);
+  await verifyOwnerLoginActivity(page,fixture,language);
   assert.equal(await page.$eval('#content strong',n=>n.textContent),'<img src=x onerror=alert(1)>');
   await page.click('[data-shared-login]');
   assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+accountId+'&mode=operate','_blank','noopener']);

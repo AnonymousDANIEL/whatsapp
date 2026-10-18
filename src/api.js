@@ -96,7 +96,41 @@ function permissionsFor(actor, values) {
 async function workerCommand(account, command) {
   return browser.request(account, '/accounts/' + account.id + '/' + command, 'POST');
 }
+// API-owned metadata migration: shared worker schema files stay unchanged so
+// linked browser workers do not redeploy for this Owner-only display feature.
+async function ensureLoginActivity() {
+  const ready=async c=>{
+    const {rows}=await c.query(`SELECT
+      EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='users'::regclass AND attname='last_login_at' AND NOT attisdropped) AS field,
+      EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='audit'::regclass AND tgname='wa_capture_login_at_v1' AND NOT tgisinternal AND tgenabled='O') AS capture`);
+    return rows[0].field&&rows[0].capture;
+  };
+  if(await ready(pool))return;
+  await transaction(async c=>{
+    await c.query("SET LOCAL lock_timeout='10s'");
+    await c.query("SET LOCAL statement_timeout='60s'");
+    await c.query('SELECT pg_advisory_xact_lock(194812733)');
+    if(await ready(c))return;
+    await c.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at timestamptz');
+    // Capture the existing successful-login audit event, including requests
+    // served by an older API replica during a rolling release or rollback.
+    await c.query(`CREATE OR REPLACE FUNCTION wa_capture_login_at_v1() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        UPDATE users SET last_login_at=NEW.created_at
+          WHERE id=NEW.actor_id AND (last_login_at IS NULL OR last_login_at<NEW.created_at);
+        RETURN NEW;
+      END;
+    $$`);
+    await c.query(`CREATE OR REPLACE TRIGGER wa_capture_login_at_v1 AFTER INSERT ON audit FOR EACH ROW
+      WHEN (NEW.action='login' AND NEW.actor_id IS NOT NULL) EXECUTE FUNCTION wa_capture_login_at_v1()`);
+    await c.query(`UPDATE users u SET last_login_at=l.last_login_at FROM
+      (SELECT actor_id,max(created_at) AS last_login_at FROM audit WHERE action='login' AND actor_id IS NOT NULL GROUP BY actor_id) l
+      WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
+  });
+}
 async function start() {
+  await ensureLoginActivity();
+  console.log('Login activity metadata ready: v1');
   const app = express();
   app.set('trust proxy', security.proxyHops(process.env.TRUST_PROXY_HOPS));
   app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:', 'blob:'], connectSrc: ["'self'"], frameSrc: ["'self'"], objectSrc: ["'none'"], frameAncestors: ["'self'"] } }, crossOriginEmbedderPolicy: false }));
@@ -241,7 +275,7 @@ async function start() {
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
     if(req.query.compact==='true')return res.json((await pool.query('SELECT id,username,role FROM users ORDER BY created_at')).rows);
     const reveal=req.query.passwords==='true'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date();
-    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.locked,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,
+    const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.locked,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,u.last_login_at,
       (SELECT count(*)::int FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL) AS account_count,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows;
     res.json(rows.map(u=>{const cipher=u.password_cipher;delete u.password_cipher;return{...u,password_available:!!cipher,password:reveal&&u.role!=='owner'&&cipher?vault.open(cipher,'user-password:'+u.id):undefined,password_access:!!reveal};}));
@@ -559,7 +593,7 @@ async function start() {
   process.on('SIGTERM', () => { for (const ws of wss.clients) ws.close(); server.close(() => pool.end().then(() => process.exit(0))); setTimeout(() => process.exit(0), 10000).unref(); });
   return server;
 }
-module.exports = { start, getSession, access };
+module.exports = { start, getSession, access, ensureLoginActivity };
 
 
 
