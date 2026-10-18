@@ -48,6 +48,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   const data=(await request('/shared/status?layout=2','GET',null,owner)).data;assert.deepEqual(data.groups,[]);assert.deepEqual(data.workers,[]);assert.equal(data.summary.available,0);
   const count=(await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n;
   assert.equal((await request('/shared/accounts','POST',{phones:'+15555550101',groups:['group-a']},owner)).status,400);
+  assert.equal((await request('/shared/accounts/scan','POST',{request_id:require('node:crypto').randomUUID(),label:'No configured shared worker'},owner)).status,503);
   assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n,count);
   assert.deepEqual((await request('/me','GET',null,owner)).data.worker_groups,['group-a']);
  });

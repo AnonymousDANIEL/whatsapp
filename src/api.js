@@ -8,6 +8,7 @@ const allocation=require('./account-allocation');
 const capacity=require('./capacity');
 const overview=require('./overview');
 const ownerHistory=require('./owner-history'),sharedConsole=require('./shared-console');
+const sharedAccounts=require('./shared-accounts');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -132,6 +133,7 @@ async function ensureLoginActivity() {
 async function start() {
   await ensureLoginActivity();
   await sharedConsole.ensureOptions();
+  await sharedAccounts.ensureLinking();
   console.log('Login activity metadata ready: v1');
   console.log('Shared console ready: '+JSON.stringify({dedicated_groups:sharedGroups.length}));
   const app = express();
@@ -180,6 +182,7 @@ async function start() {
   payments.routes(app,route,uuid);
   banks.routes(app,route);
   sharedConsole.routes(app,route,poolRoutes);
+  sharedAccounts.routes(app,route,poolRoutes,workerCommand);
   ownerHistory.routes(app,route);
   shared.routes(app,route,uuid,poolRoutes,workerCommand);
   app.get('/api/notice',route(async(req,res)=>{

@@ -1,3 +1,11 @@
+# 2026-10-18: separate shared QR account creation and running capacity
+
+This release adds an Owner-only no-number shared QR creation flow and an independent capacity panel, while retaining legacy bulk registrations and all personal workers. The API-owned first-link migration defaults every historical record to unbound=false, and only binds the first valid trusted ready identity for new shared slots. Registration conflicts remain unavailable, and repeat requests never restart an account.
+
+Validation includes a disposable native PostgreSQL shared-scan integration parent, real Chrome Owner/USER Chinese/English form/retry/capacity/mobile checks, existing actor/photo/billing/QR regressions and both production images. Exact-head and main CI plus live deployment/asset/worker readbacks are recorded in the pull request. Synthetic fixtures are not proof of a real linked phone.
+
+The current Railway inventory has 22 healthy deployed services and one never-deployed empty worker-u. Existing twenty personal browser deployments and all profile mounts must remain unchanged. The earlier actual project-volume quota rejection still blocks six new independent shared workers (30 slots); no new shared capacity or real QR login is claimed by this release.
+
 ## Owner send groups and shared console controls — 2026-10-18 evening
 
 - Owner personal tasks/history use separate collapsed per-sender groups with lazy reads, independent pagination, retained disclosure state, keyboard controls and partial group failures. The API attributes actual recorded creators/manual actors rather than current grants, retains Owner-visible USER deletions, suppresses duplicates and excludes shared records. USER endpoints and controls stay scoped.

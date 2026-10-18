@@ -5,6 +5,11 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  '尚未配置共享专用扫码容量':'Dedicated shared QR capacity is not configured.',
+  '共享扫码容量暂不可用，请查看共享运行容量':'Shared QR capacity is temporarily unavailable. Check Shared running capacity.',
+  '请选择已配置的共享浏览器分组':'Select a configured shared running group.',
+  '添加账号过于频繁，请稍后再试':'Too many add-account requests. Please try later.',
+
   "只有 Owner 可以继续或重新启动已有任务":"Only the Owner can resume or restart existing tasks.",
   "USER 只能暂停任务，不能继续":"USERs can pause tasks but cannot resume them.",
   "只有 Owner 可以取消或删除任务":"Only the Owner can cancel or delete tasks.",

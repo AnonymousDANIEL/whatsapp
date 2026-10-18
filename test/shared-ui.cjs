@@ -63,6 +63,7 @@ const server=http.createServer(async(req,res)=>{
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
    else if(p==='/shared/settings')result={ok:true};
+   else if(p==='/shared/accounts/scan'&&req.method==='POST'){if(s.scanFailNext){s.scanFailNext=false;res.statusCode=503;result={error:'Synthetic add retry'};}else result={id:body.request_id,started:true};}
    else if(p==='/shared/accounts'&&req.method==='POST')result={created:2,duplicates:0};
    else if(p==='/shared/send'){
     s.sends.push(body);
@@ -143,7 +144,7 @@ async function verifySharedPhotos(page,fixture,role,language){
   assert.equal(fixture.imagesEnabled,false);assert.ok(await page.$('#shared-send-form input[name=photo]'));
   await page.click('#shared-photo-toggle');await page.waitForFunction(()=>document.querySelector('#shared-photo-toggle').getAttribute('aria-pressed')==='true');
   assert.deepEqual({enabled:fixture.enabled,available:fixture.available},original);
-  fixture.sharedCapacityRows=Array.from({length:6},(_,i)=>({worker_group:'fixture-shared-'+i,max_accounts:5,slots_used:0,slots_available:5,heartbeat_at:new Date().toISOString()}));
+  fixture.sharedCapacityRows=Array.from({length:6},(_,i)=>({worker_group:'fixture-shared-'+i,max_accounts:5,slots_used:0,slots_available:5,can_start_more:true,heartbeat_at:new Date().toISOString()}));
   await page.evaluate(()=>loadPage());assert.deepEqual(await page.$$eval('.shared-cards .value',nodes=>nodes.slice(-3).map(n=>n.textContent)),['30','0','30']);
   fixture.sharedCapacityRows=null;await page.evaluate(()=>loadPage());
  }else{
@@ -440,6 +441,39 @@ async function verifyCapacity(page,fixture,language){
  await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 
+async function verifySharedQr(page,fixture,language){
+ const start=fixture.requests.length;
+ fixture.sharedCapacityRows=Array.from({length:6},(_,i)=>({worker_group:'fixture-shared-'+i,accounts_running:0,max_accounts:5,assigned_accounts:0,slots_used:0,slots_available:5,can_start_more:true,heartbeat_at:new Date().toISOString()}));
+ await page.evaluate(()=>loadPage());await page.waitForSelector('[data-capacity-scope=shared]');
+ assert.equal(await page.$eval('[data-capacity-total]',n=>n.textContent),'30');
+ assert.equal(await page.$eval('[data-capacity-available]',n=>n.textContent),'30');
+ assert.equal(await page.$eval('[data-capacity-scope=shared]',n=>n.open),false);
+ await page.click('[data-capacity-scope=shared]>summary');await page.waitForFunction(()=>document.querySelector('[data-capacity-scope=shared] summary').getAttribute('aria-expanded')==='true');
+ assert.deepEqual(await page.$$eval('[data-capacity-scope=shared] tbody tr td:first-child',nodes=>nodes.map(n=>n.textContent)),Array.from({length:6},(_,i)=>'Share WhatsApp '+(i+1)));
+ await page.click('#shared-add');await page.waitForSelector('#shared-account-form');
+ assert.equal(await page.$('#shared-account-form [name=phones]'),null);assert.equal(await page.$('#shared-account-form [name=phone]'),null);
+ assert.match(await page.$eval('#shared-account-form',n=>n.textContent),language==='en'?/Linked devices/:/关联设备/);
+ assert.equal(await page.$$eval('#shared-account-form select option',nodes=>nodes.length),7);
+ fixture.scanFailNext=true;
+ await page.$eval('#shared-account-form',f=>{f.elements.namedItem('label').value='Synthetic shared QR';f.requestSubmit();});
+ await page.waitForFunction(()=>!document.querySelector('#shared-account-form').dataset.busy);
+ assert.equal(await page.$eval('#modal',n=>n.open),true);assert.equal(await page.$eval('#shared-account-form [name=label]',n=>n.value),'Synthetic shared QR');
+ await page.$eval('#shared-account-form',f=>f.requestSubmit());await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
+ const requests=fixture.requests.filter(r=>r.path==='/shared/accounts/scan');assert.equal(requests.length,2);assert.deepEqual(requests[0].body,requests[1].body);assert.match(requests[0].body.request_id,/^[a-f\d-]{36}$/);assert.equal(requests[0].body.label,'Synthetic shared QR');assert.equal(requests[0].csrf,'fake-ui-csrf');
+ await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('[data-capacity-scope=shared]',n=>n.open),true);
+ await page.reload({waitUntil:'networkidle0'});await waitReady(page);assert.equal(await page.$eval('[data-capacity-scope=shared]',n=>n.open),true);
+ fixture.sharedCapacityRows=[];await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('[data-capacity-total]',n=>n.textContent),'0');assert.equal(await page.$eval('#shared-add',n=>n.disabled),false);
+ await page.click('#shared-add');await page.waitForSelector('#shared-account-form');
+ assert.equal(await page.$eval('#shared-account-form button[type=submit]',n=>n.disabled),true);
+ assert.match(await page.$eval('[data-shared-add-capacity]',n=>n.textContent),language==='en'?/not configured/:/尚未配置/);
+ for(const width of [390,1440]){await page.setViewport({width,height:width===390?844:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
+ await page.click('#close-modal');
+ fixture.sharedCapacityRows=[{worker_group:'fixture-shared-0',max_accounts:5,slots_used:0,slots_available:5,can_start_more:false,heartbeat_at:new Date().toISOString()}];await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('[data-capacity-available]',n=>n.textContent),'0');await page.click('#shared-add');await page.waitForSelector('#shared-account-form');assert.equal(await page.$eval('#shared-account-form button[type=submit]',n=>n.disabled),true);await page.click('#close-modal');
+ assert.equal(fixture.requests.slice(start).some(r=>r.path==='/health'),false);
+ fixture.sharedCapacityRows=null;await page.evaluate(()=>loadPage());
+}
 async function runCase(browser,base,role,language){
  current={role,language,enabled:true,available:2,requests:[],sends:[],failNext:false};
  current.loginDates={'ui-owner':new Date(Date.now()-600000).toISOString(),'active-user':new Date(Date.now()-2*86400000).toISOString(),'locked-user':new Date(Date.now()-8*86400000).toISOString()};
@@ -476,7 +510,8 @@ async function runCase(browser,base,role,language){
   await verifyCapacity(page,fixture,language);
   await verifyOwnerBilling(page,language);
   await verifyOwnerLoginActivity(page,fixture,language);
-  assert.equal(await page.$eval('#content strong',n=>n.textContent),'<img src=x onerror=alert(1)>');
+  await verifySharedQr(page,fixture,language);
+  assert.equal(await page.$eval('[data-shared-login]',n=>n.closest('tr').querySelector('strong').textContent),'<img src=x onerror=alert(1)>');
   await page.click('[data-shared-login]');
   assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+accountId+'&mode=operate','_blank','noopener']);
   await page.click('#shared-settings');
@@ -491,7 +526,7 @@ async function runCase(browser,base,role,language){
   await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
   const update=fixture.requests.findLast(r=>r.path==='/shared/settings'&&r.method==='PUT');
   assert.equal(update.body.hours.length,24);assert.equal(update.body.price,'0.2');assert.equal(update.body.hours[8].price,'0.3');assert.equal(update.csrf,'fake-ui-csrf');
-  await page.click('#shared-add');
+  await page.click('#shared-register');
   await page.waitForFunction(()=>document.querySelector('#modal').open);
   assert.match(await page.$eval('#modal',n=>n.textContent),language==='en'?/does not create a phone number or register WhatsApp/:/不会自动产生手机号或完成 WhatsApp 注册/);
   await page.evaluate(()=>{
