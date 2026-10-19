@@ -85,6 +85,41 @@ async function waitReady(page,kind='shared'){
  await page.waitForFunction(kind=>!loading&&document.querySelector('#shell')?.hidden===false&&document.querySelector('#content')?.querySelector(kind==='shared'?'#shared-send-form':'[data-results]'),{},kind);
 }
 
+async function verifySidebar(page,fixture,role,language){
+ const expanded=id=>page.$eval('#nav [data-nav-toggle='+id+']',n=>n.getAttribute('aria-expanded')==='true');
+ const arrow=async id=>{
+  const unchanged=await page.evaluate(id=>{const before=pageRequestVersion,current=page;document.querySelector('#nav [data-nav-toggle='+id+']').click();return pageRequestVersion===before&&page===current;},id);
+  assert.equal(unchanged,true,'The arrow changes disclosure without navigating or loading a page');
+ };
+ const navigate=async(id,part)=>{await page.click('#nav [data-page='+id+'] '+part);await page.waitForFunction(id=>page===id&&!loading&&lastRenderedPage===id,{},id);};
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ for(const id of role==='owner'?['billing','banks','accounts','shared','users']:['accounts','shared']){
+  if(id==='banks'&&!await expanded('billing'))await arrow('billing');
+  if(await expanded(id))await arrow(id);
+  await navigate(id,'.nav-label');assert.equal(await expanded(id),false,'A menu label does not open its list');
+  await arrow(id);assert.equal(await expanded(id),true);
+  await navigate(id,'.nav-icon');assert.equal(await expanded(id),true,'A menu icon does not close its list');
+  await navigate('overview','.nav-label');await navigate(id,'.nav-label');assert.equal(await expanded(id),true,'Navigation back to a parent preserves its open list');
+  await page.evaluate(()=>navigation());assert.equal(await expanded(id),true);
+  await arrow(id);assert.equal(await expanded(id),false);
+  assert.equal(await page.$eval('#nav [data-page='+id+']',n=>n.hasAttribute('aria-expanded')),false);
+ }
+ await page.setViewport({width:390,height:844});
+ await page.focus('#nav [data-nav-toggle=shared]');await page.keyboard.press('Enter');assert.equal(await expanded('shared'),true);
+ await navigate('shared','.nav-label');await waitReady(page);assert.equal(await expanded('shared'),true);
+ await page.reload({waitUntil:'networkidle0'});await waitReady(page);assert.equal(await expanded('shared'),true);
+ await page.focus('#nav [data-nav-toggle=shared]');await page.keyboard.press('Space');assert.equal(await expanded('shared'),false);
+ await page.evaluate(()=>loadPage(true));assert.equal(await expanded('shared'),false,'Polling must not reopen the list');
+ await page.reload({waitUntil:'networkidle0'});await waitReady(page);assert.equal(await expanded('shared'),false);
+ await page.click('#nav [data-nav-toggle=shared]');assert.equal(await expanded('shared'),true);
+ await page.focus('#nav [data-page=shared-tasks]');await page.keyboard.press('Escape');assert.equal(await expanded('shared'),false);
+ await page.click('#nav [data-nav-toggle=shared]');assert.equal(await expanded('shared'),true);
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);
+ await page.setViewport({width:1440,height:1000});
+ console.log('Sidebar PASS: '+role+' / '+language+' / arrow-only disclosure, parent labels/icons, nested banks, keyboard, polling, reload and mobile');
+}
+
 async function verifyAccountIdentity(page,fixture,role,language){
  const cell=role==='owner'?'[data-account-user=owner] tbody tr td:first-child':'#content tbody tr td:first-child';
  const oldPhone='+15555550101',newPhone='+15555550102',writes=fixture.requests.filter(r=>r.method!=='GET').length;
@@ -399,10 +434,19 @@ async function verifyCapacity(page,fixture,language){
  assert.equal(await page.$('[data-capacity]'),null);assert.equal(await page.$('[data-hourly-checks]'),null);
  assert.equal(fixture.requests.slice(overviewStart).some(r=>['/health','/shared/hourly'].includes(r.path)),false);
  if(await page.$eval('#nav [data-nav-toggle=users]',n=>n.getAttribute('aria-expanded'))==='false')await page.click('#nav [data-nav-toggle=users]');
- await page.click('#nav [data-page=system]');await page.waitForSelector('[data-capacity]');
+ const systemStart=fixture.requests.length;
+ await page.click('#nav [data-page=system]');await page.waitForSelector('[data-hourly-checks]');
  assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('.overview-chart'),null);
+ assert.equal(await page.$('[data-capacity]'),null);
+ assert.equal(fixture.requests.slice(systemStart).some(r=>r.path==='/health'),false);
  assert.equal(await page.$eval('#page-title',n=>n.textContent),language==='en'?'Service status':'服务状态');
  assert.equal(await page.$$eval('[data-account-user],[data-view]',nodes=>nodes.length),0);
+ const accountsStart=fixture.requests.length;
+ await page.click('#nav [data-page=accounts]');await page.waitForSelector('[data-capacity-scope=personal]');
+ assert.equal(await page.$('[data-hourly-checks]'),null);
+ assert.equal(await page.$eval('#content',n=>n.firstElementChild.matches('[data-capacity-scope=personal]')),true);
+ assert.ok(await page.$('[data-account-user=owner]'));assert.ok(await page.$('#add-account'));
+ assert.equal(fixture.requests.slice(accountsStart).some(r=>r.path==='/shared/hourly'),false);
  async function summary(available,used,total,unavailable,rows){
   for(const [key,value] of Object.entries({available,used,total,unavailable}))assert.equal(await page.$eval('[data-capacity-'+key+']',n=>Number(n.textContent.replaceAll(',',''))),value);
   assert.equal(await page.$$eval('[data-capacity] tbody tr',n=>n.length),rows);
@@ -430,15 +474,24 @@ async function verifyCapacity(page,fixture,language){
  await page.click('[data-capacity]>summary');await page.waitForFunction(()=>document.querySelector('[data-capacity] summary').getAttribute('aria-expanded')==='false');
  await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('[data-capacity]',n=>n.open),false);
  fixture.capacityFailure=true;await page.evaluate(()=>loadPage());
- assert.equal(await page.$('.overview-chart'),null);assert.ok(await page.$('[data-hourly-checks]'));assert.equal(await page.$('[data-capacity-total]'),null);
+ assert.equal(await page.$('.overview-chart'),null);assert.equal(await page.$('[data-hourly-checks]'),null);assert.equal(await page.$('[data-capacity-total]'),null);
+ assert.ok(await page.$('#add-account'));assert.ok(await page.$('[data-account-user=owner] [data-view]'));
  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Cannot load this section/:/暂时无法加载/);
  fixture.capacityFailure=false;await page.evaluate(()=>loadPage());await summary(101,17,125,7,20);
  fixture.capacityRows=null;await page.evaluate(()=>loadPage());await summary(7,3,10,0,1);
+ // Preserve an Owner's expansion saved before the panel moved from Service status.
+ await page.evaluate(()=>{sessionStorage.setItem('wa_dashboard_open',JSON.stringify({user_id:me.id,role:me.role,open:['capacity:system']}));});
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-capacity-scope=personal]');
+ assert.equal(await page.$eval('[data-capacity]',n=>n.open),true);
+ await page.click('[data-capacity]>summary');await page.waitForFunction(()=>!document.querySelector('[data-capacity]').open);
+ await page.click('#nav [data-page=system]');await page.waitForSelector('[data-hourly-checks]');assert.equal(await page.$('[data-capacity]'),null);
+ await page.click('#nav [data-page=accounts]');await page.waitForSelector('[data-capacity-scope=personal]');assert.equal(await page.$eval('[data-capacity]',n=>n.open),false);
  const returnStart=fixture.requests.length;
  await page.click('#nav [data-page=overview]');await page.waitForSelector('[data-overview-owner]');
  assert.equal(await page.$('[data-capacity]'),null);assert.equal(await page.$('[data-hourly-checks]'),null);
  assert.equal(fixture.requests.slice(returnStart).some(r=>['/health','/shared/hourly'].includes(r.path)),false);
  await page.click('#nav [data-page=shared]');await waitReady(page);
+ console.log('Capacity placement PASS: '+language+' / Owner accounts first, hourly-only Service status, independent saved state, live arithmetic and isolated errors');
 }
 
 async function verifySharedQr(page,fixture,language){
@@ -491,6 +544,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$$eval('#nav .nav-entry',nodes=>nodes.every(n=>n.querySelectorAll('svg.nav-icon[aria-hidden=true][focusable=false]').length===1)),true);
  assert.equal(await page.$eval('#nav [data-page=overview] .nav-icon',n=>getComputedStyle(n).width),'18px');
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script,img[onerror]').length),0);
+ await verifySidebar(page,fixture,role,language);
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);
   assert.equal(await page.$('[data-shared-login]'),null);

@@ -75,7 +75,7 @@ function restoreMenuState(tree){
 function syncMenuState(){
  document.querySelectorAll('#nav [data-nav-toggle]').forEach(toggle=>{
   const id=toggle.dataset.navToggle,open=navOpen.has(id),list=document.getElementById('nav-sub-'+id),entry=toggle.previousElementSibling;
-  list.hidden=!open;entry.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-expanded',String(open));
+  list.hidden=!open;toggle.setAttribute('aria-expanded',String(open));
   const label=entry.querySelector('.nav-label').textContent;toggle.setAttribute('aria-label',T(open?'收起':'展开',open?'Collapse':'Expand')+' '+label);
  });
 }
@@ -91,16 +91,15 @@ function navigation(){
  const collect=nodes=>nodes.forEach(n=>{available.push(n.page);if(n.children.length)branches.push(n.page);collect(n.children);});collect(tree);
  if(!available.includes(page)){page=page==='fpx'?'billing':'overview';sessionStorage.setItem('wa_page',page);}
  restoreMenuState(tree);navOpen=new Set([...navOpen].filter(id=>branches.includes(id)));saveMenuState();
- const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]),branch=n.children.length>0,open=navOpen.has(n.page),control='nav-sub-'+n.page;return `<li><div class="nav-row"><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}" ${branch?`aria-expanded="${open}" aria-controls="${control}"`:''}>${navIcon(n.page)}<span class="nav-label">${esc(title)}</span></button>${branch?`<button type="button" class="nav-toggle" data-nav-toggle="${n.page}" aria-expanded="${open}" aria-controls="${control}" aria-label="${esc(T(open?'收起':'展开',open?'Collapse':'Expand')+' '+title)}"><span class="nav-chevron" aria-hidden="true">›</span></button>`:''}</div>${branch?render(n.children,depth+1).replace('<ul class="nav-children">',`<ul class="nav-children" id="${control}" ${open?'':'hidden'}>`):''}</li>`;}).join('')}</ul>`;
+ const render=(nodes,depth=0)=>`<ul class="${depth?'nav-children':'nav-tree'}">${nodes.map(n=>{const title=n.page==='bank-deposits'&&me.role==='owner'?T('充值单据','Deposit receipts'):T(...labels[n.page]),branch=n.children.length>0,open=navOpen.has(n.page),control='nav-sub-'+n.page;return `<li><div class="nav-row"><button type="button" data-page="${n.page}" class="nav-entry nav-level-${depth}">${navIcon(n.page)}<span class="nav-label">${esc(title)}</span></button>${branch?`<button type="button" class="nav-toggle" data-nav-toggle="${n.page}" aria-expanded="${open}" aria-controls="${control}" aria-label="${esc(T(open?'收起':'展开',open?'Collapse':'Expand')+' '+title)}"><span class="nav-chevron" aria-hidden="true">›</span></button>`:''}</div>${branch?render(n.children,depth+1).replace('<ul class="nav-children">',`<ul class="nav-children" id="${control}" ${open?'':'hidden'}>`):''}</li>`;}).join('')}</ul>`;
  const html=render(tree),signature=JSON.stringify([tree,WA_LANG]);
  $('#identity').textContent=me.username;$('#role').textContent=me.role==='owner'?T('Owner · 总管理员','Owner · Administrator'):'USER ID';$('#password-btn').hidden=me.role!=='owner';
  const nav=$('#nav');nav.setAttribute('aria-label',T('主菜单','Main menu'));
  if(nav.dataset.signature!==signature){const scroll=nav.scrollTop;nav.innerHTML=html;nav.dataset.signature=signature;nav.scrollTop=scroll;}syncMenuState();
  nav.onclick=e=>{
   const toggle=e.target.closest('[data-nav-toggle]');if(toggle){toggleMenu(toggle.dataset.navToggle);return;}
-  const b=e.target.closest('[data-page]');if(!b)return;const target=b.dataset.page,branch=branches.includes(target);
-  if(branch)toggleMenu(target);else{for(const id of menuPath(tree,target)||[])navOpen.add(id);saveMenuState();syncMenuState();}
-  if(branch&&page===target)return;page=target;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));
+  const b=e.target.closest('[data-page]');if(!b)return;const target=b.dataset.page;
+  if(page===target)return;page=target;sessionStorage.setItem('wa_page',page);loadPage().catch(e=>toast(e.message,true));
  };
  nav.onkeydown=e=>{if(e.key!=='Escape')return;const list=e.target.closest('.nav-children');if(!list)return;const toggle=list.previousElementSibling.querySelector('[data-nav-toggle]');if(toggle&&navOpen.has(toggle.dataset.navToggle)){e.preventDefault();navOpen.delete(toggle.dataset.navToggle);saveMenuState();syncMenuState();toggle.focus();}};
  pageHeader();
@@ -120,6 +119,7 @@ async function loadPage(quiet=false){
  const requested=page;pageHeader();
  if(!quiet&&lastRenderedPage!==requested)$('#content').innerHTML=`<div class="loading">${T('正在加载…','Loading…')}</div>`;
  const timeout=setTimeout(()=>controller.abort('timeout'),15000),get=path=>api(path,{signal:controller.signal});
+ const optional=promise=>promise.then(rows=>({rows})).catch(e=>{if(e.status===401||controller.signal.aborted)throw e;return{unavailable:true};});
  try{
   const jobs={};
   if(me.role!=='owner'||requested==='fpx')jobs.paymentSettings=get('/payments/settings').catch(e=>{if(e.status===401||controller.signal.aborted||me?.role==='owner')throw e;return{enabled:false,unavailable:true};});
@@ -131,7 +131,7 @@ async function loadPage(quiet=false){
   if(requested==='shared-tasks')jobs.sharedTasks=get('/shared/tasks?page='+sharedUI.tasksPage);
   if(requested==='shared-records')jobs.sharedRecords=get('/shared/records?page='+sharedUI.recordsPage);
   if(['overview','accounts','tasks','messages'].includes(requested))jobs.accounts=get('/accounts');
-  if(requested==='accounts'&&me.role==='owner')jobs.accountUsers=get('/users');
+  if(requested==='accounts'&&me.role==='owner'){jobs.accountUsers=get('/users');jobs.accountCapacity=optional(get('/health'));}
   if(me.role!=='owner'||requested==='notices')jobs.notice=get('/notice');
   if(requested==='overview')jobs.overview=get(me.role==='owner'?'/overview?layout=2':'/overview');
   if(requested==='tasks'&&me.role!=='owner')jobs.campaigns=get('/campaigns');
@@ -143,10 +143,7 @@ async function loadPage(quiet=false){
    jobs.sendGroups=get('/owner/send-groups?kind='+kind);
    jobs.sendItems=Promise.all([...dashboardOpen].filter(key=>key.startsWith(prefix)).map(async key=>{const actor=key.slice(prefix.length);try{return[actor,await get('/owner/send-items?kind='+kind+'&actor_id='+encodeURIComponent(actor)+'&page='+(sendPages[kind][actor]||1))];}catch(e){if(e.status===401||controller.signal.aborted)throw e;return[actor,{unavailable:true}];}})).then(Object.fromEntries);
   }
-  if(requested==='system'&&me.role==='owner'){
-   const optional=promise=>promise.then(rows=>({rows})).catch(e=>{if(e.status===401||controller.signal.aborted)throw e;return{unavailable:true};});
-   jobs.systemCapacity=optional(get('/health'));jobs.systemHourly=optional(get('/shared/hourly'));
-  }
+  if(requested==='system'&&me.role==='owner')jobs.systemHourly=optional(get('/shared/hourly'));
   if(requested==='billing'){
    if(me.role==='owner')jobs.users=get('/users?compact=true');
    jobs.billing=get('/billing'+(billingUser?'?user_id='+encodeURIComponent(billingUser):''));
@@ -170,7 +167,7 @@ async function loadPage(quiet=false){
   const scrollX=window.scrollX,scrollY=window.scrollY,tableScroll=[...document.querySelectorAll('#content .table-wrap')].map(n=>n.scrollLeft);
   if(['banks','bank-deposits','bank-transactions'].includes(requested))renderBankPage(requested,data);
   if(['shared','shared-tasks','shared-records'].includes(requested))renderSharedPage(requested,data);
-  if(requested==='overview')overview(data);if(requested==='accounts')accountPage();if(requested==='tasks')taskPage();if(requested==='users')userPage();
+  if(requested==='overview')overview(data);if(requested==='accounts')accountPage(data);if(requested==='tasks')taskPage();if(requested==='users')userPage();
   if(requested==='fpx')fpxPage();if(requested==='audit')auditPage(data.audit);if(requested==='messages')messagesPage(data.messages);if(requested==='billing')billingPage(data);if(requested==='system')systemPage(data);if(requested==='notices')noticePage();
   lastRenderedPage=requested;lastRenderSignature=signature;
   if(quiet){document.querySelectorAll('#content .table-wrap').forEach((n,i)=>{n.scrollLeft=tableScroll[i]||0;});window.scrollTo(scrollX,scrollY);}
@@ -211,6 +208,7 @@ function restoreDashboardDisclosures(){
  dashboardSession=scope;dashboardOpen=new Set();let saved;
  try{saved=JSON.parse(sessionStorage.getItem('wa_dashboard_open'));}catch{}
  if(saved?.user_id===me.id&&saved.role===me.role&&Array.isArray(saved.open)&&saved.open.length<=5000)dashboardOpen=new Set(saved.open.filter(k=>typeof k==='string'&&k.length<=100));
+ if(dashboardOpen.delete('capacity:system'))dashboardOpen.add('capacity:personal');
 }
 function bindDashboardDisclosures(){
  document.querySelectorAll('details[data-dashboard-key]').forEach(group=>{
@@ -270,10 +268,13 @@ function accountSections(){
   return `<details class="panel account-group" data-account-user="${esc(g.id)}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="${esc(listId)}"><span class="account-group-heading"><span class="account-group-name">${esc(g.username)}</span>${owner?'':`<span class="badge account-user-state ${status}" data-user-status="${status}"><span class="status-dot" aria-hidden="true"></span>${status.toUpperCase()}</span>`}</span><span class="muted">${owner?T('Owner / 未分配','Owner / unassigned'):'USER ID'} · ${g.accounts.length} ${T('个账号','accounts')}</span></summary><div id="${esc(listId)}" class="account-group-content">${accountTable(g.accounts)}</div></details>`;
  }).join('');
 }
-function accountPage(){
+function accountPage(data){
  const owner=me.role==='owner';
+ const capacity=data.accountCapacity;
+ const capacityMarkup=owner?(capacity?.rows?capacityPanel(capacity.rows,capacity.rows.map(w=>w.worker_group),T('剩余名额已扣除已分配但尚未启动的账号。离线或等待资源的分组暂不计为可用。','Available slots exclude assigned accounts that have not started. Offline or resource-blocked groups are temporarily unavailable.')):unavailablePanel(T('运行容量','Running capacity'))):'';
  const toolbar=`<div class="toolbar toolbar-wrap"><h2>${T('WhatsApp 账号','WhatsApp accounts')}</h2><button id="add-account" ${!owner&&accounts.filter(a=>!a.deleted_at).length>=(me.account_limit||10)?'disabled':''}>${T('添加账号','Add account')}</button></div>`;
- $('#content').innerHTML=`${ownerHint('画面断开不代表 WhatsApp 被封。连接检查会区分浏览器画面、服务状态和 WhatsApp 登录状态。','A disconnected screen does not mean WhatsApp is banned. Connection checks distinguish screen, service and WhatsApp login status.')}${owner?toolbar+accountSections():`<section class="panel">${toolbar}${accountTable()}</section>`}`;
+ $('#content').innerHTML=`${capacityMarkup}${ownerHint('画面断开不代表 WhatsApp 被封。连接检查会区分浏览器画面、服务状态和 WhatsApp 登录状态。','A disconnected screen does not mean WhatsApp is banned. Connection checks distinguish screen, service and WhatsApp login status.')}${owner?toolbar+accountSections():`<section class="panel">${toolbar}${accountTable()}</section>`}`;
+ if(owner)bindDashboardDisclosures();
  bindAccountGroups();bindAccounts();$('#add-account').onclick=()=>modal(T('添加账号','Add account'),`<form><label>${T('备注 / 名称','Name / note')}<input name="label" required maxlength="80"></label><input type="hidden" name="worker_group" value="${esc(boot.groups[0]||'')}"><p>${T('保存后用手机 WhatsApp 关联设备扫码。','After saving, scan the QR code using Linked devices on your phone.')}</p>${submit()}</form>`,async f=>{const r=await api('/accounts',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});toast(r.started?T('已启动，请打开扫码窗口','Started. Open the QR window.'):connectionText(r.connection));});
 }
 function bindAccounts(){document.querySelectorAll('[data-delete-account]').forEach(b=>b.onclick=()=>{const a=accounts.find(a=>a.id===b.dataset.deleteAccount);if(confirm(me.role==='owner'?T(`删除“${a.label}”及其后台任务、发送记录和服务器登录资料？手机 WhatsApp 账号不会注销。`,`Delete “${a.label}”, its dashboard tasks, message history and server login data? This does not delete the WhatsApp account on your phone.`):T(`删除“${a.label}”并停止其任务？Owner 仍可查看保留的资料与删除记录。`,`Delete “${a.label}” and stop its tasks? The Owner can still see retained data and the deletion record.`)))action(b,()=>api('/accounts/'+a.id,{method:'DELETE'}));});document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>window.open(`/viewer.html?id=${b.dataset.view}&mode=${b.dataset.mode}`,'_blank','noopener'));document.querySelectorAll('[data-rename]').forEach(b=>b.onclick=()=>{const a=accounts.find(a=>a.id===b.dataset.rename);modal(T('修改账号名称','Rename account'),`<form><label>${T('备注 / 名称','Name / note')}<input name="label" required maxlength="80" value="${esc(a.label)}"></label>${submit()}</form>`,f=>api('/accounts/'+a.id,{method:'PATCH',body:JSON.stringify({label:f.elements.namedItem('label').value})}));});document.querySelectorAll('[data-check]').forEach(b=>b.onclick=async()=>{try{const r=await api('/accounts/'+b.dataset.check+'/connection?mode=operate');modal(T('连接检查','Connection check'),`<p>${esc(connectionText(r))}</p><p>${T('画面或网络中断不能用来判断账号被封。','Screen or network interruptions do not establish that an account is banned.')}</p>`);}catch(e){toast(e.message,true);}});document.querySelectorAll('[data-start]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/accounts/'+b.dataset.start+'/restart',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}finally{b.disabled=false;}});document.querySelectorAll('[data-enabled]').forEach(b=>b.onclick=async()=>{const a=accounts.find(a=>a.id===b.dataset.enabled);try{await api('/accounts/'+a.id,{method:'PATCH',body:JSON.stringify({enabled:!a.enabled})});await loadPage();}catch(e){toast(e.message,true);}});}
@@ -353,7 +354,7 @@ function messagesPage(rows){
 }
 
 function capacityPanel(rows,groups,note='',options={}){
- restoreDashboardDisclosures();const key='capacity:'+page,open=dashboardOpen.has(key);
+ restoreDashboardDisclosures();const scope=options.scope||'personal',key='capacity:'+scope,open=dashboardOpen.has(key);
  const integer=n=>Number.isSafeInteger(Number(n))&&Number(n)>0?Number(n):0;
  const now=Date.now()+clockOffset;
  const items=groups.map((g,i)=>{
@@ -372,11 +373,10 @@ function hourlyChecksPanel(rows){
 }
 function systemPage(data){
  if(me.role!=='owner')return;
- const unavailable=title=>`<section class="panel"><h2>${title}</h2><p class="muted">${T('暂时无法加载，请刷新重试。','Cannot load this section. Refresh to retry.')}</p></section>`;
- const capacity=data.systemCapacity,hourly=data.systemHourly;
- $('#content').innerHTML=(capacity?.rows?capacityPanel(capacity.rows,capacity.rows.map(w=>w.worker_group),T('剩余名额已扣除已分配但尚未启动的账号。离线或等待资源的分组暂不计为可用。','Available slots exclude assigned accounts that have not started. Offline or resource-blocked groups are temporarily unavailable.')):unavailable(T('运行容量','Running capacity')))+(hourly?.rows?hourlyChecksPanel(hourly.rows):unavailable(T('每小时连接检查','Hourly connection checks')));
- bindDashboardDisclosures();
+ const hourly=data.systemHourly;
+ $('#content').innerHTML=hourly?.rows?hourlyChecksPanel(hourly.rows):unavailablePanel(T('每小时连接检查','Hourly connection checks'));
 }
+function unavailablePanel(title){return `<section class="panel"><h2>${esc(title)}</h2><p class="muted">${T('暂时无法加载，请刷新重试。','Cannot load this section. Refresh to retry.')}</p></section>`;}
 $('#language').onchange=e=>{localStorage.setItem('wa_language',e.target.value);location.reload();};$('#close-modal').onclick=()=>$('#modal').close();$('#session-retry').onclick=boot;
 $('#login-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{await api('/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await boot();}catch(err){$('#login-error').textContent=err.message;}finally{b.disabled=false;}};
 $('#logout').onclick=async()=>{try{await api('/logout',{method:'POST',body:'{}'});showLogin();}catch(e){toast(e.message,true);}};$('#refresh').onclick=()=>loadPage().catch(e=>toast(e.message,true));

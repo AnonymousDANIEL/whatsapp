@@ -1,3 +1,10 @@
+# 2026-10-19: arrow-only sidebar and personal capacity placement
+
+- Sidebar chevrons alone change a list disclosure. Parent labels and icons navigate without collapsing or reopening the list. Native keyboard activation, Escape, nested Banks, per-identity persisted state, polling and logout cleanup remain.
+- Owner personal Running capacity now appears first on WhatsApp accounts; Service status retains only Hourly connection checks. Overview and USER pages issue no infrastructure reads. Shared WhatsApp retains its separate shared capacity panel. Preserve historical personal expansion via the capacity:system to capacity:personal migration, independent shared choices, live counters and local capacity-error display alongside working account controls.
+- Updated the existing real Chrome fixture coverage for both roles/languages, nested labels/icons versus chevrons, keyboard/poll/reload/mobile, Owner panel placement, saved-state migration, failure isolation and 125-slot arithmetic. Exact CI and actual deployment evidence will be recorded in the pull request after checks complete. Frontend app cache version: layout12.
+- No backend, routes, schema, worker image, service configuration, quotas, profile, credential, message or financial data changes. Verify all 35 browser-worker and PostgreSQL active deployment IDs and every mount stay unchanged around the API-only release; do not use real customer sends or phone links as tests.
+
 # 2026-10-19: verified 100 shared slots after provider quota approval
 
 - Railway's official reply supplied by the Owner confirms 1,000 volumes per project on Pro without a plan/contract change. Nine normal volume creates and nine new deployments succeeded. Fourteen personal g-t groups were each proven empty by both fresh assigned-record counts and live browser capacity before their pool-only changes; all fourteen rollouts also reached SUCCESS. The g and shared-08 canaries were verified first. No occupied a-f service, original shared service or PostgreSQL deployment was restarted; all original profile mounts are retained.
