@@ -362,7 +362,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    assert.equal((await db.pool.query('SELECT count(*)::integer n FROM campaigns')).rows[0].n,before);
    connected=true;const response=await request('/campaigns','POST',payload,user);assert.equal(response.status,201);
    const created=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[response.data.id])).rows[0];assert.equal(created.enabled,true);assert.equal(created.send_now,true);assert.equal(created.pause_reason,null);
-   await request('/campaigns/'+created.id,'PATCH',{enabled:false},user);
+   await request('/campaigns/'+created.id,'PATCH',{enabled:false},owner);
   }finally{global.fetch=originalFetch;}
  });
  await t.test('USER tasks have details only; stale ACKs isolate the old task and Owner can purge without refunding unknown credit',async()=>{
@@ -509,7 +509,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await db.pool.query('UPDATE users SET credit_units=2000 WHERE id=$1',[uid2]);
   const make=async title=>(await request('/campaigns','POST',{...template,title,account_id:b,send_now:true},user2)).data.id;
   const auto=await make('Credit auto-resume'),manual=await make('Manual stop'),review=await make('Review stop'),cancelled=await make('Cancelled stop'),removed=await make('Deleted stop');
-  await request('/campaigns/'+manual,'PATCH',{enabled:false},user2);
+  await request('/campaigns/'+manual,'PATCH',{enabled:false},owner);
   await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='review' WHERE id=$1",[review]);
   await db.pool.query("UPDATE recipients SET status='unknown' WHERE campaign_id=$1 AND status='pending'",[review]);
   assert.equal((await request('/campaigns/'+cancelled+'/cancel','POST',{},owner)).status,200);
@@ -538,11 +538,11 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal(await billing.resumeCreditTasks(uid2,'other-group'),0);assert.equal(await billing.resumeCreditTasks(uid2,'group-a'),1);
   // A user can explicitly stop automatic recovery while their wallet is empty.
   await db.pool.query("UPDATE campaigns SET enabled=false,pause_reason='credit' WHERE id=$1",[recovery]);await db.pool.query('UPDATE users SET credit_units=0 WHERE id=$1',[uid2]);
-  assert.equal((await request('/campaigns/'+recovery,'PATCH',{enabled:false},user2)).status,200);await adjustment('1');assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[recovery])).rows[0].enabled,false);
+  assert.equal((await request('/campaigns/'+recovery,'PATCH',{enabled:false},owner)).status,200);await adjustment('1');assert.equal((await db.pool.query('SELECT enabled FROM campaigns WHERE id=$1',[recovery])).rows[0].enabled,false);
   const legacy=await make('Legacy credit pause'),legacyManual=await make('Legacy manual pause');
   await db.pool.query('UPDATE campaigns SET enabled=false,pause_reason=NULL WHERE id=ANY($1::uuid[])',[[legacy,legacyManual]]);
   await db.pool.query("UPDATE recipients SET error_code='CREDIT_REQUIRED' WHERE campaign_id=ANY($1::uuid[]) AND status='pending'",[[legacy,legacyManual]]);
-  await request('/campaigns/'+legacyManual,'PATCH',{enabled:false},user2);
+  await request('/campaigns/'+legacyManual,'PATCH',{enabled:false},owner);
   await db.pool.query("DELETE FROM app_migrations WHERE name='credit_auto_resume_v1'");await db.migrate();
   assert.equal((await db.pool.query('SELECT pause_reason FROM campaigns WHERE id=$1',[legacy])).rows[0].pause_reason,'credit');
   assert.equal((await db.pool.query('SELECT pause_reason FROM campaigns WHERE id=$1',[legacyManual])).rows[0].pause_reason,null);
