@@ -1,0 +1,2135 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-10-19T14:45:29.102Z",
+  "project_id": "1c47fb5b-4692-4e66-91a3-2efd7809dabb",
+  "environment_id": "66f08e45-5e19-46f8-a447-597980fbceaf",
+  "production_commit": "779213092ef49c35c3e2320c29532f946ea0cb39",
+  "api_deployment_id": "4045bdbe-1019-4fe7-937d-6c734dfd2cb1",
+  "service_count": 37,
+  "all_service_status_checks_online": true,
+  "failures_or_active_warnings_last_6h": 0,
+  "private_worker_count": 35,
+  "public_worker_domains_or_tcp_proxies": 0,
+  "public_postgres_domains_or_tcp_proxies": 0,
+  "staged_changes": null,
+  "http_500s_since": "2026-10-19T08:30:00Z",
+  "observed_http_500_count": 0,
+  "critical_runtime_error_window_start": "2026-10-19T12:30:00Z",
+  "critical_runtime_error_checks": [
+    {
+      "service": "whatsapp",
+      "id": "49ca4271-812c-449c-9be9-ea81bb8e2764",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-05",
+      "id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-t",
+      "id": "aa22b9e8-368b-411f-845c-a8cc9fadad07",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-p",
+      "id": "29e3adf4-f591-4434-928f-59774c87baf6",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-l",
+      "id": "5d33d52c-fe91-4e5d-9ac5-90205db9978a",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-g",
+      "id": "4278892a-5362-4452-adc3-d9424790b16e",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-s",
+      "id": "42ec1ff3-568c-485d-af56-ab6dc131bfd5",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-i",
+      "id": "746a6a7c-12a4-40ed-97b9-52a02e0ddc29",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "diligent-eagerness",
+      "id": "a55183ab-c9cb-4922-9ca5-ee99377d9a13",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-o",
+      "id": "7b00458e-b8e1-4363-86e9-7f7b3da54280",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-n",
+      "id": "42f5274b-6e31-497e-b17b-cf2d1e80cf72",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-h",
+      "id": "727d7128-35f4-4dc0-9c80-f97ca9095cf5",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-f",
+      "id": "b938e5e8-8a9a-4230-b754-079729793b4f",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-b",
+      "id": "18ee5992-031f-4401-a692-aae36407c6f2",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-m",
+      "id": "3c37b6ce-f717-474c-91f0-4da09efcfca3",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-r",
+      "id": "469a3a04-089d-4f72-91ce-0fd1359d5aa2",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-e",
+      "id": "62fa4980-2fe2-4520-8d80-1a285a0728ad",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-q",
+      "id": "362a7baf-354d-4123-878d-c69cff624d77",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-j",
+      "id": "93961029-9f97-413d-9251-a5fd483ea4bc",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-d",
+      "id": "8c2b714b-9d84-4fb7-8542-1cf9ebd3934d",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-c",
+      "id": "2b060bae-3e05-496b-8558-e78cb45e0b90",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-03",
+      "id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-01",
+      "id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-02",
+      "id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-15",
+      "id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-14",
+      "id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-11",
+      "id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-06",
+      "id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-07",
+      "id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-12",
+      "id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-09",
+      "id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-08",
+      "id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-worker-k",
+      "id": "1a97bb2b-b1ef-44ba-a95e-cf76f1e31e47",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-04",
+      "id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-13",
+      "id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "entries": [],
+      "limit_reached": false
+    },
+    {
+      "service": "whatsapp-shared-10",
+      "id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "entries": [],
+      "limit_reached": false
+    }
+  ],
+  "shared_capacity_snapshot": {
+    "groups": 15,
+    "total": 100,
+    "used": 0,
+    "available": 100,
+    "unavailable": 0,
+    "all_fresh": true
+  },
+  "personal_capacity_snapshot": [
+    {
+      "group": "group-a",
+      "running": 3,
+      "assigned": 3,
+      "heartbeat_at": "2026-10-19T14:32:49.270Z",
+      "state": "available"
+    },
+    {
+      "group": "group-b",
+      "running": 4,
+      "assigned": 4,
+      "heartbeat_at": "2026-10-19T14:32:49.532Z",
+      "state": "available"
+    },
+    {
+      "group": "group-c",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.473Z",
+      "state": "available"
+    },
+    {
+      "group": "group-d",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:46.315Z",
+      "state": "available"
+    },
+    {
+      "group": "group-e",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.928Z",
+      "state": "available"
+    },
+    {
+      "group": "group-f",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:47.296Z",
+      "state": "available"
+    },
+    {
+      "group": "group-g",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:48.047Z",
+      "state": "available"
+    },
+    {
+      "group": "group-h",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.671Z",
+      "state": "available"
+    },
+    {
+      "group": "group-i",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:48.184Z",
+      "state": "available"
+    },
+    {
+      "group": "group-j",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:47.100Z",
+      "state": "available"
+    },
+    {
+      "group": "group-k",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:46.866Z",
+      "state": "available"
+    },
+    {
+      "group": "group-l",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.350Z",
+      "state": "available"
+    },
+    {
+      "group": "group-m",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.425Z",
+      "state": "available"
+    },
+    {
+      "group": "group-n",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:45.787Z",
+      "state": "available"
+    },
+    {
+      "group": "group-o",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:46.693Z",
+      "state": "available"
+    },
+    {
+      "group": "group-p",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:48.388Z",
+      "state": "available"
+    },
+    {
+      "group": "group-q",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:47.624Z",
+      "state": "available"
+    },
+    {
+      "group": "group-r",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:46.733Z",
+      "state": "available"
+    },
+    {
+      "group": "group-s",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:49.249Z",
+      "state": "available"
+    },
+    {
+      "group": "group-t",
+      "running": 0,
+      "assigned": 0,
+      "heartbeat_at": "2026-10-19T14:32:47.732Z",
+      "state": "available"
+    }
+  ],
+  "qr_state_counts": {
+    "running": 7,
+    "ready": 1,
+    "waiting_for_scan": 6
+  },
+  "database_metrics": [
+    {
+      "measurement": "CPU_USAGE",
+      "current": 0.008455223333333333,
+      "average": 0.03446438730593608,
+      "min": 0.008455223333333333,
+      "max": 0.04201309333333333,
+      "sampleCount": 73
+    },
+    {
+      "measurement": "MEMORY_USAGE_GB",
+      "current": 0.381003776,
+      "average": 0.3561895992554904,
+      "min": 0.3055324728888889,
+      "max": 0.3835198577777778,
+      "sampleCount": 73
+    },
+    {
+      "measurement": "DISK_USAGE_GB",
+      "current": 1.165426688,
+      "average": 1.1655151665875185,
+      "min": 1.165328384,
+      "max": 1.165723648,
+      "sampleCount": 73
+    }
+  ],
+  "dependency_audit": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "dependencies": {
+      "prod": 190,
+      "dev": 0,
+      "optional": 81,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 270
+    }
+  },
+  "public_security_checks": [
+    {
+      "path": "/",
+      "status": 200,
+      "headers": {
+        "cache-control": "public, max-age=0",
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/healthz",
+      "status": 200,
+      "headers": {
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      },
+      "health": {
+        "ok": true,
+        "role": "api"
+      }
+    },
+    {
+      "path": "/api/health",
+      "status": 401,
+      "headers": {
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/api/shared/status?layout=2",
+      "status": 401,
+      "headers": {
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/api/users?passwords=true",
+      "status": 401,
+      "headers": {
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/api/billing",
+      "status": 401,
+      "headers": {
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data: blob:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' 'unsafe-inline';upgrade-insecure-requests;connect-src 'self';frame-src 'self'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/.env",
+      "status": 404,
+      "headers": {
+        "content-security-policy": "default-src 'none'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/.git/config",
+      "status": 404,
+      "headers": {
+        "content-security-policy": "default-src 'none'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    },
+    {
+      "path": "/data/",
+      "status": 404,
+      "headers": {
+        "content-security-policy": "default-src 'none'",
+        "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()",
+        "referrer-policy": "no-referrer",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN"
+      }
+    }
+  ],
+  "worker_metrics": [
+    {
+      "id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "name": "whatsapp-shared-05",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002842733333333333,
+          "average": 0.0006123906849315067,
+          "min": 0.0002842733333333333,
+          "max": 0.0019537233333333332,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04517888,
+          "average": 0.0445119084322679,
+          "min": 0.03953664,
+          "max": 0.083433472,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:01.651260135Z",
+      "error": false
+    },
+    {
+      "id": "aa22b9e8-368b-411f-845c-a8cc9fadad07",
+      "name": "whatsapp-worker-t",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0004588,
+          "average": 0.0009270414611872146,
+          "min": 0.0004588,
+          "max": 0.00316885,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04465152,
+          "average": 0.04694185123652967,
+          "min": 0.040137728,
+          "max": 0.090528768,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:50.861535615Z",
+      "error": false
+    },
+    {
+      "id": "29e3adf4-f591-4434-928f-59774c87baf6",
+      "name": "whatsapp-worker-p",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:09.733814327Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0006688166666666667,
+          "average": 0.0009048345662100458,
+          "min": 0.00026276,
+          "max": 0.0035470666666666665,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.043227136,
+          "average": 0.045497610743205054,
+          "min": 0.040479744,
+          "max": 0.088709632,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "5d33d52c-fe91-4e5d-9ac5-90205db9978a",
+      "name": "whatsapp-worker-l",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00031429333333333337,
+          "average": 0.0008627562100456623,
+          "min": 0.00031429333333333337,
+          "max": 0.003705386666666667,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.045170688,
+          "average": 0.04569393374211784,
+          "min": 0.03961992533333333,
+          "max": 0.0488704,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:31.756071002Z",
+      "error": false
+    },
+    {
+      "id": "4278892a-5362-4452-adc3-d9424790b16e",
+      "name": "whatsapp-worker-g",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00032097,
+          "average": 0.0007409064383561644,
+          "min": 0.00032097,
+          "max": 0.00332002,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.045944832,
+          "average": 0.04687652295333769,
+          "min": 0.04287488,
+          "max": 0.09103380479999999,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:31.912303700Z",
+      "error": false
+    },
+    {
+      "id": "42ec1ff3-568c-485d-af56-ab6dc131bfd5",
+      "name": "whatsapp-worker-s",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00024238,
+          "average": 0.0004390861643835616,
+          "min": 0.00018125999999999998,
+          "max": 0.00203556,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.0445038592,
+          "average": 0.04512669215951294,
+          "min": 0.038952448,
+          "max": 0.04854852266666666,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:17.813371722Z",
+      "error": false
+    },
+    {
+      "id": "746a6a7c-12a4-40ed-97b9-52a02e0ddc29",
+      "name": "whatsapp-worker-i",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:17.540789460Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00071589,
+          "average": 0.0009331884018264836,
+          "min": 0.00016614333333333335,
+          "max": 0.003519476666666667,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.0443416576,
+          "average": 0.04549392325218525,
+          "min": 0.039607296,
+          "max": 0.09326660266666666,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "a55183ab-c9cb-4922-9ca5-ee99377d9a13",
+      "name": "diligent-eagerness",
+      "sample": {
+        "pids": 372,
+        "pids_limit": 1000,
+        "running": 3,
+        "ready": 1,
+        "scan_waiting": 2,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:23.716233644Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.03653497,
+          "average": 0.06670488242009137,
+          "min": 0.030139113333333335,
+          "max": 0.14239766,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 2.6048621226666664,
+          "average": 3.309743330776255,
+          "min": 2.5882796942222224,
+          "max": 6.329589248,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "7b00458e-b8e1-4363-86e9-7f7b3da54280",
+      "name": "whatsapp-worker-o",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:09.179868875Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0003195,
+          "average": 0.0004527324200913241,
+          "min": 9.027333333333333e-05,
+          "max": 0.00207662,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044632064,
+          "average": 0.04593027501282888,
+          "min": 0.041495665777777774,
+          "max": 0.08730741028571429,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "42f5274b-6e31-497e-b17b-cf2d1e80cf72",
+      "name": "whatsapp-worker-n",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00018282333333333333,
+          "average": 0.00043382940639269407,
+          "min": 0.00017546,
+          "max": 0.0022390166666666662,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.049057792,
+          "average": 0.04815182887410308,
+          "min": 0.045369344,
+          "max": 0.08904118857142856,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:09.294182575Z",
+      "error": false
+    },
+    {
+      "id": "727d7128-35f4-4dc0-9c80-f97ca9095cf5",
+      "name": "whatsapp-worker-h",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:32.679349126Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0003218,
+          "average": 0.0004695763013698631,
+          "min": 0.00013631,
+          "max": 0.0020000666666666667,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.048105062399999995,
+          "average": 0.05075011026466623,
+          "min": 0.043671552,
+          "max": 0.09576096914285713,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "b938e5e8-8a9a-4230-b754-079729793b4f",
+      "name": "whatsapp-worker-f",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002224833333333333,
+          "average": 0.01119641232876713,
+          "min": 0.0002224833333333333,
+          "max": 0.020980716666666666,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.433323008,
+          "average": 0.7959611882736249,
+          "min": 0.433323008,
+          "max": 1.0837765688888887,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:29.632892223Z",
+      "error": false
+    },
+    {
+      "id": "18ee5992-031f-4401-a692-aae36407c6f2",
+      "name": "whatsapp-worker-b",
+      "sample": {
+        "pids": 482,
+        "pids_limit": 1000,
+        "running": 4,
+        "ready": 0,
+        "scan_waiting": 4,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:28.492100801Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.05635506666666667,
+          "average": 0.08136687009132423,
+          "min": 0.032535753333333334,
+          "max": 0.10080319333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 3.3062488746666667,
+          "average": 3.711696592184387,
+          "min": 3.3062488746666667,
+          "max": 3.971774464,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "3c37b6ce-f717-474c-91f0-4da09efcfca3",
+      "name": "whatsapp-worker-m",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00022662,
+          "average": 0.0005120319634703195,
+          "min": 0.00019783666666666668,
+          "max": 0.002347633333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.049371136,
+          "average": 0.04857071338569256,
+          "min": 0.045858816,
+          "max": 0.09075343359999999,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:10.059391149Z",
+      "error": false
+    },
+    {
+      "id": "469a3a04-089d-4f72-91ce-0fd1359d5aa2",
+      "name": "whatsapp-worker-r",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002179,
+          "average": 0.000462373378995434,
+          "min": 0.00017478333333333334,
+          "max": 0.002301793333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.047398912,
+          "average": 0.04859203776821049,
+          "min": 0.044445184,
+          "max": 0.09317317485714287,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:15.392377136Z",
+      "error": false
+    },
+    {
+      "id": "62fa4980-2fe2-4520-8d80-1a285a0728ad",
+      "name": "whatsapp-worker-e",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:00.658265452Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002755333333333334,
+          "average": 0.009726733652968037,
+          "min": 0.0002755333333333334,
+          "max": 0.018026490000000003,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.156680192,
+          "average": 0.6073054000260928,
+          "min": 0.154591232,
+          "max": 0.936767488,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "362a7baf-354d-4123-878d-c69cff624d77",
+      "name": "whatsapp-worker-q",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:48.732953513Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0003692,
+          "average": 0.0004464673059360731,
+          "min": 9.954333333333334e-05,
+          "max": 0.002224963333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04516590933333334,
+          "average": 0.04642006251793869,
+          "min": 0.04018449066666666,
+          "max": 0.050982912,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "93961029-9f97-413d-9251-a5fd483ea4bc",
+      "name": "whatsapp-worker-j",
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.000351,
+          "average": 0.0007244828767123287,
+          "min": 0.0002987033333333333,
+          "max": 0.0029470900000000003,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.045058048,
+          "average": 0.04639751125027179,
+          "min": 0.040259584,
+          "max": 0.10292721371428572,
+          "sampleCount": 73
+        }
+      ],
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:46.367226356Z",
+      "error": false
+    },
+    {
+      "id": "8c2b714b-9d84-4fb7-8542-1cf9ebd3934d",
+      "name": "whatsapp-worker-d",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:53.789127811Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00040327,
+          "average": 0.012599795205479453,
+          "min": 0.00040327,
+          "max": 0.023449400000000002,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.06420821333333333,
+          "average": 0.5360718995398993,
+          "min": 0.06420821333333333,
+          "max": 0.8777823573333333,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "2b060bae-3e05-496b-8558-e78cb45e0b90",
+      "name": "whatsapp-worker-c",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:10.873272926Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002855166666666667,
+          "average": 0.018638283744292244,
+          "min": 0.0002855166666666667,
+          "max": 0.036541279999999995,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.13028488533333332,
+          "average": 1.1625279682156993,
+          "min": 0.13019648,
+          "max": 1.885202944,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "name": "whatsapp-shared-03",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:17.016105752Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00022816333333333332,
+          "average": 0.0004131633789954339,
+          "min": 0.00022816333333333332,
+          "max": 0.0016875733333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044333465600000004,
+          "average": 0.0444779459214612,
+          "min": 0.03845051733333334,
+          "max": 0.045595648,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "name": "whatsapp-shared-01",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:25.842049669Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00062512,
+          "average": 0.000926981506849315,
+          "min": 0.00047272666666666667,
+          "max": 0.0014056133333333332,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.045175603200000004,
+          "average": 0.0439475188644488,
+          "min": 0.040408405333333335,
+          "max": 0.045204992,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "name": "whatsapp-shared-02",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:10.160213911Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0003349866666666667,
+          "average": 0.00043187940639269427,
+          "min": 0.00016603,
+          "max": 0.00074248,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.053659940571428574,
+          "average": 0.053233339922591855,
+          "min": 0.048459776,
+          "max": 0.053986816,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "name": "whatsapp-shared-15",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:39.378500660Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0004967033333333333,
+          "average": 0.0005153006392694064,
+          "min": 0,
+          "max": 0.0023046300000000002,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.045430784,
+          "average": 0.030825348870624054,
+          "min": 0,
+          "max": 0.045430784,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "name": "whatsapp-shared-14",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:07.950797656Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00028589333333333333,
+          "average": 0.000307827397260274,
+          "min": 0,
+          "max": 0.0015028533333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.043532288,
+          "average": 0.030665322764079156,
+          "min": 0,
+          "max": 0.04512,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "name": "whatsapp-shared-11",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:16.193234817Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0002648966666666666,
+          "average": 0.000329687808219178,
+          "min": 0,
+          "max": 0.0019500333333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044911820799999995,
+          "average": 0.031084662141856935,
+          "min": 0,
+          "max": 0.044911820799999995,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "name": "whatsapp-shared-06",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:36.422197232Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00031779000000000003,
+          "average": 0.0005412183105022832,
+          "min": 0.00031779000000000003,
+          "max": 0.0018513833333333332,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.0440270848,
+          "average": 0.0442793863097195,
+          "min": 0.039463936,
+          "max": 0.083546112,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "name": "whatsapp-shared-07",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:11.028585249Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00028353333333333336,
+          "average": 0.00033827958904109593,
+          "min": 0,
+          "max": 0.0018857833333333334,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.043672371200000004,
+          "average": 0.031069115109893453,
+          "min": 0,
+          "max": 0.044429824,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "name": "whatsapp-shared-12",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:12.190210621Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0006221366666666667,
+          "average": 0.0006370220091324202,
+          "min": 0,
+          "max": 0.0025584466666666666,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04517137066666666,
+          "average": 0.030983099421613383,
+          "min": 0,
+          "max": 0.047017984,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "name": "whatsapp-shared-09",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:20.465658565Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0007153200000000001,
+          "average": 0.0007045322831050227,
+          "min": 0,
+          "max": 0.003372903333333333,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044711936,
+          "average": 0.030539274464883682,
+          "min": 0,
+          "max": 0.044711936,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "name": "whatsapp-shared-08",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:25.734838266Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0004030633333333333,
+          "average": 0.00046014287671232885,
+          "min": 0,
+          "max": 0.00194493,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04577006933333334,
+          "average": 0.032467544060882814,
+          "min": 0,
+          "max": 0.04577006933333334,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "1a97bb2b-b1ef-44ba-a95e-cf76f1e31e47",
+      "name": "whatsapp-worker-k",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:54.995381017Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.0004079966666666667,
+          "average": 0.000548215799086758,
+          "min": 0.00010284333333333334,
+          "max": 0.0029201666666666664,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.04525738666666666,
+          "average": 0.04695465466544901,
+          "min": 0.040394752,
+          "max": 0.051895296,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "name": "whatsapp-shared-04",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:23.155067319Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00032156999999999997,
+          "average": 0.00041661159817351593,
+          "min": 0.00015927333333333335,
+          "max": 0.0007890466666666666,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.053530624,
+          "average": 0.05228316733898674,
+          "min": 0.048924672,
+          "max": 0.053693952,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "name": "whatsapp-shared-13",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:36:30.169610185Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00028865,
+          "average": 0.0003088019634703197,
+          "min": 0,
+          "max": 0.0015374566666666667,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044673024,
+          "average": 0.030529708225266364,
+          "min": 0,
+          "max": 0.0447488,
+          "sampleCount": 73
+        }
+      ]
+    },
+    {
+      "id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "name": "whatsapp-shared-10",
+      "sample": {
+        "pids": 13,
+        "pids_limit": 1000,
+        "running": 0,
+        "ready": 0,
+        "scan_waiting": 0,
+        "cpus_per_browser": 1
+      },
+      "sampled_at": "2026-10-19T14:37:23.825282596Z",
+      "error": false,
+      "metrics": [
+        {
+          "measurement": "CPU_USAGE",
+          "current": 0.00030537,
+          "average": 0.0003377803652968036,
+          "min": 0,
+          "max": 0.0017293933333333335,
+          "sampleCount": 73
+        },
+        {
+          "measurement": "MEMORY_USAGE_GB",
+          "current": 0.044802048,
+          "average": 0.030447553544683634,
+          "min": 0,
+          "max": 0.044802048,
+          "sampleCount": 73
+        }
+      ]
+    }
+  ],
+  "memory_fix": {
+    "service": "whatsapp-worker-b",
+    "service_id": "18ee5992-031f-4401-a692-aae36407c6f2",
+    "previous_memory_gb": 4,
+    "new_memory_gb": 8,
+    "cpu_vcpus_preserved": 2,
+    "observed_6h_peak_memory_gb": 3.971774464,
+    "deployment_id_preserved": "de42b795-e8af-4dca-b109-23ca7d745571",
+    "mount_unchanged": true,
+    "transient_cpu_limit_reset": "The provider reset CPU when only memory was sent. The original 2 vCPU was restored immediately and read back; no restart occurred."
+  },
+  "protected_services": [
+    {
+      "id": "aea3b02f-4f52-46c5-b248-c8a697351b78",
+      "name": "Postgres",
+      "deployment_id": "4888c5c7-c0e4-49a6-b41b-406077ce57c7",
+      "volume_mounts": [
+        {
+          "volumeId": "e1c7230c-eb78-4952-b3ab-5a4b6022558f",
+          "volumeName": "postgres-volume-hMaD",
+          "mountPath": "/var/lib/postgresql/data"
+        }
+      ]
+    },
+    {
+      "id": "49ca4271-812c-449c-9be9-ea81bb8e2764",
+      "name": "whatsapp",
+      "deployment_id": "4045bdbe-1019-4fe7-937d-6c734dfd2cb1",
+      "volume_mounts": []
+    },
+    {
+      "id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "name": "whatsapp-shared-05",
+      "deployment_id": "c1bb2fc3-80b1-43fb-9d73-dc2de6623bea",
+      "volume_mounts": [
+        {
+          "volumeId": "d84a6747-dff4-410e-b6fd-546f5c98abdc",
+          "volumeName": "whatsapp-shared-05-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "aa22b9e8-368b-411f-845c-a8cc9fadad07",
+      "name": "whatsapp-worker-t",
+      "deployment_id": "6afdad0f-7caf-4d4e-82e7-7fd84fe32d2a",
+      "volume_mounts": [
+        {
+          "volumeId": "f39e6933-e102-4950-8b87-a866de2b3e2f",
+          "volumeName": "whatsapp-worker-t-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "29e3adf4-f591-4434-928f-59774c87baf6",
+      "name": "whatsapp-worker-p",
+      "deployment_id": "edc20549-9270-4a24-9f41-3a2ac236c63a",
+      "volume_mounts": [
+        {
+          "volumeId": "496a69d2-ffe7-44cf-9497-4420a02db562",
+          "volumeName": "whatsapp-worker-p-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "5d33d52c-fe91-4e5d-9ac5-90205db9978a",
+      "name": "whatsapp-worker-l",
+      "deployment_id": "75fa30c4-3d8e-40db-bc23-87d31a0b0b98",
+      "volume_mounts": [
+        {
+          "volumeId": "87164fc8-c8c0-406f-8bbb-3580f1256177",
+          "volumeName": "whatsapp-worker-l-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "4278892a-5362-4452-adc3-d9424790b16e",
+      "name": "whatsapp-worker-g",
+      "deployment_id": "1c3f9600-7331-4f79-a216-3f1c690ad45d",
+      "volume_mounts": [
+        {
+          "volumeId": "f0f61ea1-7c82-4771-80e0-9c5c762b8e26",
+          "volumeName": "whatsapp-worker-g-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "42ec1ff3-568c-485d-af56-ab6dc131bfd5",
+      "name": "whatsapp-worker-s",
+      "deployment_id": "cca6a6a0-97b2-4db6-a5b5-b0e24b98d700",
+      "volume_mounts": [
+        {
+          "volumeId": "601dacf8-2799-4620-96c9-53e9824d557f",
+          "volumeName": "whatsapp-worker-s-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "746a6a7c-12a4-40ed-97b9-52a02e0ddc29",
+      "name": "whatsapp-worker-i",
+      "deployment_id": "124a5eed-6a9a-441e-a412-77acd73a4630",
+      "volume_mounts": [
+        {
+          "volumeId": "7c3c0d07-4b19-472e-afd6-6218d8769a48",
+          "volumeName": "whatsapp-worker-i-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "a55183ab-c9cb-4922-9ca5-ee99377d9a13",
+      "name": "diligent-eagerness",
+      "deployment_id": "418f81e5-d2fd-4ef8-952c-1ecdac3575d8",
+      "volume_mounts": [
+        {
+          "volumeId": "9264ec96-7201-43bf-b8eb-91183aa3d9e6",
+          "volumeName": "diligent-eagerness-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "7b00458e-b8e1-4363-86e9-7f7b3da54280",
+      "name": "whatsapp-worker-o",
+      "deployment_id": "991cb3b5-092e-4400-a671-a582857cff57",
+      "volume_mounts": [
+        {
+          "volumeId": "d0fb7ae5-eb68-4058-8723-1d8bd5ec0603",
+          "volumeName": "whatsapp-worker-o-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "42f5274b-6e31-497e-b17b-cf2d1e80cf72",
+      "name": "whatsapp-worker-n",
+      "deployment_id": "82b9ce40-ea32-433f-aed8-49f746bffb4b",
+      "volume_mounts": [
+        {
+          "volumeId": "eefe0050-69c7-4abf-8579-bdb0fe5748ef",
+          "volumeName": "whatsapp-worker-n-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "727d7128-35f4-4dc0-9c80-f97ca9095cf5",
+      "name": "whatsapp-worker-h",
+      "deployment_id": "6cb85f5e-10bd-4108-9387-33c1102e6085",
+      "volume_mounts": [
+        {
+          "volumeId": "4d571d45-1433-4be2-bd60-bf0293daa909",
+          "volumeName": "whatsapp-worker-h-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "b938e5e8-8a9a-4230-b754-079729793b4f",
+      "name": "whatsapp-worker-f",
+      "deployment_id": "9c238755-1ece-49ce-821a-13a587fad436",
+      "volume_mounts": [
+        {
+          "volumeId": "a29b823f-f735-4188-b08c-a8c5b46e9285",
+          "volumeName": "whatsapp-worker-f-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "18ee5992-031f-4401-a692-aae36407c6f2",
+      "name": "whatsapp-worker-b",
+      "deployment_id": "de42b795-e8af-4dca-b109-23ca7d745571",
+      "volume_mounts": [
+        {
+          "volumeId": "dc157d2e-b59d-471a-b698-de9cb249fa12",
+          "volumeName": "whatsapp-worker-b-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "3c37b6ce-f717-474c-91f0-4da09efcfca3",
+      "name": "whatsapp-worker-m",
+      "deployment_id": "708dd742-a018-49e8-869f-fb8c64aaf1bb",
+      "volume_mounts": [
+        {
+          "volumeId": "90ea599e-62e9-40f2-a015-ff45825b2bdb",
+          "volumeName": "whatsapp-worker-m-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "469a3a04-089d-4f72-91ce-0fd1359d5aa2",
+      "name": "whatsapp-worker-r",
+      "deployment_id": "531af6db-b646-4813-bb62-1133fab5fc69",
+      "volume_mounts": [
+        {
+          "volumeId": "512009f5-90c6-448b-8d11-4509481e7f6f",
+          "volumeName": "whatsapp-worker-r-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "62fa4980-2fe2-4520-8d80-1a285a0728ad",
+      "name": "whatsapp-worker-e",
+      "deployment_id": "8a5d9c5d-4a4a-4704-87b7-ca297dd16308",
+      "volume_mounts": [
+        {
+          "volumeId": "964547fa-cab3-4078-92ed-f7fa67cbc936",
+          "volumeName": "whatsapp-worker-e-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "362a7baf-354d-4123-878d-c69cff624d77",
+      "name": "whatsapp-worker-q",
+      "deployment_id": "82cfb74b-562b-4229-885a-a10eef105f38",
+      "volume_mounts": [
+        {
+          "volumeId": "9536ed16-d417-4065-bf23-3106ce44b768",
+          "volumeName": "whatsapp-worker-q-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "93961029-9f97-413d-9251-a5fd483ea4bc",
+      "name": "whatsapp-worker-j",
+      "deployment_id": "65e57b20-15d5-4234-b115-f6911b2b5ce4",
+      "volume_mounts": [
+        {
+          "volumeId": "58ef9f69-91b6-4900-90be-e98a12d4a7fc",
+          "volumeName": "whatsapp-worker-j-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "8c2b714b-9d84-4fb7-8542-1cf9ebd3934d",
+      "name": "whatsapp-worker-d",
+      "deployment_id": "3401e0aa-a41d-4bf9-9fcb-1026f98c04ba",
+      "volume_mounts": [
+        {
+          "volumeId": "ed0172d0-1c7a-4106-8335-ee2b6e18eeb4",
+          "volumeName": "whatsapp-worker-d-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "2b060bae-3e05-496b-8558-e78cb45e0b90",
+      "name": "whatsapp-worker-c",
+      "deployment_id": "6c7b1fde-5c7b-4730-a38d-abf8d639e45c",
+      "volume_mounts": [
+        {
+          "volumeId": "9adf177b-d2b4-4ad1-936f-8f4c642ae4e8",
+          "volumeName": "whatsapp-worker-c-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "name": "whatsapp-shared-03",
+      "deployment_id": "8a7a66b2-46a0-4f8d-9a4e-1cd35993a94b",
+      "volume_mounts": [
+        {
+          "volumeId": "193f5e3b-7410-459f-a956-01e1e074fb00",
+          "volumeName": "whatsapp-shared-03-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "name": "whatsapp-shared-01",
+      "deployment_id": "3f0149c3-0903-4dbb-bd4b-29bc183012af",
+      "volume_mounts": [
+        {
+          "volumeId": "dbafc735-ef60-4852-9a42-67084252a225",
+          "volumeName": "whatsapp-shared-01-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "name": "whatsapp-shared-02",
+      "deployment_id": "e98364d4-2acc-4abd-83c2-21e548823acb",
+      "volume_mounts": [
+        {
+          "volumeId": "4d841951-2763-40ea-afa7-460e62cc172b",
+          "volumeName": "whatsapp-shared-02-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "name": "whatsapp-shared-15",
+      "deployment_id": "6d40b2ae-1d7f-4e3b-b797-8a41f3e89885",
+      "volume_mounts": [
+        {
+          "volumeId": "53b9fc75-b645-4127-8877-96945e1160f7",
+          "volumeName": "whatsapp-shared-15-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "name": "whatsapp-shared-14",
+      "deployment_id": "a974d9da-e4d5-406f-bc83-df63fe92c395",
+      "volume_mounts": [
+        {
+          "volumeId": "78e46f0b-2ea7-440e-9006-b27268a10e86",
+          "volumeName": "whatsapp-shared-14-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "name": "whatsapp-shared-11",
+      "deployment_id": "2f0dae88-6550-439d-a1e2-96636d3a3e0f",
+      "volume_mounts": [
+        {
+          "volumeId": "38ee2d74-ec68-4c13-9b51-10238f26267e",
+          "volumeName": "whatsapp-shared-11-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "name": "whatsapp-shared-06",
+      "deployment_id": "13ac8c11-849f-4ee6-8dce-8a3cac3df8c3",
+      "volume_mounts": [
+        {
+          "volumeId": "1db63e31-6e23-4554-b0bb-5901c27f25b3",
+          "volumeName": "whatsapp-shared-06-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "name": "whatsapp-shared-07",
+      "deployment_id": "6713b287-5bcc-436e-9864-63595dce8d77",
+      "volume_mounts": [
+        {
+          "volumeId": "645fafe2-1bac-4468-9ce7-26b3bb1a12cc",
+          "volumeName": "whatsapp-shared-07-data-v2",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "name": "whatsapp-shared-12",
+      "deployment_id": "9b4059fc-9a63-4140-957d-639f8823ddaf",
+      "volume_mounts": [
+        {
+          "volumeId": "0f47b27e-3396-4f6d-8b9e-bed2318713a3",
+          "volumeName": "whatsapp-shared-12-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "name": "whatsapp-shared-09",
+      "deployment_id": "55d787a9-e2cf-4912-97ae-d2c588d966db",
+      "volume_mounts": [
+        {
+          "volumeId": "c5648b1c-6f3d-4d1e-9c5f-0ea159d63b5a",
+          "volumeName": "whatsapp-shared-09-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "name": "whatsapp-shared-08",
+      "deployment_id": "5ef4bd86-08ac-4c78-98d7-a67a6ef772fb",
+      "volume_mounts": [
+        {
+          "volumeId": "929f38cc-9235-4cfe-91af-897771c85f4b",
+          "volumeName": "whatsapp-shared-08-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "1a97bb2b-b1ef-44ba-a95e-cf76f1e31e47",
+      "name": "whatsapp-worker-k",
+      "deployment_id": "15250182-e43f-42e1-96bb-8243631ee654",
+      "volume_mounts": [
+        {
+          "volumeId": "a8ed4d48-c241-4c68-aa16-53884f692468",
+          "volumeName": "whatsapp-worker-k-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "name": "whatsapp-shared-04",
+      "deployment_id": "af1df5c1-294f-4e3e-aa11-6e0b0d11c158",
+      "volume_mounts": [
+        {
+          "volumeId": "69e8d53c-9425-4d1d-87f5-d32426901dd4",
+          "volumeName": "whatsapp-shared-04-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "name": "whatsapp-shared-13",
+      "deployment_id": "435bb265-7b90-49e3-80d4-1ab9b9e8e54b",
+      "volume_mounts": [
+        {
+          "volumeId": "044734f5-9204-4f36-9c62-e8f0f40c8acf",
+          "volumeName": "whatsapp-shared-13-data",
+          "mountPath": "/data"
+        }
+      ]
+    },
+    {
+      "id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "name": "whatsapp-shared-10",
+      "deployment_id": "32af566f-3fe5-454c-9e4d-674e2201b568",
+      "volume_mounts": [
+        {
+          "volumeId": "2a9a9d75-8030-4417-9ef5-82bc323c331e",
+          "volumeName": "whatsapp-shared-10-data",
+          "mountPath": "/data"
+        }
+      ]
+    }
+  ],
+  "unmounted_volume_preserved": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+  "additional_shared_slots_activated": 0,
+  "shared_target_200_still_blocked": true,
+  "limitations": [
+    "Point-in-time health, selected bounded runtime/HTTP log filters and dependency/security regressions are not a guarantee of future uptime or absence of all vulnerabilities",
+    "Waiting-for-scan accounts require the phone owner to link WhatsApp; infrastructure cannot legitimately substitute a successful phone scan",
+    "No production login, phone link, customer send, credential change, wallet or payment mutation was used as a test"
+  ]
+}

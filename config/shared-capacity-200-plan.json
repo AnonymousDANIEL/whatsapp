@@ -1,0 +1,550 @@
+{
+  "schema_version": 1,
+  "prepared_at": "2026-10-19T14:45:29.101Z",
+  "status": "blocked_pending_database_maintenance_authorization",
+  "active": false,
+  "request": "Add 100 QR slots to the existing independent shared fleet",
+  "project_id": "1c47fb5b-4692-4e66-91a3-2efd7809dabb",
+  "environment_id": "66f08e45-5e19-46f8-a447-597980fbceaf",
+  "baseline_commit": "779213092ef49c35c3e2320c29532f946ea0cb39",
+  "current_shared_slots": 100,
+  "additional_shared_slots": 100,
+  "target_shared_slots": 200,
+  "provisioned_additional_slots": 0,
+  "personal_slots_preserved": 125,
+  "existing_shared_workers_preserved": 15,
+  "new_worker_count": 15,
+  "new_volume_count": 15,
+  "existing_services": 37,
+  "services_after_activation": 52,
+  "volume_entries_before": 37,
+  "volume_entries_after": 52,
+  "attached_volumes_after": 51,
+  "approved_project_volume_quota": 1000,
+  "volume_quota_is_current_blocker": false,
+  "database": {
+    "personal_worker_pool_ceiling": 58,
+    "api_db_pool_size": 5,
+    "db_pool_size_per_worker": 2,
+    "application_pool_ceiling_after": 93,
+    "worker_count": 15,
+    "current_shared_slots": 100,
+    "new_worker_pool_ceiling": 30,
+    "target_application_pool_ceiling": 123,
+    "last_verified_max_connections": 100,
+    "last_verified_regular_connections": 97,
+    "last_verified_reserved_connections": 3,
+    "last_verified_at": "2026-10-19T12:19:50.155658624Z",
+    "existing_postgres_deployment_preserved": "4888c5c7-c0e4-49a6-b41b-406077ce57c7",
+    "proposed_max_connections": 200,
+    "proposed_regular_connections": 197,
+    "proposed_application_headroom": 74,
+    "restart_required": true,
+    "restart_authorized": false,
+    "settings_changed": false,
+    "backup_required_before_maintenance": true,
+    "pg_image_version_or_volume_change_allowed": false
+  },
+  "worker_watch_manifest": "config/worker-watch-paths.json",
+  "admission_guards": [
+    "ownership lock with at least two database connections per worker",
+    "one replica",
+    "private UID and CPU affinity",
+    "120-process admission reserve",
+    "fresh nonfuture heartbeat",
+    "assigned/running slot accounting",
+    "no personal/shared group overlap"
+  ],
+  "activation_gates": [
+    "Obtain an explicitly approved maintenance window before any PostgreSQL restart or connected-worker interruption",
+    "Verify a usable recent database backup and preserve the exact deployed image/version and existing volume",
+    "Apply the approved database connection upgrade without changing credentials, users, schema, payments or profiles; verify actual regular connection headroom with a read-only diagnostic",
+    "Freshly verify the original personal and shared workers and mounts; do not repurpose their storage",
+    "Provision one new private worker and fresh /data volume as a canary; verify terminal SUCCESS, auth denial and real capacity heartbeat",
+    "Provision the remaining new independent workers and volumes in bounded batches, verifying actual resource and DB headroom",
+    "Extend only dedicated shared routes after all new services are verified; preserve original personal and shared addresses and groups",
+    "Verify real Owner shared total 200, individual group counters, USER isolation, profile preservation and exact GitHub/Railway results"
+  ],
+  "workers": [
+    {
+      "group": "shared-16",
+      "service": "whatsapp-shared-16",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-16",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-17",
+      "service": "whatsapp-shared-17",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-17",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-18",
+      "service": "whatsapp-shared-18",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-18",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-19",
+      "service": "whatsapp-shared-19",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-19",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-20",
+      "service": "whatsapp-shared-20",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-20",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-21",
+      "service": "whatsapp-shared-21",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-21",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-22",
+      "service": "whatsapp-shared-22",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-22",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-23",
+      "service": "whatsapp-shared-23",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-23",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-24",
+      "service": "whatsapp-shared-24",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-24",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-25",
+      "service": "whatsapp-shared-25",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-25",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-26",
+      "service": "whatsapp-shared-26",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-26",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-27",
+      "service": "whatsapp-shared-27",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-27",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-28",
+      "service": "whatsapp-shared-28",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-28",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-29",
+      "service": "whatsapp-shared-29",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-29",
+        "MAX_ACCOUNTS_PER_WORKER": "7",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    },
+    {
+      "group": "shared-30",
+      "service": "whatsapp-shared-30",
+      "service_id": null,
+      "volume_id": null,
+      "active": false,
+      "max_accounts": 2,
+      "db_pool_size": 2,
+      "volume_size_mb": 10000,
+      "mount_path": "/data",
+      "limits": {
+        "vcpus": 2,
+        "memory_gb": 8
+      },
+      "replicas": 1,
+      "network": "private_only",
+      "source": {
+        "repo": "AnonymousDANIEL/whatsapp",
+        "dockerfile": "Dockerfile.worker",
+        "config_file": "railway.worker.json"
+      },
+      "variables": {
+        "SERVICE_ROLE": "worker",
+        "WORKER_GROUP": "shared-30",
+        "MAX_ACCOUNTS_PER_WORKER": "2",
+        "DB_POOL_SIZE": "2",
+        "DATA_DIR": "/data",
+        "PORT": "8080",
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
+      }
+    }
+  ]
+}
