@@ -22,6 +22,7 @@ const { pool, audit, transaction } = require('./db');
 const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, validatePacing, permission, manageUser, csvCell } = require('./domain');
 const { createWorkerConnection } = require('./connection');
 const security = require('./http-security');
+const requestBody = require('./request-body');
 
 const SESSION_HOURS = 168;
 const {routes,sharedGroups}=require('./shared-routing').routingConfiguration(process.env);
@@ -141,12 +142,10 @@ async function start({connectionMonitorIntervalMs=5000}={}) {
   app.use((req,res,next)=>{res.set('Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()');next();});
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use(security.requireCanonicalHost(publicURL));
-  app.use(['/api/login','/api/password','/api/users/password-access'],express.json({limit:'4kb'}));
-  app.use(express.json({ limit: '8mb',verify(req,res,body){if(req.originalUrl.startsWith('/api/banks/feed/'))req.rawBankBody=Buffer.from(body);} }));
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
   const dummyHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
-  app.post('/api/login', limiter, (req,res,next)=>req.headers.origin===publicURL.origin?next():res.status(403).json({error:'来源不正确'}), security.validLoginBody, security.loginAccountLimiter(), route(async (req, res) => {
+  app.post('/api/login', limiter, (req,res,next)=>req.headers.origin===publicURL.origin?next():res.status(403).json({error:'来源不正确'}), requestBody.loginJSON, security.validLoginBody, security.loginAccountLimiter(), route(async (req, res) => {
     assert(req.headers.origin === publicURL.origin, '来源不正确', 403);
     const { username, password } = req.body;
     assert(typeof username === 'string' && typeof password === 'string' && password.length <= 200, '账号或密码不正确', 401);
@@ -158,9 +157,10 @@ async function start({connectionMonitorIntervalMs=5000}={}) {
     await pool.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`, [hash(token), u.id, csrf]);
     sessionCookie(res, token); await audit(u.id, 'login', u.id); res.json({ ok: true });
   }));
+  requestBody.publicCallbacks(app);
   payments.callbackRoutes(app,route,uuid);
   banks.callbackRoutes(app,route);
-  app.use('/api', (req, res, next) => {
+  requestBody.protectedAPI(app, (req, res, next) => {
     getSession(req).then(user => {
       assert(user, '登录已过期，或账号已停用', 401); req.user = user;
       if (!['GET', 'HEAD'].includes(req.method)) assert(req.headers.origin === publicURL.origin && req.headers['x-csrf-token'] === user.csrf, '安全验证失败，请重新登录', 403);
