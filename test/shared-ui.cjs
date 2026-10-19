@@ -183,14 +183,14 @@ async function verifyPersonalPages(page,fixture,role,language){
     assert.equal(await page.$$eval('[data-schedule]',nodes=>nodes.length),role==='owner'?1:0);
    }
    await page.setViewport({width:1440,height:1000});
-   assert.equal(await page.$$eval('[data-pause]',nodes=>nodes.length),1);
+   assert.equal(await page.$$eval('[data-pause]',nodes=>nodes.length),role==='owner'?1:0);
    if(role==='owner'){
     await page.click('[data-schedule]');await page.waitForFunction(()=>document.querySelector('#modal').open);
     assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal input[name=batch_size]'));await page.click('#close-modal');
    }else assert.doesNotMatch(text,/修改间隔\s*\/\s*数量|Edit interval\s*\/\s*quantity/);
    assert.equal(await page.$$eval('[data-now]',nodes=>nodes.length),0);
    if(role==='owner')assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
-   else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$eval('[data-pause]',n=>n.disabled),true);assert.match(await page.$eval('[data-pause]',n=>n.textContent),language==='en'?/Paused/:/已暂停/);}
+   else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$('[data-pause]'),null);assert.equal(await page.$$eval('.actions button',nodes=>nodes.length),1);}
    assert.match(text,language==='en'?/Last action/:/最近操作/);assert.match(text,/11:10:00/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
    await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
@@ -499,7 +499,7 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$('.last-login'),null);assert.equal(fixture.requests.some(r=>r.path==='/users'),false);
   assert.equal(fixture.requests.some(r=>['/shared/accounts','/shared/hourly'].includes(r.path)),false);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/10000000|可用余额|Available credit|Available balance/);
-  assert.equal(await page.$$eval('.shared-cards .card',n=>n.length),1);
+  assert.equal(await page.$$eval('.shared-cards .card',n=>n.length),0);
   await page.click('#nav [data-page=billing]');
   await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('10000000'));
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Credit ledger|余额流水/);

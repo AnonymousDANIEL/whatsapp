@@ -5,7 +5,7 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
  if(!process.env.TEST_SINGLE_DATABASE)await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);if(!process.env.TEST_SINGLE_DATABASE)url.pathname='/'+name;
  Object.assign(process.env,{APP_VAULT_KEY:'22'.repeat(32),DATABASE_URL:url.toString(),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',WORKER_GROUP:'group-a',SHARED_WORKER_GROUPS_JSON:'["group-a","group-b"]',INTERNAL_SECRET:'shared-disposable-test-secret',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'shared-owner-test-password',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9","group-b":"http://127.0.0.1:9"}'});
  const db=require('../src/db');let server;t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});
- await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
+ await db.migrate();server=await require('../src/api').start({connectionMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body===null?{}:{body:JSON.stringify(body)})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  async function login(username,password='shared-user-test-password'){const r=await request('/login','POST',{username,password});assert.equal(r.status,200,JSON.stringify(r));const s={cookie:r.cookie};s.csrf=(await request('/me','GET',null,s)).data.csrf;return s;}
  const owner=await login('owner','shared-owner-test-password');
@@ -46,10 +46,11 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID()},user1)).status,503);
   await db.pool.query("UPDATE accounts SET enabled=true,phone=replace(registration_phone,'+',''),status='ready',shared_state='connected',shared_checked_at=now() WHERE id=ANY($1::uuid[])",[[a1,a2]]);
   for(const group of ['group-a','group-b'])await db.pool.query('INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts) VALUES($1,now(),1,50,5)',[group]);
-  assert.equal((await request('/shared/status','GET',null,user1)).data.summary.connected,2);
-  await db.pool.query("UPDATE worker_health SET heartbeat_at=now()-interval '5 minutes'");assert.equal((await request('/shared/status','GET',null,user1)).data.summary.connected,0);
+  assert.equal((await request('/shared/status','GET',null,user1)).data.summary.available,1);
+  const visible=(await request('/shared/status','GET',null,user1)).data;assert.deepEqual(Object.keys(visible.summary),['available']);for(const key of ['groups','workers','hours','settings'])assert.equal(visible[key],undefined);
+  await db.pool.query("UPDATE worker_health SET heartbeat_at=now()-interval '5 minutes'");assert.equal((await request('/shared/status','GET',null,user1)).data.summary.available,0);
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID()},user1)).status,503);await db.pool.query('UPDATE worker_health SET heartbeat_at=now()');
-  await db.pool.query("UPDATE accounts SET shared_checked_at=now()-interval '2 hours' WHERE id=$1",[a1]);assert.equal((await request('/shared/status','GET',null,user1)).data.summary.connected,1);await db.pool.query('UPDATE accounts SET shared_checked_at=now() WHERE id=$1',[a1]);
+  await db.pool.query("UPDATE accounts SET shared_checked_at=now()-interval '2 hours' WHERE id=$1",[a1]);assert.equal((await request('/shared/status','GET',null,user1)).data.summary.available,1);await db.pool.query('UPDATE accounts SET shared_checked_at=now() WHERE id=$1',[a1]);
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID(),opt_in_confirmed:false},user1)).status,400);
  });
  await t.test('Owner image switch blocks only new USER photos; nameless retries stay idempotent and never alter wallet or pricing',async()=>{
@@ -138,7 +139,7 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
   assert.equal((await request('/shared/status','GET',null,owner)).data.summary.connected,2);
   const latest=(await db.pool.query('SELECT DISTINCT ON(worker_group) * FROM shared_health_hourly ORDER BY worker_group,hour_start DESC')).rows;assert.equal(latest.length,2);assert.equal(latest.reduce((n,r)=>n+r.connected,0),2);assert.equal(latest.reduce((n,r)=>n+r.total,0),120);
   assert.ok((await request('/shared/hourly','GET',null,owner)).data.length>0);
-  await db.pool.query("UPDATE worker_health SET heartbeat_at=now()-interval '5 minutes'");assert.equal((await request('/shared/status','GET',null,user2)).data.summary.connected,0);await db.pool.query('UPDATE worker_health SET heartbeat_at=now()');
+  await db.pool.query("UPDATE worker_health SET heartbeat_at=now()-interval '5 minutes'");assert.equal((await request('/shared/status','GET',null,user2)).data.summary.available,0);await db.pool.query('UPDATE worker_health SET heartbeat_at=now()');
  });
  await t.test('interrupted shared sends remain unknown and paused with their original hold',async()=>{
   await quiet();cid=await task(user2);const c=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[cid])).rows[0],r=(await db.pool.query('SELECT id FROM recipients WHERE campaign_id=$1',[cid])).rows[0];await db.transaction(tx=>billing.reserveForSend(tx,u2,r.id));

@@ -1,0 +1,104 @@
+{
+  "state": "awaiting_database_capacity_verification",
+  "requested_additional_shared_slots": 70,
+  "existing_shared_slots_preserved": 30,
+  "target_shared_slots": 100,
+  "personal_slots_preserved": 125,
+  "existing_workers_preserved": 6,
+  "additional_workers_required": 10,
+  "additional_volumes_required": 10,
+  "target_project_volumes_including_postgres": 37,
+  "slots_per_new_worker": 7,
+  "vcpus_per_new_worker": 2,
+  "memory_gb_per_new_worker": 8,
+  "db_pool_size_per_new_worker": 2,
+  "current_application_pool_ceiling": 94,
+  "target_application_pool_ceiling": 95,
+  "new_volume_size_mb": 10000,
+  "region": "us-east4-eqdc4a",
+  "mount_path": "/data",
+  "replicas_per_worker": 1,
+  "source": "AnonymousDANIEL/whatsapp",
+  "branch": "main",
+  "dockerfile": "Dockerfile.worker",
+  "activated_additional_slots": 0,
+  "reserved_unmounted_volume": {
+    "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+    "name": "whatsapp-shared-07-data",
+    "mounted": false,
+    "new_qr_capacity": 0,
+    "cleanup": "automatic_review_rejected_irreversible_deletion_without_explicit_approval"
+  },
+  "workers": [
+    {
+      "group": "shared-07",
+      "service": "whatsapp-shared-07"
+    },
+    {
+      "group": "shared-08",
+      "service": "whatsapp-shared-08"
+    },
+    {
+      "group": "shared-09",
+      "service": "whatsapp-shared-09"
+    },
+    {
+      "group": "shared-10",
+      "service": "whatsapp-shared-10"
+    },
+    {
+      "group": "shared-11",
+      "service": "whatsapp-shared-11"
+    },
+    {
+      "group": "shared-12",
+      "service": "whatsapp-shared-12"
+    },
+    {
+      "group": "shared-13",
+      "service": "whatsapp-shared-13"
+    },
+    {
+      "group": "shared-14",
+      "service": "whatsapp-shared-14"
+    },
+    {
+      "group": "shared-15",
+      "service": "whatsapp-shared-15"
+    },
+    {
+      "group": "shared-16",
+      "service": "whatsapp-shared-16"
+    }
+  ],
+  "activation_requirements": [
+    "Read actual max_connections and reserved connection budget without changing PostgreSQL configuration",
+    "Keep configured database demand within verified capacity with rollout headroom",
+    "Provision independent persistent storage and verify every new worker reaches SUCCESS and authenticates",
+    "Keep existing personal routes and all existing linked worker deployments and mounts unchanged",
+    "Advertise only real fresh capacity; preserve private UID, ownership and process admission guards",
+    "Change a candidate idle personal worker pool from 3 to 2 only after a fresh database-backed snapshot and live worker check both show zero assigned and zero running accounts; retain its capacity, group, mounts and profiles",
+    "Retain original connected a-f workers without redeploy; if any candidate idle group is now occupied, stop and recompute the budget"
+  ],
+  "verification_limits": "A plan, empty disk and synthetic tests do not constitute live QR slots, real linked phones or an uptime guarantee.",
+  "proposed_api_pool_size": 5,
+  "personal_pool_ceiling_before": 72,
+  "proposed_personal_pool_ceiling_after": 58,
+  "proposed_idle_pool_size": 2,
+  "proposed_idle_personal_groups": [
+    "group-g",
+    "group-h",
+    "group-i",
+    "group-j",
+    "group-k",
+    "group-l",
+    "group-m",
+    "group-n",
+    "group-o",
+    "group-p",
+    "group-q",
+    "group-r",
+    "group-s",
+    "group-t"
+  ]
+}

@@ -6,7 +6,7 @@ test('PostgreSQL: Owner QR slots reserve pending accounts, honor live resources 
  Object.assign(process.env,{DATABASE_URL:url.toString(),APP_VAULT_KEY:'66'.repeat(32),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'disposable-capacity-fixture-secret',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'capacity-owner-fixture-password',WORKER_ROUTES_JSON:JSON.stringify(Object.fromEntries(['group-a','group-b','group-c','group-d'].map(g=>[g,'http://127.0.0.1:9']))),SHARED_WORKER_GROUPS_JSON:'["group-b"]'});
  const db=require('../src/db');let server;
  t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();if(!process.env.TEST_SINGLE_DATABASE)await admin.query('DROP DATABASE '+name);await admin.end();});
- await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
+ await db.migrate();server=await require('../src/api').start({connectionMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body===null?{}:{body:JSON.stringify(body)})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  async function login(username,password){const r=await request('/login','POST',{username,password});assert.equal(r.status,200);const s={cookie:r.cookie};s.csrf=(await request('/me','GET',null,s)).data.csrf;return s;}
  const owner=await login('owner','capacity-owner-fixture-password');

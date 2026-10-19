@@ -5,6 +5,7 @@ function sharedQuery(){return '?page='+sharedUI.accountsPage+'&search='+encodeUR
 function sharedGroupName(id,groups){const i=groups.indexOf(id);return i<0?T('未配置共享分组','Unconfigured shared group'):'Share WhatsApp '+(i+1);}
 function sharedConnection(a){if(a.phone_in_personal)return T('号码已属于普通 WhatsApp，请使用新号码','This number belongs to personal WhatsApp; use a new shared number');if(a.phone&&a.registration_phone&&a.registration_phone!==('+'+a.phone))return T('扫码账号与号码不符','Linked account does not match the number');return a.connected?T('已连接','Connected'):!a.enabled?T('待启用 / 手机注册','Not enabled / phone registration'):a.status==='capacity_wait'?T('等待运行容量','Waiting for capacity'):a.shared_state==='unknown'?T('待确认','Unconfirmed'):['starting','loading','scan_required'].includes(a.status)?state(a.status):T('离线 / 待连接','Offline / not linked');}
 function sharedStats(data){
+ if(me.role!=='owner')return '';
  const s=data.summary,owner=me.role==='owner';
  const cards=[[T('已连接共享账号','Connected shared accounts'),num(s.connected)]];
  if(owner)cards.push([T('账号总数','Total accounts'),num(s.total)],[T('待连接','Waiting for connection'),num(s.waiting)],[T('离线 / 待确认','Offline / unconfirmed'),num(s.offline)+' / '+num(s.unknown)]);

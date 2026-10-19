@@ -11,7 +11,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  await db.pool.query(`INSERT INTO audit(actor_id,action,created_at) VALUES
   ($1,'login','2023-01-01'),($1,'login','2020-01-01'),($1,'password.change','2025-01-01'),($2,'user.create','2025-01-01')`,[legacyLogin,noLogin]);
  const legacyBefore=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[ [legacyLogin,noLogin] ])).rows;
- const api=require('../src/api');await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity()]);server=await api.start();const base='http://127.0.0.1:'+server.address().port;
+ const api=require('../src/api');await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity()]);server=await api.start({connectionMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
  await t.test('login metadata migrates real history once, survives audit removal and never downgrades concurrent logins',async()=>{
   try{
    const first=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[[legacyLogin,noLogin]])).rows;
@@ -318,7 +318,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await worker.reconcileUnknown(a,null,[message]);
   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE id=$1',[row.id])).rows[0].status,'delivered');
  });
- await t.test('only Owner can edit or resume existing task pacing; USER pause and recipient results remain intact',async()=>{
+ await t.test('only Owner can edit, pause or resume existing tasks; denied USER edits leave results intact',async()=>{
   const created=await request('/campaigns','POST',{title:'Pacing access',account_id:a,body:'Synthetic permission fixture',recipients:'0123456789\nwrong',opt_in_confirmed:true,pacing:true,interval_ms:60000,batch_size:2},user);
   assert.equal(created.status,201);const id=created.data.id;
   const snapshot=async()=>({
@@ -343,7 +343,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/campaigns/'+id,'PATCH',{pacing:true,interval_ms:120000,batch_size:3},owner)).status,200);
   const edited=await snapshot();assert.equal(edited.campaign.interval_ms,120000);assert.equal(edited.campaign.batch_size,3);
   assert.deepEqual(edited.recipients,before.recipients);
-  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:false},user)).status,200);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:false},user)).status,403);
   assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:true},owner)).status,200);
   assert.equal((await request('/campaigns/'+id+'/send-now','POST',{},owner)).status,200);
   const resumed=await snapshot();assert.equal(resumed.campaign.enabled,true);assert.equal(resumed.campaign.interval_ms,120000);assert.equal(resumed.campaign.batch_size,3);
@@ -365,13 +365,13 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    await request('/campaigns/'+created.id,'PATCH',{enabled:false},user);
   }finally{global.fetch=originalFetch;}
  });
- await t.test('USER can only pause existing tasks; stale ACKs isolate the old task and Owner can purge without refunding unknown credit',async()=>{
+ await t.test('USER tasks have details only; stale ACKs isolate the old task and Owner can purge without refunding unknown credit',async()=>{
   const make=async title=>{const r=await request('/campaigns','POST',{...template,title,recipients:'0123456789',pacing:true,interval_ms:5000,batch_size:1,send_now:true},user);assert.equal(r.status,201);return r.data.id;};
   const old=await make('Old uncertain task'),fresh=await make('Independent new task');
   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>ALL($1::uuid[])',[[old,fresh]]);
   for(const path of ['/send-now','/cancel'])assert.equal((await request('/campaigns/'+fresh+path,'POST',{},user)).status,403);
   assert.equal((await request('/campaigns/'+fresh,'DELETE',null,user)).status,403);
-  assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:false},user)).status,200);
+  assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:false},user)).status,403);
   assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:true},user)).status,403);
   assert.equal((await request('/campaigns/'+fresh,'PATCH',{enabled:true},owner)).status,200);
   const oldRow=(await db.pool.query('SELECT * FROM recipients WHERE campaign_id=$1',[old])).rows[0];

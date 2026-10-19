@@ -9,6 +9,7 @@ const capacity=require('./capacity');
 const overview=require('./overview');
 const ownerHistory=require('./owner-history'),sharedConsole=require('./shared-console');
 const sharedAccounts=require('./shared-accounts');
+const connectionFailures=require('./connection-failures');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -128,7 +129,7 @@ async function ensureLoginActivity() {
       WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
   });
 }
-async function start() {
+async function start({connectionMonitorIntervalMs=5000}={}) {
   await ensureLoginActivity();
   await sharedConsole.ensureOptions();
   await sharedAccounts.ensureLinking();
@@ -405,7 +406,7 @@ async function start() {
     const c = await campaignAccess(req.user, req.params.id, true); assert(!c.cancelled, '任务已取消');
     const scheduleEdit=['pacing','interval_ms','batch_size','timezone','window_start','window_end','weekdays','scheduled_at','expires_at','send_now'].some(key=>Object.hasOwn(req.body,key));
     assert(!scheduleEdit||req.user.role==='owner','只有 Owner 可以修改任务间隔或数量',403);
-    assert(req.user.role==='owner'||req.body.enabled!==true,'USER 只能暂停任务，不能继续',403);
+    assert(req.user.role==='owner','只有 Owner 可以暂停或继续已有任务',403);
     if(req.body.enabled===true)await (c.shared_pool?shared:billing).canPay(c.created_by);
     if(req.body.pacing===true){
       const pace=validatePacing(req.body);
@@ -586,7 +587,14 @@ async function start() {
     } catch (e) { socket.write('HTTP/1.1 ' + (e.status || 403) + ' Rejected\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
   Promise.allSettled(Object.keys(routes).map(async worker_group=>{try{const sample=await browser.request({worker_group},'/capacity');console.log('Worker route verified:',JSON.stringify({group:worker_group,authenticated:true,running:Number.isSafeInteger(sample.running)?sample.running:null,max_accounts:Number.isSafeInteger(sample.max_accounts)?sample.max_accounts:null}));}catch(e){console.log('Worker route pending:',JSON.stringify({group:worker_group,code:e.code||'UNAVAILABLE'}));}}));
-  if(sharedGroups.length)capacity.read(pool,sharedGroups).then(rows=>console.log('Shared capacity snapshot:',JSON.stringify({groups:rows.length,total:rows.reduce((n,w)=>n+Number(w.max_accounts||0),0),used:rows.reduce((n,w)=>n+w.slots_used,0),available:rows.reduce((n,w)=>n+w.slots_available,0),unavailable:rows.reduce((n,w)=>n+w.slots_unavailable,0),all_fresh:rows.every(w=>w.capacity_state!=='offline')}))).catch(e=>console.error('Shared capacity snapshot pending:',e.code||e.name));
+  const logCapacity=()=>{
+    if(sharedGroups.length)capacity.read(pool,sharedGroups).then(rows=>console.log('Shared capacity snapshot:',JSON.stringify({groups:rows.length,total:rows.reduce((n,w)=>n+Number(w.max_accounts||0),0),used:rows.reduce((n,w)=>n+w.slots_used,0),available:rows.reduce((n,w)=>n+w.slots_available,0),unavailable:rows.reduce((n,w)=>n+w.slots_unavailable,0),all_fresh:rows.every(w=>w.capacity_state!=='offline')}))).catch(e=>console.error('Shared capacity snapshot pending:',e.code||e.name));
+    capacity.read(pool,personalGroups).then(rows=>console.log('Personal capacity snapshot:',JSON.stringify(rows.map(w=>({group:w.worker_group,running:w.accounts_running,assigned:w.assigned_accounts,heartbeat_at:w.heartbeat_at,state:w.capacity_state}))))).catch(e=>console.error('Personal capacity snapshot pending:',e.code||e.name));
+  };
+  logCapacity();const capacityTimer=setInterval(logCapacity,60000);capacityTimer.unref();server.on('close',()=>clearInterval(capacityTimer));
+  connectionFailures.databaseCapacity().then(data=>console.log('Database connection capacity:',JSON.stringify(data))).catch(e=>console.error('Database connection capacity pending:',e.code||e.name));
+  const stopConnectionMonitor=connectionMonitorIntervalMs>0?connectionFailures.monitor(connectionMonitorIntervalMs):()=>{};
+  server.on('close',stopConnectionMonitor);
   const allocationTimer=setInterval(()=>rebalanceAccounts().catch(e=>console.error('allocation tick:',e.code||e.name)),15000);allocationTimer.unref();
   server.on('close',()=>clearInterval(allocationTimer));
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();

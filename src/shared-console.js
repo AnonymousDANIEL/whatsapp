@@ -28,7 +28,8 @@ function routes(app,route,workerRoutes){
    FROM accounts a WHERE shared_pool AND deleted_at IS NULL`,[groups])).rows[0];
   summary.offline=summary.total-summary.connected-summary.waiting-summary.unknown;
   const options=(await pool.query('SELECT images_enabled FROM shared_console_options WHERE id=1')).rows[0];
-  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary,images_enabled:options.images_enabled,timezone:'Asia/Kuala_Lumpur'};
+  const visibleSummary=req.user.role==='owner'?summary:{available:summary.available>0?1:0};
+  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary:visibleSummary,images_enabled:options.images_enabled,timezone:'Asia/Kuala_Lumpur'};
   if(req.query.layout!=='2')data.balance_units=(await pool.query('SELECT credit_units FROM users WHERE id=$1',[req.user.id])).rows[0].credit_units;
   if(req.user.role==='owner'){
    data.settings=s;data.hours=(await pool.query('SELECT hour,price_units FROM shared_hour_prices ORDER BY hour')).rows;

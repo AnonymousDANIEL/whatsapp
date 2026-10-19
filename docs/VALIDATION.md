@@ -1,3 +1,11 @@
+# 2026-10-19: USER controls and definitive pre-submit failures
+
+The API-only connection queue monitor and USER display/permission update are being validated. Local syntax checks pass; local tests pass 92 with 10 native-database parents skipped because no disposable PostgreSQL is configured. Native GitHub CI, real Chrome role/language/mobile checks, both production images and live API/worker readbacks remain required before claiming completion.
+
+The monitor only fails never-submitted pending recipients on disconnected personal accounts; possible submissions retain their results and holds. New native tests cover overlapping refund attempts, exact once-only ledger entries, dispatch lock races, protected queue/outcome states, crash repair and the scheduled monitor. Existing USER management and shared inventory assertions are updated for Owner-only controls and binary USER availability. No live production send, scan, login or money adjustment is a test.
+
+The next requested shared capacity is 100 total, adding 70 to the existing 30. No additional QR slots are activated by the plan. A new unmounted shared-07 storage volume was accepted by Railway, and cleanup was blocked by automatic review; it remains unmounted pending explicit deletion approval. The database connection budget still needs its fresh read-only limit check before ten seven-slot workers can be admitted. Existing personal/shared workers and guards are retained.
+
 # 2026-10-18: verified independent shared capacity after quota approval
 
 - Runtime release: 035ff4ad7915a7436b9885d7e8fdd92a3812edbf, PR #29. Release CI 39133716394 and main CI 39133994123 both succeeded: 180 tests passed, zero failed/skipped, real Chrome Owner/USER zh/en desktop/mobile, both production images, private browser cleanup/orphan checks and seven concurrent network-disabled desktops (peak 686/1000 tasks). Native regression actually started an empty worker with a two-connection pool, retained its ownership lock and served authenticated capacity plus a real heartbeat against disposable PostgreSQL.

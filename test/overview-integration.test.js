@@ -6,7 +6,7 @@ test('PostgreSQL: Owner separates actual senders without rewriting records or le
  Object.assign(process.env,{DATABASE_URL:url.toString(),APP_VAULT_KEY:'11'.repeat(32),SERVICE_ROLE:'api',PORT:'0',PUBLIC_URL:'http://localhost:3000',INTERNAL_SECRET:'synthetic-overview-secret-thirty-two-characters',BOOTSTRAP_USERNAME:'owner',BOOTSTRAP_PASSWORD:'synthetic-owner-password-123',WORKER_ROUTES_JSON:'{"group-a":"http://127.0.0.1:9"}'});
  const db=require('../src/db');let server;
  t.after(async()=>{if(server)await new Promise(r=>server.close(r));await db.pool.end();await admin.query('DROP DATABASE '+name);await admin.end();});
- await db.migrate();server=await require('../src/api').start();const base='http://127.0.0.1:'+server.address().port;
+ await db.migrate();server=await require('../src/api').start({connectionMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
  async function request(route,session){const r=await fetch(base+'/api'+route,{headers:{Origin:'http://localhost:3000',...(session?{Cookie:session}: {})}});return{status:r.status,data:await r.json()};}
  async function login(username,password){const r=await fetch(base+'/api/login',{method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},body:JSON.stringify({username,password})});assert.equal(r.status,200);return r.headers.get('set-cookie').split(';')[0];}
  const owner=(await db.pool.query("SELECT id FROM users WHERE role='owner'")).rows[0].id,u1=randomUUID(),u2=randomUUID(),u3=randomUUID(),a=randomUUID(),deleted=randomUUID(),shared=randomUUID(),c1=randomUUID(),c2=randomUUID(),c3=randomUUID();

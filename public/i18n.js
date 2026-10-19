@@ -11,7 +11,7 @@ window.translateError=(message)=>{
   '添加账号过于频繁，请稍后再试':'Too many add-account requests. Please try later.',
 
   "只有 Owner 可以继续或重新启动已有任务":"Only the Owner can resume or restart existing tasks.",
-  "USER 只能暂停任务，不能继续":"USERs can pause tasks but cannot resume them.",
+  "只有 Owner 可以暂停或继续已有任务":"Only the Owner can pause or resume existing tasks.",
   "只有 Owner 可以取消或删除任务":"Only the Owner can cancel or delete tasks.",
   "请先扫码连接 WhatsApp 账号，再立刻发送":"Link the WhatsApp account by QR before sending now.",
 
