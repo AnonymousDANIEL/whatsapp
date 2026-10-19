@@ -1,5 +1,5 @@
 {
-  "state": "awaiting_database_capacity_verification",
+  "state": "blocked_volume_quota",
   "requested_additional_shared_slots": 70,
   "existing_shared_slots_preserved": 30,
   "target_shared_slots": 100,
@@ -12,7 +12,7 @@
   "vcpus_per_new_worker": 2,
   "memory_gb_per_new_worker": 8,
   "db_pool_size_per_new_worker": 2,
-  "current_application_pool_ceiling": 94,
+  "current_application_pool_ceiling": 89,
   "target_application_pool_ceiling": 95,
   "new_volume_size_mb": 10000,
   "region": "us-east4-eqdc4a",
@@ -22,13 +22,6 @@
   "branch": "main",
   "dockerfile": "Dockerfile.worker",
   "activated_additional_slots": 0,
-  "reserved_unmounted_volume": {
-    "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
-    "name": "whatsapp-shared-07-data",
-    "mounted": false,
-    "new_qr_capacity": 0,
-    "cleanup": "automatic_review_rejected_irreversible_deletion_without_explicit_approval"
-  },
   "workers": [
     {
       "group": "shared-07",
@@ -78,7 +71,8 @@
     "Keep existing personal routes and all existing linked worker deployments and mounts unchanged",
     "Advertise only real fresh capacity; preserve private UID, ownership and process admission guards",
     "Change a candidate idle personal worker pool from 3 to 2 only after a fresh database-backed snapshot and live worker check both show zero assigned and zero running accounts; retain its capacity, group, mounts and profiles",
-    "Retain original connected a-f workers without redeploy; if any candidate idle group is now occupied, stop and recompute the budget"
+    "Retain original connected a-f workers without redeploy; if any candidate idle group is now occupied, stop and recompute the budget",
+    "Railway must approve at least 37 project volumes; no further staged or indirect creation after the explicit quota rejection"
   ],
   "verification_limits": "A plan, empty disk and synthetic tests do not constitute live QR slots, real linked phones or an uptime guarantee.",
   "proposed_api_pool_size": 5,
@@ -100,5 +94,46 @@
     "group-r",
     "group-s",
     "group-t"
-  ]
+  ],
+  "application_pool_ceiling_at_request": 94,
+  "current_api_pool_size": 5,
+  "actual_postgres_max_connections": 100,
+  "actual_regular_connection_limit": 97,
+  "required_volume_quota": 37,
+  "observed_volume_quota": 27,
+  "provider_error": "You can only have 27 volumes per project",
+  "runtime_commit": "e8510071de6edb5bd50d852c343158a8d73c7226",
+  "api_deployment_id": "1d5cce83-5d20-4a59-af3d-6e87a9d3942e",
+  "source_feature_ci_run": 39219089225,
+  "source_main_ci_run": 39219535545,
+  "verification_snapshot": {
+    "at": "2026-10-19T08:01:17.732495159Z",
+    "shared_groups": 6,
+    "shared_total": 30,
+    "shared_used": 0,
+    "shared_available": 30,
+    "all_shared_heartbeats_fresh": true,
+    "original_browser_deployment_changes": 0,
+    "original_profile_mount_changes": 0,
+    "original_services_online": 28,
+    "additional_prepared_services_not_deployed": 1,
+    "native_tests_passed": 189,
+    "native_tests_failed": 0,
+    "native_tests_skipped": 0
+  },
+  "idle_personal_pool_changes_applied": false,
+  "shared_routes_changed": false,
+  "reserved_volume": {
+    "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+    "name": "whatsapp-shared-07-data",
+    "service_id": "b6eee626-1858-42c0-b274-8dc3897b97b3",
+    "service_name": "whatsapp-shared-07",
+    "mount_path": "/data",
+    "source": null,
+    "deployment": null,
+    "new_qr_capacity": 0,
+    "state": "reserved_only_not_activated",
+    "reason": "Staged create was accepted; later normal create proved quota 27. Do not use staging to bypass the confirmed quota.",
+    "cleanup": "Deletion was rejected by automatic approval review. Preserve this new storage for the planned service until quota approval; never delete it without explicit approval."
+  }
 }
