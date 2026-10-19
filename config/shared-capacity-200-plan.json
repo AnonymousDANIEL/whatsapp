@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
   "prepared_at": "2026-10-19T14:45:29.101Z",
-  "status": "authorized_pending_backup",
-  "active": false,
+  "status": "verified_active",
+  "active": true,
   "request": "Add 100 QR slots to the existing independent shared fleet",
   "project_id": "1c47fb5b-4692-4e66-91a3-2efd7809dabb",
   "environment_id": "66f08e45-5e19-46f8-a447-597980fbceaf",
   "baseline_commit": "779213092ef49c35c3e2320c29532f946ea0cb39",
-  "current_shared_slots": 100,
+  "current_shared_slots": 200,
   "additional_shared_slots": 100,
   "target_shared_slots": 200,
-  "provisioned_additional_slots": 0,
+  "provisioned_additional_slots": 100,
   "personal_slots_preserved": 125,
   "existing_shared_workers_preserved": 15,
   "new_worker_count": 15,
@@ -26,25 +26,32 @@
     "personal_worker_pool_ceiling": 58,
     "api_db_pool_size": 5,
     "db_pool_size_per_worker": 2,
-    "application_pool_ceiling_after": 93,
-    "worker_count": 15,
-    "current_shared_slots": 100,
+    "application_pool_ceiling_after": 123,
+    "worker_count": 30,
+    "current_shared_slots": 200,
     "new_worker_pool_ceiling": 30,
     "target_application_pool_ceiling": 123,
-    "last_verified_max_connections": 100,
-    "last_verified_regular_connections": 97,
+    "last_verified_max_connections": 500,
+    "last_verified_regular_connections": 497,
     "last_verified_reserved_connections": 3,
-    "last_verified_at": "2026-10-19T12:19:50.155658624Z",
-    "existing_postgres_deployment_preserved": "4888c5c7-c0e4-49a6-b41b-406077ce57c7",
+    "last_verified_at": "2026-10-19T15:46:07.389783279Z",
     "proposed_max_connections": 200,
     "proposed_regular_connections": 197,
     "proposed_application_headroom": 74,
-    "restart_required": true,
+    "restart_required": false,
     "restart_authorized": true,
-    "settings_changed": false,
+    "settings_changed": true,
     "backup_required_before_maintenance": true,
     "pg_image_version_or_volume_change_allowed": false,
-    "configuration_method": "Railway start command with max_connections=200; redeploy exact existing PostgreSQL build, no ALTER SYSTEM or database version change"
+    "configuration_method": "Railway start command with max_connections=200; redeploy exact existing PostgreSQL build, no ALTER SYSTEM or database version change",
+    "previous_postgres_deployment": "4888c5c7-c0e4-49a6-b41b-406077ce57c7",
+    "current_postgres_deployment": "15d560fd-9c8f-437c-8ddd-1c79c802a2ab",
+    "reused_exact_existing_build": true,
+    "maintenance_completed": true,
+    "actual_template_default_max_connections": 500,
+    "conservative_regular_budget": 197,
+    "actual_regular_headroom": 374,
+    "observation": "Cached redeploy logged template seeding max_connections=500; read-only verification confirms actual500/regular497. The configured200/regular197 remains the conservative admission budget; do not report actual200 or restart a healthy database just to match that target."
   },
   "worker_watch_manifest": "config/worker-watch-paths.json",
   "admission_guards": [
@@ -70,9 +77,9 @@
     {
       "group": "shared-16",
       "service": "whatsapp-shared-16",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "693e4970-7bfc-41a9-8f19-d227611153c2",
+      "volume_id": "20ab378d-ba19-4a88-a143-515c5e335d16",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -86,7 +93,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -97,14 +109,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "ef666ff0-5992-4b9f-9c25-14467915fe4d"
     },
     {
       "group": "shared-17",
       "service": "whatsapp-shared-17",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "0d70e4ac-f8cb-4ba5-bd91-021545651c48",
+      "volume_id": "676388e8-332c-4121-a5ab-71af8ea9faa6",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -118,7 +131,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -129,14 +147,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "901873ee-4773-445c-8684-ea8c5a7e5c3a"
     },
     {
       "group": "shared-18",
       "service": "whatsapp-shared-18",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "5c6105b1-23de-4b9c-8671-c2bdb3829388",
+      "volume_id": "ac44b0d1-a4ca-4204-82ef-244ca6fc2be4",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -150,7 +169,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -161,14 +185,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "907e2934-47ff-4b23-b4e2-ac69a321d387"
     },
     {
       "group": "shared-19",
       "service": "whatsapp-shared-19",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "9e4b8c72-994e-4570-93f4-61f0bb1420da",
+      "volume_id": "2026d46f-2565-455c-a8ef-793e4b80fe4a",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -182,7 +207,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -193,14 +223,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "60a24b0d-008f-460b-9af6-844494c09668"
     },
     {
       "group": "shared-20",
       "service": "whatsapp-shared-20",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "ae9b5c0a-1317-44ba-b3d6-5df3bc37faf4",
+      "volume_id": "78a140e3-1f90-4d46-a51f-868078eb2d89",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -214,7 +245,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -225,14 +261,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "f399355f-5b2f-4fe8-a373-fd8ddc78db1d"
     },
     {
       "group": "shared-21",
       "service": "whatsapp-shared-21",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "29ac391c-33fa-4920-8880-3346711cadb3",
+      "volume_id": "ed8b0343-1dcd-448c-a2cf-5891422d4a3f",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -246,7 +283,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -257,14 +299,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "eeb25cde-16d1-4254-88bf-87e2da71a4b6"
     },
     {
       "group": "shared-22",
       "service": "whatsapp-shared-22",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "023226da-d68a-4c58-b3b4-7d24c7c27919",
+      "volume_id": "2ce1bad8-983d-4712-83c4-e79f62e702d3",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -278,7 +321,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -289,14 +337,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "94771e2b-d513-4f58-b983-cd8ab9c7be4f"
     },
     {
       "group": "shared-23",
       "service": "whatsapp-shared-23",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "134641cd-7b62-4fa8-9f3f-d3b3ef8d04fa",
+      "volume_id": "e6a4276e-6949-4c91-9abc-484aa253b44c",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -310,7 +359,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -321,14 +375,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "8fa8f4e0-4c86-4402-bd30-2b1379277dba"
     },
     {
       "group": "shared-24",
       "service": "whatsapp-shared-24",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "4630e8c3-5078-4309-bcbb-c9a67fbfe4d2",
+      "volume_id": "afe250b6-463c-405b-a7f1-7ed42bc65957",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -342,7 +397,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -353,14 +413,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "adc4a429-c936-41ab-95f4-4eea55f3276c"
     },
     {
       "group": "shared-25",
       "service": "whatsapp-shared-25",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "1a7b1e65-5bcd-42e7-b91d-ce12f9df136b",
+      "volume_id": "45aef208-66ef-44b6-841a-1dac9b29b941",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -374,7 +435,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -385,14 +451,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "82c5cf0b-88b6-42c3-b420-d2925bd119a7"
     },
     {
       "group": "shared-26",
       "service": "whatsapp-shared-26",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "c64bd263-bb83-4a1e-94e9-07c54d95f278",
+      "volume_id": "b7a32c7a-51e2-4b59-ad86-a935ef0a16e9",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -406,7 +473,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -417,14 +489,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "d71edab6-d297-4134-9941-581fb23afa0e"
     },
     {
       "group": "shared-27",
       "service": "whatsapp-shared-27",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "2b6351fe-5fc5-435a-8e0d-e5eacfef2407",
+      "volume_id": "ba4e244d-f94c-4426-a93c-de751ad17d7d",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -438,7 +511,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -449,14 +527,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "e399764a-4fba-4ffa-bce9-60823491f09f"
     },
     {
       "group": "shared-28",
       "service": "whatsapp-shared-28",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "70edf902-82b4-4ff1-9bad-8db2f4c5285c",
+      "volume_id": "43ee5368-9451-4e41-b43a-844e4e69178b",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -470,7 +549,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -481,14 +565,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "437ae98e-994b-4ed4-9368-587bff5009f2"
     },
     {
       "group": "shared-29",
       "service": "whatsapp-shared-29",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "4c767326-0d03-496b-8a72-a9354e0b3803",
+      "volume_id": "10166d34-cd0a-4a1e-9856-9ff2a6232a7b",
+      "active": true,
       "max_accounts": 7,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -502,7 +587,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -513,14 +603,15 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "15c00abb-937e-4107-ae50-06e561eca17d"
     },
     {
       "group": "shared-30",
       "service": "whatsapp-shared-30",
-      "service_id": null,
-      "volume_id": null,
-      "active": false,
+      "service_id": "19223d8c-ec58-4f55-95e8-84274b646a98",
+      "volume_id": "998dfb68-81ba-4736-adb9-16ae8f21dc3d",
+      "active": true,
       "max_accounts": 2,
       "db_pool_size": 2,
       "volume_size_mb": 10000,
@@ -534,7 +625,12 @@
       "source": {
         "repo": "AnonymousDANIEL/whatsapp",
         "dockerfile": "Dockerfile.worker",
-        "config_file": "railway.worker.json"
+        "actual": {
+          "repo": "AnonymousDANIEL/whatsapp",
+          "branch": "main",
+          "commitSha": "b699cebe2eee03aa24efdbebeaebaf736a02ae01"
+        },
+        "configuration": "Railway service settings; new services do not opt into deprecated Config as Code"
       },
       "variables": {
         "SERVICE_ROLE": "worker",
@@ -545,7 +641,8 @@
         "PORT": "8080",
         "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
-      }
+      },
+      "deployment_id": "94a858e3-8a4a-40bd-80c3-61b65c7647e8"
     }
   ],
   "maintenance_authorized_at": "2026-10-19T15:02:44Z",
@@ -554,6 +651,15 @@
     "purpose": "private pre-maintenance archive and complete isolated restore check",
     "volume_size_mb": 10000,
     "mount_path": "/backup",
-    "remove_database_reference_after_verification": true
-  }
+    "remove_database_reference_after_verification": true,
+    "service_id": "c4f44834-7fef-443a-ac53-d6d2f3b6271e",
+    "volume_id": "0a5dedba-6e72-45b6-895a-252773dc585c",
+    "backup_verified": true,
+    "restored_public_tables": 28,
+    "credential_reference_removed": true,
+    "standby_deployment": "814e49d0-538c-4f48-acf5-e457c690be7f"
+  },
+  "activated_at": "2026-10-19T15:46:07.255412585Z",
+  "verified_at": "2026-10-19T15:47:33.170Z",
+  "shared_slots_before": 100
 }
