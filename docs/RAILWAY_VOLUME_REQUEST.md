@@ -1,3 +1,9 @@
+# Resolved: 1,000 volumes per project approved — 2026-10-19
+
+The Owner supplied an official Railway support reply confirming a workspace allowance of 1,000 volumes per project, continued Pro membership and no plan/contract change. Nine normal independent volume creations succeeded after the earlier 27-volume rejection. This approval covers volume count; compute/database limits remain separately enforced. The shared rollout has been verified at 100 slots. See config/shared-capacity-100-plan.json and docs/VALIDATION.md.
+
+## Historical initial request draft
+
 Subject: Request to increase project volume-count quota from 27 to 100
 
 Hello Railway team,

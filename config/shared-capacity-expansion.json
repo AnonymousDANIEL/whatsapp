@@ -1,5 +1,5 @@
 {
-  "state": "blocked_volume_quota",
+  "state": "active_verified",
   "requested_additional_shared_slots": 70,
   "existing_shared_slots_preserved": 42,
   "target_shared_slots": 100,
@@ -12,7 +12,7 @@
   "vcpus_per_new_worker": 2,
   "memory_gb_per_new_worker": 8,
   "db_pool_size_per_new_worker": 2,
-  "current_application_pool_ceiling": 89,
+  "current_application_pool_ceiling": 93,
   "target_application_pool_ceiling": 93,
   "new_volume_size_mb": 10000,
   "region": "us-east4-eqdc4a",
@@ -21,52 +21,97 @@
   "source": "AnonymousDANIEL/whatsapp",
   "branch": "main",
   "dockerfile": "Dockerfile.worker",
-  "activated_additional_slots": 12,
+  "activated_additional_slots": 70,
   "workers": [
     {
       "group": "shared-07",
       "service": "whatsapp-shared-07",
-      "max_accounts": 7
+      "service_id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "volume_id": "645fafe2-1bac-4468-9ce7-26b3bb1a12cc",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "6713b287-5bcc-436e-9864-63595dce8d77",
+      "preserved": false
     },
     {
       "group": "shared-08",
       "service": "whatsapp-shared-08",
-      "max_accounts": 7
+      "service_id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "volume_id": "929f38cc-9235-4cfe-91af-897771c85f4b",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "5ef4bd86-08ac-4c78-98d7-a67a6ef772fb",
+      "preserved": false
     },
     {
       "group": "shared-09",
       "service": "whatsapp-shared-09",
-      "max_accounts": 7
+      "service_id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "volume_id": "c5648b1c-6f3d-4d1e-9c5f-0ea159d63b5a",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "55d787a9-e2cf-4912-97ae-d2c588d966db",
+      "preserved": false
     },
     {
       "group": "shared-10",
       "service": "whatsapp-shared-10",
-      "max_accounts": 7
+      "service_id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "volume_id": "2a9a9d75-8030-4417-9ef5-82bc323c331e",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "32af566f-3fe5-454c-9e4d-674e2201b568",
+      "preserved": false
     },
     {
       "group": "shared-11",
       "service": "whatsapp-shared-11",
-      "max_accounts": 7
+      "service_id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "volume_id": "38ee2d74-ec68-4c13-9b51-10238f26267e",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "2f0dae88-6550-439d-a1e2-96636d3a3e0f",
+      "preserved": false
     },
     {
       "group": "shared-12",
       "service": "whatsapp-shared-12",
-      "max_accounts": 7
+      "service_id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "volume_id": "0f47b27e-3396-4f6d-8b9e-bed2318713a3",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "9b4059fc-9a63-4140-957d-639f8823ddaf",
+      "preserved": false
     },
     {
       "group": "shared-13",
       "service": "whatsapp-shared-13",
-      "max_accounts": 7
+      "service_id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "volume_id": "044734f5-9204-4f36-9c62-e8f0f40c8acf",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "435bb265-7b90-49e3-80d4-1ab9b9e8e54b",
+      "preserved": false
     },
     {
       "group": "shared-14",
       "service": "whatsapp-shared-14",
-      "max_accounts": 7
+      "service_id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "volume_id": "78e46f0b-2ea7-440e-9006-b27268a10e86",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "a974d9da-e4d5-406f-bc83-df63fe92c395",
+      "preserved": false
     },
     {
       "group": "shared-15",
       "service": "whatsapp-shared-15",
-      "max_accounts": 2
+      "service_id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "volume_id": "53b9fc75-b645-4127-8877-96945e1160f7",
+      "max_accounts": 2,
+      "db_pool_size": 2,
+      "deployment_id": "6d40b2ae-1d7f-4e3b-b797-8a41f3e89885",
+      "preserved": false
     }
   ],
   "activation_requirements": [
@@ -79,7 +124,7 @@
     "Retain original connected a-f workers without redeploy; if any candidate idle group is now occupied, stop and recompute the budget",
     "Railway must approve the required volume-count quota before further creation; request 100 for staged future growth. The exact 100-slot target needs 36 attached project volumes including PostgreSQL, or 37 total entries while the retained unmounted disk stays separate. Any future supported reuse of that disk must happen only after provider quota approval and a fresh review."
   ],
-  "verification_limits": "The additional twelve slots are verified on the existing six workers; the remaining 58 slots and future nine services are inactive. Empty worker startup and seven network-disabled desktops do not certify seven linked phones or guaranteed uptime.",
+  "verification_limits": "No production phone link, customer send, password or fund mutation was used as a test. Capacity and synthetic desktops do not certify 100 real phones, guaranteed uptime or absolute security.",
   "proposed_api_pool_size": 5,
   "personal_pool_ceiling_before": 72,
   "proposed_personal_pool_ceiling_after": 58,
@@ -105,14 +150,13 @@
   "actual_postgres_max_connections": 100,
   "actual_regular_connection_limit": 97,
   "required_volume_quota": 37,
-  "observed_volume_quota": 27,
-  "provider_error": "You can only have 27 volumes per project",
-  "runtime_commit": "e8510071de6edb5bd50d852c343158a8d73c7226",
-  "api_deployment_id": "1d5cce83-5d20-4a59-af3d-6e87a9d3942e",
+  "observed_volume_quota": 1000,
+  "runtime_commit": "abb87f64f3a847b3038b57db6a11d15b7d12bfe9",
+  "api_deployment_id": "9ed9e4e0-1c09-47b0-a6bd-61d8f0b2f0a5",
   "source_feature_ci_run": 39219089225,
   "source_main_ci_run": 39219535545,
-  "idle_personal_pool_changes_applied": false,
-  "shared_routes_changed": false,
+  "idle_personal_pool_changes_applied": true,
+  "shared_routes_changed": true,
   "reserved_volume": {
     "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
     "name": "whatsapp-shared-07-data",
@@ -128,7 +172,7 @@
     "service_id": null
   },
   "original_shared_slots_at_request": 30,
-  "remaining_additional_slots": 58,
+  "remaining_additional_slots": 0,
   "requested_long_term_volume_quota": 100,
   "prior_verification_snapshot": {
     "at": "2026-10-19T08:01:17.732495159Z",
@@ -146,19 +190,31 @@
     "native_tests_skipped": 0
   },
   "verification_snapshot": {
-    "at": "2026-10-19T08:40:25.697485696Z",
-    "shared_groups": 6,
-    "shared_total": 42,
+    "at": "2026-10-19T10:30:22.660296388Z",
+    "shared_groups": 15,
+    "shared_total": 100,
     "shared_used": 0,
-    "shared_available": 42,
+    "shared_available": 100,
     "all_shared_heartbeats_fresh": true,
-    "personal_worker_deployment_changes": 0,
-    "api_or_postgres_deployment_changes": 0,
-    "profile_mount_changes": 0,
-    "services_online": 28,
-    "volume_entries": 28,
-    "new_services_or_volumes_created": 0
+    "authenticated_routes": 35,
+    "personal_slots_preserved": 125,
+    "protected_deployment_changes": 0,
+    "original_profile_mount_changes": 0,
+    "services_online": 37,
+    "volume_entries": 37,
+    "new_services": 9,
+    "new_volumes": 9
   },
   "target_attached_project_volumes_including_postgres": 36,
-  "required_volume_quota_if_reserved_volume_reused_after_approval": 36
+  "required_volume_quota_if_reserved_volume_reused_after_approval": 36,
+  "current_shared_slots": 100,
+  "max_account_slots_activated": 12,
+  "new_worker_slots_activated": 58,
+  "approved_volume_count_quota": 1000,
+  "prior_provider_error": "You can only have 27 volumes per project",
+  "quota_approval": "Owner-supplied official Railway reply on 2026-10-19 confirms 1,000 volumes per project, unchanged Pro plan and no contract change. Nine normal volume creates succeeded.",
+  "personal_routes_changed": false,
+  "activation_requirements_completed": true,
+  "previous_application_pool_ceiling": 89,
+  "actual_personal_pool_ceiling": 58
 }

@@ -1,0 +1,566 @@
+{
+  "state": "active_verified",
+  "at": "2026-10-19T10:30:22.660296388Z",
+  "approved_volume_count_quota": 1000,
+  "quota_proof": {
+    "created_volume_id": "929f38cc-9235-4cfe-91af-897771c85f4b",
+    "created_volume_name": "whatsapp-shared-08-data",
+    "normal_create_succeeded": true,
+    "new_volumes_created": 9
+  },
+  "source_commit": "abb87f64f3a847b3038b57db6a11d15b7d12bfe9",
+  "api_deployment_id": "9ed9e4e0-1c09-47b0-a6bd-61d8f0b2f0a5",
+  "capacity": {
+    "at": "2026-10-19T10:30:22.660296388Z",
+    "groups": 15,
+    "total": 100,
+    "used": 0,
+    "available": 100,
+    "unavailable": 0,
+    "all_fresh": true
+  },
+  "database_budget": {
+    "personal": 58,
+    "shared": 30,
+    "api": 5,
+    "configured_ceiling": 93,
+    "observed": {
+      "at": "2026-10-19T10:30:22.660705002Z",
+      "max_connections": 100,
+      "superuser_reserved_connections": 3,
+      "reserved_connections": 0,
+      "current_connections": 86,
+      "regular_connections": 97
+    }
+  },
+  "new_workers": [
+    {
+      "group": "shared-08",
+      "service_id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "volume_id": "929f38cc-9235-4cfe-91af-897771c85f4b",
+      "max_accounts": 7,
+      "deployment_id": "5ef4bd86-08ac-4c78-98d7-a67a6ef772fb",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-07",
+      "service_id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "volume_id": "645fafe2-1bac-4468-9ce7-26b3bb1a12cc",
+      "max_accounts": 7,
+      "deployment_id": "6713b287-5bcc-436e-9864-63595dce8d77",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-09",
+      "service_id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "volume_id": "c5648b1c-6f3d-4d1e-9c5f-0ea159d63b5a",
+      "max_accounts": 7,
+      "deployment_id": "55d787a9-e2cf-4912-97ae-d2c588d966db",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-10",
+      "service_id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "volume_id": "2a9a9d75-8030-4417-9ef5-82bc323c331e",
+      "max_accounts": 7,
+      "deployment_id": "32af566f-3fe5-454c-9e4d-674e2201b568",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-11",
+      "service_id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "volume_id": "38ee2d74-ec68-4c13-9b51-10238f26267e",
+      "max_accounts": 7,
+      "deployment_id": "2f0dae88-6550-439d-a1e2-96636d3a3e0f",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-12",
+      "service_id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "volume_id": "0f47b27e-3396-4f6d-8b9e-bed2318713a3",
+      "max_accounts": 7,
+      "deployment_id": "9b4059fc-9a63-4140-957d-639f8823ddaf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-13",
+      "service_id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "volume_id": "044734f5-9204-4f36-9c62-e8f0f40c8acf",
+      "max_accounts": 7,
+      "deployment_id": "435bb265-7b90-49e3-80d4-1ab9b9e8e54b",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-14",
+      "service_id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "volume_id": "78e46f0b-2ea7-440e-9006-b27268a10e86",
+      "max_accounts": 7,
+      "deployment_id": "a974d9da-e4d5-406f-bc83-df63fe92c395",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-15",
+      "service_id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "volume_id": "53b9fc75-b645-4127-8877-96945e1160f7",
+      "max_accounts": 2,
+      "deployment_id": "6d40b2ae-1d7f-4e3b-b797-8a41f3e89885",
+      "status": "SUCCESS"
+    }
+  ],
+  "idle_pool_changes": [
+    {
+      "service": "whatsapp-worker-g",
+      "service_id": "4278892a-5362-4452-adc3-d9424790b16e",
+      "deployment_id": "1c3f9600-7331-4f79-a216-3f1c690ad45d",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:14:17.041164748Z",
+      "worker_preflight_at": "2026-10-19T10:15:03.126339141Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-h",
+      "service_id": "727d7128-35f4-4dc0-9c80-f97ca9095cf5",
+      "deployment_id": "6cb85f5e-10bd-4108-9387-33c1102e6085",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:21:17.915096003Z",
+      "worker_preflight_at": "2026-10-19T10:21:37.248929293Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-i",
+      "service_id": "746a6a7c-12a4-40ed-97b9-52a02e0ddc29",
+      "deployment_id": "124a5eed-6a9a-441e-a412-77acd73a4630",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:22:18.283951935Z",
+      "worker_preflight_at": "2026-10-19T10:22:07.968986619Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-j",
+      "service_id": "93961029-9f97-413d-9251-a5fd483ea4bc",
+      "deployment_id": "65e57b20-15d5-4234-b115-f6911b2b5ce4",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:22:18.283951935Z",
+      "worker_preflight_at": "2026-10-19T10:21:47.223406995Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-k",
+      "service_id": "1a97bb2b-b1ef-44ba-a95e-cf76f1e31e47",
+      "deployment_id": "15250182-e43f-42e1-96bb-8243631ee654",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:22:18.283951935Z",
+      "worker_preflight_at": "2026-10-19T10:22:03.701015534Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-l",
+      "service_id": "5d33d52c-fe91-4e5d-9ac5-90205db9978a",
+      "deployment_id": "75fa30c4-3d8e-40db-bc23-87d31a0b0b98",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:22:18.283951935Z",
+      "worker_preflight_at": "2026-10-19T10:22:44.257399342Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-m",
+      "service_id": "3c37b6ce-f717-474c-91f0-4da09efcfca3",
+      "deployment_id": "708dd742-a018-49e8-869f-fb8c64aaf1bb",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:22:18.283951935Z",
+      "worker_preflight_at": "2026-10-19T10:23:07.952444547Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-n",
+      "service_id": "42f5274b-6e31-497e-b17b-cf2d1e80cf72",
+      "deployment_id": "82b9ce40-ea32-433f-aed8-49f746bffb4b",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:23:11.448069855Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-o",
+      "service_id": "7b00458e-b8e1-4363-86e9-7f7b3da54280",
+      "deployment_id": "991cb3b5-092e-4400-a671-a582857cff57",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:23:26.838255263Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-p",
+      "service_id": "29e3adf4-f591-4434-928f-59774c87baf6",
+      "deployment_id": "edc20549-9270-4a24-9f41-3a2ac236c63a",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:22:40.593360310Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-q",
+      "service_id": "362a7baf-354d-4123-878d-c69cff624d77",
+      "deployment_id": "82cfb74b-562b-4229-885a-a10eef105f38",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:23:44.929043933Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-r",
+      "service_id": "469a3a04-089d-4f72-91ce-0fd1359d5aa2",
+      "deployment_id": "531af6db-b646-4813-bb62-1133fab5fc69",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:23:09.372513929Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-s",
+      "service_id": "42ec1ff3-568c-485d-af56-ab6dc131bfd5",
+      "deployment_id": "cca6a6a0-97b2-4db6-a5b5-b0e24b98d700",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:23:18.361930469Z",
+      "worker_preflight_at": "2026-10-19T10:23:44.639294213Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    },
+    {
+      "service": "whatsapp-worker-t",
+      "service_id": "aa22b9e8-368b-411f-845c-a8cc9fadad07",
+      "deployment_id": "6afdad0f-7caf-4d4e-82e7-7fd84fe32d2a",
+      "pool": 2,
+      "db_preflight_at": "2026-10-19T10:24:18.594295215Z",
+      "worker_preflight_at": "2026-10-19T10:24:01.189518093Z",
+      "assigned": 0,
+      "running": 0,
+      "original_mount_preserved": true,
+      "status": "SUCCESS"
+    }
+  ],
+  "protected_service_deployments": [
+    {
+      "service": "whatsapp-shared-05",
+      "service_id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "deployment_id": "c1bb2fc3-80b1-43fb-9d73-dc2de6623bea"
+    },
+    {
+      "service": "Postgres",
+      "service_id": "aea3b02f-4f52-46c5-b248-c8a697351b78",
+      "deployment_id": "4888c5c7-c0e4-49a6-b41b-406077ce57c7"
+    },
+    {
+      "service": "whatsapp-worker-e",
+      "service_id": "62fa4980-2fe2-4520-8d80-1a285a0728ad",
+      "deployment_id": "8a5d9c5d-4a4a-4704-87b7-ca297dd16308"
+    },
+    {
+      "service": "diligent-eagerness",
+      "service_id": "a55183ab-c9cb-4922-9ca5-ee99377d9a13",
+      "deployment_id": "418f81e5-d2fd-4ef8-952c-1ecdac3575d8"
+    },
+    {
+      "service": "whatsapp-worker-b",
+      "service_id": "18ee5992-031f-4401-a692-aae36407c6f2",
+      "deployment_id": "de42b795-e8af-4dca-b109-23ca7d745571"
+    },
+    {
+      "service": "whatsapp-worker-f",
+      "service_id": "b938e5e8-8a9a-4230-b754-079729793b4f",
+      "deployment_id": "9c238755-1ece-49ce-821a-13a587fad436"
+    },
+    {
+      "service": "whatsapp-shared-06",
+      "service_id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "deployment_id": "13ac8c11-849f-4ee6-8dce-8a3cac3df8c3"
+    },
+    {
+      "service": "whatsapp-shared-04",
+      "service_id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "deployment_id": "af1df5c1-294f-4e3e-aa11-6e0b0d11c158"
+    },
+    {
+      "service": "whatsapp-shared-03",
+      "service_id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "deployment_id": "8a7a66b2-46a0-4f8d-9a4e-1cd35993a94b"
+    },
+    {
+      "service": "whatsapp-shared-02",
+      "service_id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "deployment_id": "e98364d4-2acc-4abd-83c2-21e548823acb"
+    },
+    {
+      "service": "whatsapp-worker-c",
+      "service_id": "2b060bae-3e05-496b-8558-e78cb45e0b90",
+      "deployment_id": "6c7b1fde-5c7b-4730-a38d-abf8d639e45c"
+    },
+    {
+      "service": "whatsapp-shared-01",
+      "service_id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "deployment_id": "3f0149c3-0903-4dbb-bd4b-29bc183012af"
+    },
+    {
+      "service": "whatsapp-worker-d",
+      "service_id": "8c2b714b-9d84-4fb7-8542-1cf9ebd3934d",
+      "deployment_id": "3401e0aa-a41d-4bf9-9fcb-1026f98c04ba"
+    }
+  ],
+  "authenticated_routes": [
+    {
+      "group": "group-b",
+      "authenticated": true,
+      "running": 5,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-a",
+      "authenticated": true,
+      "running": 4,
+      "max_accounts": 10
+    },
+    {
+      "group": "group-d",
+      "authenticated": true,
+      "running": 1,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-c",
+      "authenticated": true,
+      "running": 2,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-e",
+      "authenticated": true,
+      "running": 1,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-f",
+      "authenticated": true,
+      "running": 1,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-h",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-i",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-g",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-k",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-j",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-l",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-m",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-n",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-o",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-p",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "group-q",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-r",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-s",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 5
+    },
+    {
+      "group": "group-t",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 5
+    },
+    {
+      "group": "shared-02",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-03",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-01",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-04",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-06",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-07",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-10",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-09",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-08",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-15",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 2
+    },
+    {
+      "group": "shared-11",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-13",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-14",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-05",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    },
+    {
+      "group": "shared-12",
+      "authenticated": true,
+      "running": 0,
+      "max_accounts": 7
+    }
+  ],
+  "services_online": 37,
+  "volume_entries": 37,
+  "original_mount_changes": 0,
+  "protected_deployment_changes": 0,
+  "personal_slots_preserved": 125,
+  "retained_unmounted_volume": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+  "verification_limits": "No production phone link, customer send, password or fund mutation was used as a test. Capacity and synthetic desktops do not certify 100 real phones, guaranteed uptime or absolute security."
+}

@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto'),{spawn}=require('node:child_process'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 test('PostgreSQL: a dedicated shared worker can serve and heartbeat while retaining its ownership connection',{skip:!process.env.TEST_DATABASE_URL,timeout:45000},async t=>{
- const plan=require('../config/shared-max-accounts-plan.json');assert.ok(plan.db_pool_size_per_worker>=2,'The ownership lock occupies one connection; queries need another');
+ const plan=require('../config/shared-capacity-100-plan.json');assert.ok(plan.db_pool_size_per_worker>=2,'The ownership lock occupies one connection; queries need another');
  assert.equal(plan.application_pool_ceiling_after,plan.personal_worker_pool_ceiling+plan.api_db_pool_size+plan.worker_count*plan.db_pool_size_per_worker);assert.ok(plan.application_pool_ceiling_after<=95);
  const {Pool}=require('pg'),admin=new Pool({connectionString:process.env.TEST_DATABASE_URL}),name='wa_shared_runtime_'+randomUUID().replaceAll('-',''),group='synthetic-'+randomUUID().slice(0,8),secret='synthetic-runtime-secret-thirty-two-chars';
  await admin.query('CREATE DATABASE '+name);const url=new URL(process.env.TEST_DATABASE_URL);url.pathname='/'+name;

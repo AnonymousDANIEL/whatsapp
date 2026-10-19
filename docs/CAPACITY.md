@@ -1,4 +1,14 @@
-## Current shared max-account configuration — verified 2026-10-19
+## Current shared capacity: 100 slots — verified 2026-10-19
+
+Railway approved a workspace allowance of **1,000 volumes per project**, retaining Pro without a contract change. Nine normal volume creations succeeded. Shared capacity is now **100 configured slots**, comprising shared-01 through shared-15: fourteen seven-slot workers and a two-slot final worker. All use independent 10GB /data, 2 vCPU / 8GB, one replica and two database connections, with no public domains. See config/shared-capacity-100-plan.json and config/shared-capacity-100-verification.json for exact service, volume, deployment and preflight IDs.
+
+API deployment 9ed9e4e0-1c09-47b0-a6bd-61d8f0b2f0a5 authenticated all **35** private routes, preserving **125 personal slots**. At 2026-10-19T10:30:22.660296388Z, the actual DB-backed Owner-capacity reader reported **100 total / 0 used / 100 available**, with all fifteen groups fresh. All 37 services were Online, with no pending work or active warning/failure. There are 37 volume entries: 36 attached plus the untouched retained blank disk. The new shared-07 service uses a fresh -data-v2 volume.
+
+Only fourteen freshly proven empty personal groups g-t had their database pools set to two; each had zero assigned records and zero running/ready browsers immediately before its change. The g canary and new shared-08 were verified before wider rollout. Occupied a-f, the original six shared services and PostgreSQL retain their deployments; every original profile mount remains unchanged. Personal routes, secrets, pricing, balances, shared/photo switches, browser UID/affinity, process reserve and ownership locks are preserved.
+
+The configured database ceiling is **58 personal + 30 shared + 5 API = 93**, compared with a fresh read-only regular allowance of 97 (100 max, 3 reserved; observed current 86). No PostgreSQL settings were changed. Preserve this budget before any future expansion: the 1,000-volume allowance is separate from database, compute and real phone capacity. No real phone linking or customer delivery was used for testing, and synthetic desktops do not certify 100 connected phones or guaranteed uptime/security. Earlier capacity sections below are dated history.
+
+## Historical 42-slot configuration — verified earlier 2026-10-19
 
 The existing six dedicated shared services now each admit at most **seven** accounts, for **42 configured shared slots**. Their memory ceiling is 8GB per service with 2 vCPU, one replica and a two-connection database pool. All six reached terminal SUCCESS; at 2026-10-19T08:40:25.697485696Z the live DB-backed Owner-capacity reader returned **42 total / 0 used / 42 available**, all six fresh. No new volumes were created. See config/shared-max-accounts-plan.json and config/shared-max-accounts-verification.json for exact IDs and protected-service proof.
 

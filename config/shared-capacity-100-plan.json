@@ -1,0 +1,190 @@
+{
+  "state": "active_verified",
+  "worker_count": 15,
+  "slots_per_worker": 7,
+  "db_pool_size_per_worker": 2,
+  "personal_worker_pool_ceiling": 58,
+  "api_db_pool_size": 5,
+  "application_pool_ceiling_after": 93,
+  "previous_shared_slots": 42,
+  "target_shared_slots": 100,
+  "added_shared_slots": 58,
+  "personal_slots_preserved": 125,
+  "approved_volume_count_quota": 1000,
+  "new_services": 9,
+  "new_volumes": 9,
+  "workers": [
+    {
+      "group": "shared-01",
+      "service": "whatsapp-shared-01",
+      "service_id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "volume_id": "dbafc735-ef60-4852-9a42-67084252a225",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "3f0149c3-0903-4dbb-bd4b-29bc183012af",
+      "preserved": true
+    },
+    {
+      "group": "shared-02",
+      "service": "whatsapp-shared-02",
+      "service_id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "volume_id": "4d841951-2763-40ea-afa7-460e62cc172b",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "e98364d4-2acc-4abd-83c2-21e548823acb",
+      "preserved": true
+    },
+    {
+      "group": "shared-03",
+      "service": "whatsapp-shared-03",
+      "service_id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "volume_id": "193f5e3b-7410-459f-a956-01e1e074fb00",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "8a7a66b2-46a0-4f8d-9a4e-1cd35993a94b",
+      "preserved": true
+    },
+    {
+      "group": "shared-04",
+      "service": "whatsapp-shared-04",
+      "service_id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "volume_id": "69e8d53c-9425-4d1d-87f5-d32426901dd4",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "af1df5c1-294f-4e3e-aa11-6e0b0d11c158",
+      "preserved": true
+    },
+    {
+      "group": "shared-05",
+      "service": "whatsapp-shared-05",
+      "service_id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "volume_id": "d84a6747-dff4-410e-b6fd-546f5c98abdc",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "c1bb2fc3-80b1-43fb-9d73-dc2de6623bea",
+      "preserved": true
+    },
+    {
+      "group": "shared-06",
+      "service": "whatsapp-shared-06",
+      "service_id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "volume_id": "1db63e31-6e23-4554-b0bb-5901c27f25b3",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "13ac8c11-849f-4ee6-8dce-8a3cac3df8c3",
+      "preserved": true
+    },
+    {
+      "group": "shared-07",
+      "service": "whatsapp-shared-07",
+      "service_id": "eee37589-a7bc-45dd-af15-910eabbcd01e",
+      "volume_id": "645fafe2-1bac-4468-9ce7-26b3bb1a12cc",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "6713b287-5bcc-436e-9864-63595dce8d77",
+      "preserved": false
+    },
+    {
+      "group": "shared-08",
+      "service": "whatsapp-shared-08",
+      "service_id": "770bcba8-ebfa-4cf5-82a6-b1a66371bcca",
+      "volume_id": "929f38cc-9235-4cfe-91af-897771c85f4b",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "5ef4bd86-08ac-4c78-98d7-a67a6ef772fb",
+      "preserved": false
+    },
+    {
+      "group": "shared-09",
+      "service": "whatsapp-shared-09",
+      "service_id": "1ee63153-cf93-49a0-86d0-008e923da643",
+      "volume_id": "c5648b1c-6f3d-4d1e-9c5f-0ea159d63b5a",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "55d787a9-e2cf-4912-97ae-d2c588d966db",
+      "preserved": false
+    },
+    {
+      "group": "shared-10",
+      "service": "whatsapp-shared-10",
+      "service_id": "ceac02df-5000-4ad2-9dc7-242a58ec2591",
+      "volume_id": "2a9a9d75-8030-4417-9ef5-82bc323c331e",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "32af566f-3fe5-454c-9e4d-674e2201b568",
+      "preserved": false
+    },
+    {
+      "group": "shared-11",
+      "service": "whatsapp-shared-11",
+      "service_id": "52216870-323d-463b-a52c-7c6e82225c54",
+      "volume_id": "38ee2d74-ec68-4c13-9b51-10238f26267e",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "2f0dae88-6550-439d-a1e2-96636d3a3e0f",
+      "preserved": false
+    },
+    {
+      "group": "shared-12",
+      "service": "whatsapp-shared-12",
+      "service_id": "bf921c0a-1e16-46a0-b442-8ed79bab93f9",
+      "volume_id": "0f47b27e-3396-4f6d-8b9e-bed2318713a3",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "9b4059fc-9a63-4140-957d-639f8823ddaf",
+      "preserved": false
+    },
+    {
+      "group": "shared-13",
+      "service": "whatsapp-shared-13",
+      "service_id": "85ec7e8b-cdb2-4a9a-8ab9-7e6e74dfa001",
+      "volume_id": "044734f5-9204-4f36-9c62-e8f0f40c8acf",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "435bb265-7b90-49e3-80d4-1ab9b9e8e54b",
+      "preserved": false
+    },
+    {
+      "group": "shared-14",
+      "service": "whatsapp-shared-14",
+      "service_id": "9dde799b-57b6-4fc3-8fd1-da22808db970",
+      "volume_id": "78e46f0b-2ea7-440e-9006-b27268a10e86",
+      "max_accounts": 7,
+      "db_pool_size": 2,
+      "deployment_id": "a974d9da-e4d5-406f-bc83-df63fe92c395",
+      "preserved": false
+    },
+    {
+      "group": "shared-15",
+      "service": "whatsapp-shared-15",
+      "service_id": "da444e2d-14a7-4e01-9a1f-a8c822abcdd2",
+      "volume_id": "53b9fc75-b645-4127-8877-96945e1160f7",
+      "max_accounts": 2,
+      "db_pool_size": 2,
+      "deployment_id": "6d40b2ae-1d7f-4e3b-b797-8a41f3e89885",
+      "preserved": false
+    }
+  ],
+  "runtime_source_commit": "abb87f64f3a847b3038b57db6a11d15b7d12bfe9",
+  "profile_mount_changes": 0,
+  "profile_moves": 0,
+  "retained_unmounted_volume": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+  "network": "Private-only workers, one replica, same-project database and internal-secret references.",
+  "admission_policy": "Preserve private browser UID/CPU affinity, the 120-task reserve, ownership lock and real fresh capacity counters.",
+  "verification_limits": "Empty-worker health, authenticated capacity and seven network-disabled browser fixtures do not certify 100 real phones or guaranteed uptime/security.",
+  "api_deployment_id": "9ed9e4e0-1c09-47b0-a6bd-61d8f0b2f0a5",
+  "current_shared_slots": 100,
+  "verified_at": "2026-10-19T10:30:22.660296388Z",
+  "capacity_snapshot": {
+    "at": "2026-10-19T10:30:22.660296388Z",
+    "groups": 15,
+    "total": 100,
+    "used": 0,
+    "available": 100,
+    "unavailable": 0,
+    "all_fresh": true
+  },
+  "actual_postgres_regular_connections": 97,
+  "original_mount_changes": 0,
+  "protected_occupied_and_shared_deployment_changes": 0
+}
