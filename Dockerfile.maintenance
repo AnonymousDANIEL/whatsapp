@@ -1,0 +1,6 @@
+FROM ghcr.io/railwayapp-templates/postgres-ssl:18
+WORKDIR /app
+COPY ops/database-maintenance-200.sh /app/ops/database-maintenance-200.sh
+COPY test/maintenance-smoke.sh /app/test/maintenance-smoke.sh
+RUN chmod 755 /app/ops/database-maintenance-200.sh /app/test/maintenance-smoke.sh
+ENTRYPOINT ["/bin/bash", "/app/ops/database-maintenance-200.sh"]

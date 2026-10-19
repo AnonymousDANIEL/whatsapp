@@ -72,6 +72,8 @@ jobs:
             dockerfile: Dockerfile
           - image: worker
             dockerfile: Dockerfile.worker
+          - image: maintenance
+            dockerfile: Dockerfile.maintenance
     steps:
       - name: Read repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +87,11 @@ jobs:
           docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1000
           --mount type=bind,source="$GITHUB_WORKSPACE/test/browser-smoke.cjs",target=/app/test/browser-smoke.cjs,readonly
           --entrypoint node whatsapp-worker:ci /app/test/browser-smoke.cjs
+      - name: Verify private database backup and complete isolated restore
+        if: matrix.image == 'maintenance'
+        run: >-
+          docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1000
+          --entrypoint /bin/bash whatsapp-maintenance:ci /app/test/maintenance-smoke.sh
       - name: Test worker orphan reaping below the Railway-style init wrapper
         if: matrix.image == 'worker'
         run: >-

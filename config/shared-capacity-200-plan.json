@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "prepared_at": "2026-10-19T14:45:29.101Z",
-  "status": "blocked_pending_database_maintenance_authorization",
+  "status": "authorized_pending_backup",
   "active": false,
   "request": "Add 100 QR slots to the existing independent shared fleet",
   "project_id": "1c47fb5b-4692-4e66-91a3-2efd7809dabb",
@@ -16,10 +16,10 @@
   "new_worker_count": 15,
   "new_volume_count": 15,
   "existing_services": 37,
-  "services_after_activation": 52,
+  "services_after_activation": 53,
   "volume_entries_before": 37,
-  "volume_entries_after": 52,
-  "attached_volumes_after": 51,
+  "volume_entries_after": 53,
+  "attached_volumes_after": 52,
   "approved_project_volume_quota": 1000,
   "volume_quota_is_current_blocker": false,
   "database": {
@@ -40,10 +40,11 @@
     "proposed_regular_connections": 197,
     "proposed_application_headroom": 74,
     "restart_required": true,
-    "restart_authorized": false,
+    "restart_authorized": true,
     "settings_changed": false,
     "backup_required_before_maintenance": true,
-    "pg_image_version_or_volume_change_allowed": false
+    "pg_image_version_or_volume_change_allowed": false,
+    "configuration_method": "Railway start command with max_connections=200; redeploy exact existing PostgreSQL build, no ALTER SYSTEM or database version change"
   },
   "worker_watch_manifest": "config/worker-watch-paths.json",
   "admission_guards": [
@@ -546,5 +547,13 @@
         "INTERNAL_SECRET": "${{whatsapp.INTERNAL_SECRET}}"
       }
     }
-  ]
+  ],
+  "maintenance_authorized_at": "2026-10-19T15:02:44Z",
+  "backup_service": {
+    "name": "whatsapp-db-backup-200",
+    "purpose": "private pre-maintenance archive and complete isolated restore check",
+    "volume_size_mb": 10000,
+    "mount_path": "/backup",
+    "remove_database_reference_after_verification": true
+  }
 }
