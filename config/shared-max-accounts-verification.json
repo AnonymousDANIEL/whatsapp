@@ -1,0 +1,181 @@
+{
+  "at": "2026-10-19T08:40:25.697485696Z",
+  "snapshot": {
+    "groups": 6,
+    "total": 42,
+    "used": 0,
+    "available": 42,
+    "unavailable": 0,
+    "all_fresh": true
+  },
+  "workers": [
+    {
+      "group": "shared-01",
+      "service": "whatsapp-shared-01",
+      "service_id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "volume_id": "dbafc735-ef60-4852-9a42-67084252a225",
+      "deployment_id": "3f0149c3-0903-4dbb-bd4b-29bc183012af",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-02",
+      "service": "whatsapp-shared-02",
+      "service_id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "volume_id": "4d841951-2763-40ea-afa7-460e62cc172b",
+      "deployment_id": "e98364d4-2acc-4abd-83c2-21e548823acb",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-03",
+      "service": "whatsapp-shared-03",
+      "service_id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "volume_id": "193f5e3b-7410-459f-a956-01e1e074fb00",
+      "deployment_id": "8a7a66b2-46a0-4f8d-9a4e-1cd35993a94b",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-04",
+      "service": "whatsapp-shared-04",
+      "service_id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "volume_id": "69e8d53c-9425-4d1d-87f5-d32426901dd4",
+      "deployment_id": "af1df5c1-294f-4e3e-aa11-6e0b0d11c158",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-05",
+      "service": "whatsapp-shared-05",
+      "service_id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "volume_id": "d84a6747-dff4-410e-b6fd-546f5c98abdc",
+      "deployment_id": "c1bb2fc3-80b1-43fb-9d73-dc2de6623bea",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-06",
+      "service": "whatsapp-shared-06",
+      "service_id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "volume_id": "1db63e31-6e23-4554-b0bb-5901c27f25b3",
+      "deployment_id": "13ac8c11-849f-4ee6-8dce-8a3cac3df8c3",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    }
+  ],
+  "protected_unchanged": [
+    {
+      "service": "whatsapp-worker-n",
+      "service_id": "42f5274b-6e31-497e-b17b-cf2d1e80cf72",
+      "deployment_id": "d510d4f0-0481-46af-aad3-87e236cedda1"
+    },
+    {
+      "service": "whatsapp-worker-f",
+      "service_id": "b938e5e8-8a9a-4230-b754-079729793b4f",
+      "deployment_id": "9c238755-1ece-49ce-821a-13a587fad436"
+    },
+    {
+      "service": "whatsapp-worker-p",
+      "service_id": "29e3adf4-f591-4434-928f-59774c87baf6",
+      "deployment_id": "5c983de0-26bf-4aa2-b065-cbe91e6fc3cc"
+    },
+    {
+      "service": "whatsapp-worker-i",
+      "service_id": "746a6a7c-12a4-40ed-97b9-52a02e0ddc29",
+      "deployment_id": "da3b448f-2659-43b2-8f97-e8a1ee5117bf"
+    },
+    {
+      "service": "whatsapp-worker-s",
+      "service_id": "42ec1ff3-568c-485d-af56-ab6dc131bfd5",
+      "deployment_id": "7de9216f-c270-4e23-9ace-a90773e23da3"
+    },
+    {
+      "service": "diligent-eagerness",
+      "service_id": "a55183ab-c9cb-4922-9ca5-ee99377d9a13",
+      "deployment_id": "418f81e5-d2fd-4ef8-952c-1ecdac3575d8"
+    },
+    {
+      "service": "whatsapp-worker-b",
+      "service_id": "18ee5992-031f-4401-a692-aae36407c6f2",
+      "deployment_id": "de42b795-e8af-4dca-b109-23ca7d745571"
+    },
+    {
+      "service": "whatsapp-worker-e",
+      "service_id": "62fa4980-2fe2-4520-8d80-1a285a0728ad",
+      "deployment_id": "8a5d9c5d-4a4a-4704-87b7-ca297dd16308"
+    },
+    {
+      "service": "whatsapp-worker-r",
+      "service_id": "469a3a04-089d-4f72-91ce-0fd1359d5aa2",
+      "deployment_id": "043c6867-81b3-49d1-a518-eda77aa8f077"
+    },
+    {
+      "service": "whatsapp-worker-j",
+      "service_id": "93961029-9f97-413d-9251-a5fd483ea4bc",
+      "deployment_id": "d9af3a26-67ae-4abf-a57f-601a8769c420"
+    },
+    {
+      "service": "whatsapp",
+      "service_id": "49ca4271-812c-449c-9be9-ea81bb8e2764",
+      "deployment_id": "1d5cce83-5d20-4a59-af3d-6e87a9d3942e"
+    },
+    {
+      "service": "Postgres",
+      "service_id": "aea3b02f-4f52-46c5-b248-c8a697351b78",
+      "deployment_id": "4888c5c7-c0e4-49a6-b41b-406077ce57c7"
+    },
+    {
+      "service": "whatsapp-worker-t",
+      "service_id": "aa22b9e8-368b-411f-845c-a8cc9fadad07",
+      "deployment_id": "b916f35c-a6a7-4d28-aa71-68c7ce9ea7f0"
+    },
+    {
+      "service": "whatsapp-worker-q",
+      "service_id": "362a7baf-354d-4123-878d-c69cff624d77",
+      "deployment_id": "cf8c473d-7892-4508-81a7-2cdd7f39fa2f"
+    },
+    {
+      "service": "whatsapp-worker-o",
+      "service_id": "7b00458e-b8e1-4363-86e9-7f7b3da54280",
+      "deployment_id": "01849107-fed6-40ed-b06b-b00e7f8cb68f"
+    },
+    {
+      "service": "whatsapp-worker-m",
+      "service_id": "3c37b6ce-f717-474c-91f0-4da09efcfca3",
+      "deployment_id": "eff2940a-0727-4ca3-ab91-1e753c46f473"
+    },
+    {
+      "service": "whatsapp-worker-h",
+      "service_id": "727d7128-35f4-4dc0-9c80-f97ca9095cf5",
+      "deployment_id": "9e034172-e420-4235-921a-c290895aceb7"
+    },
+    {
+      "service": "whatsapp-worker-g",
+      "service_id": "4278892a-5362-4452-adc3-d9424790b16e",
+      "deployment_id": "b5edfd9f-d2f9-4674-b6ed-568b1a3019b7"
+    },
+    {
+      "service": "whatsapp-worker-l",
+      "service_id": "5d33d52c-fe91-4e5d-9ac5-90205db9978a",
+      "deployment_id": "3e1ca5a5-bacb-431a-8fa0-f69a1103e2fe"
+    },
+    {
+      "service": "whatsapp-worker-c",
+      "service_id": "2b060bae-3e05-496b-8558-e78cb45e0b90",
+      "deployment_id": "6c7b1fde-5c7b-4730-a38d-abf8d639e45c"
+    },
+    {
+      "service": "whatsapp-worker-d",
+      "service_id": "8c2b714b-9d84-4fb7-8542-1cf9ebd3934d",
+      "deployment_id": "3401e0aa-a41d-4bf9-9fcb-1026f98c04ba"
+    },
+    {
+      "service": "whatsapp-worker-k",
+      "service_id": "1a97bb2b-b1ef-44ba-a95e-cf76f1e31e47",
+      "deployment_id": "cc83bfdd-9016-4709-a0ce-0da99efa0548"
+    }
+  ],
+  "services": 28,
+  "volumes": 28
+}

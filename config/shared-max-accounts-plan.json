@@ -1,0 +1,91 @@
+{
+  "state": "active_verified",
+  "scope": "existing_six_dedicated_shared_workers_only",
+  "worker_count": 6,
+  "slots_per_worker_before": 5,
+  "slots_per_worker": 7,
+  "total_slots_before": 30,
+  "total_slots_after": 42,
+  "vcpus_per_worker": 2,
+  "memory_gb_before": 4,
+  "memory_gb_per_worker": 8,
+  "db_pool_size_per_worker": 2,
+  "personal_worker_pool_ceiling": 72,
+  "api_db_pool_size": 5,
+  "application_pool_ceiling_after": 89,
+  "personal_slots_preserved": 125,
+  "volume_additions": 0,
+  "route_changes": false,
+  "workers": [
+    {
+      "group": "shared-01",
+      "service": "whatsapp-shared-01",
+      "service_id": "0bc3dbac-76b4-46b1-9401-26cf0b8361bf",
+      "volume_id": "dbafc735-ef60-4852-9a42-67084252a225",
+      "deployment_id": "3f0149c3-0903-4dbb-bd4b-29bc183012af",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-02",
+      "service": "whatsapp-shared-02",
+      "service_id": "a8d55990-c0c3-4da3-8608-bc52011a4053",
+      "volume_id": "4d841951-2763-40ea-afa7-460e62cc172b",
+      "deployment_id": "e98364d4-2acc-4abd-83c2-21e548823acb",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-03",
+      "service": "whatsapp-shared-03",
+      "service_id": "ccb543d0-d89a-4581-92af-c4b634310a35",
+      "volume_id": "193f5e3b-7410-459f-a956-01e1e074fb00",
+      "deployment_id": "8a7a66b2-46a0-4f8d-9a4e-1cd35993a94b",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-04",
+      "service": "whatsapp-shared-04",
+      "service_id": "a572694f-c00b-49f2-8b2a-4fcd505193fc",
+      "volume_id": "69e8d53c-9425-4d1d-87f5-d32426901dd4",
+      "deployment_id": "af1df5c1-294f-4e3e-aa11-6e0b0d11c158",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-05",
+      "service": "whatsapp-shared-05",
+      "service_id": "f17b40c6-7c67-4119-9fdc-5e49d176c8f5",
+      "volume_id": "d84a6747-dff4-410e-b6fd-546f5c98abdc",
+      "deployment_id": "c1bb2fc3-80b1-43fb-9d73-dc2de6623bea",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    },
+    {
+      "group": "shared-06",
+      "service": "whatsapp-shared-06",
+      "service_id": "e6153e52-41e1-442f-bdee-4fbe9f96e5fe",
+      "volume_id": "1db63e31-6e23-4554-b0bb-5901c27f25b3",
+      "deployment_id": "13ac8c11-849f-4ee6-8dce-8a3cac3df8c3",
+      "source_commit": "a8477f05f1f771435035e2c586110310606c9fdf",
+      "status": "SUCCESS"
+    }
+  ],
+  "admission_policy": "Keep the 120-process reserve, private UID/CPU-affinity isolation, one replica and worker ownership lock. Fresh counters report actual capacity; unknown sends retain their holds.",
+  "deployment_policy": "Check fresh zero running and assigned shared accounts; verify first worker SUCCESS and heartbeat before progressing. Preserve all personal workers, API, PostgreSQL, profile mounts, credentials and billing settings.",
+  "verification_limits": "Seven network-disabled desktop fixtures and an empty worker startup do not prove seven real linked phones or guaranteed WhatsApp uptime.",
+  "verification_snapshot": {
+    "at": "2026-10-19T08:40:25.697485696Z",
+    "groups": 6,
+    "total": 42,
+    "used": 0,
+    "available": 42,
+    "unavailable": 0,
+    "all_fresh": true,
+    "protected_service_deployment_changes": 0,
+    "profile_mount_changes": 0,
+    "services_online": 28,
+    "new_volumes": 0
+  }
+}

@@ -1,4 +1,14 @@
-## Requested additional 70 shared slots — blocked by Railway volume quota
+## Current shared max-account configuration — verified 2026-10-19
+
+The existing six dedicated shared services now each admit at most **seven** accounts, for **42 configured shared slots**. Their memory ceiling is 8GB per service with 2 vCPU, one replica and a two-connection database pool. All six reached terminal SUCCESS; at 2026-10-19T08:40:25.697485696Z the live DB-backed Owner-capacity reader returned **42 total / 0 used / 42 available**, all six fresh. No new volumes were created. See config/shared-max-accounts-plan.json and config/shared-max-accounts-verification.json for exact IDs and protected-service proof.
+
+Each shared worker was empty before its update. The first worker and fresh capacity were verified before the remaining five. All twenty personal worker deployment IDs and 125 personal slots, API, PostgreSQL, profile mounts, private networking, route references, browser UID/affinity, 120-task reserve and ownership guards were preserved. The aggregate configured database ceiling remains 89. No real linked phone or message was used for testing; seven isolated synthetic desktops cannot certify real-phone throughput or guaranteed uptime.
+
+The earlier 30-to-100 shared target has twelve newly activated slots and **58 remaining**, requiring nine further independent workers (eight with seven slots, the last with two). That exact plan requires **36 attached project volumes including PostgreSQL**, or **37 total volume entries** while the retained unmounted disk stays separate. Any later supported reuse requires provider quota approval and a fresh review. The proposed database ceiling of 93 depends on fresh proof that g-t are still empty before any pool changes; no such changes or new services have been applied. The observed quota rejection remains 27. Request **100 volume-count quota** for phased future growth, or the highest quota approvable on the current plan. Railway's public docs give no uniform numeric maximum for custom Pro approvals and list Enterprise as Unlimited. This is not approval to provision all volumes or change plans. Draft: docs/RAILWAY_VOLUME_REQUEST.md.
+
+Fresh inventory has 28 healthy deployed services and 28 volume entries. The earlier source-less shared-07 service is now absent; its retained volume is unmounted, unchanged, and adds no QR slots. No deletion, attachment, reuse, further create or quota workaround was attempted. Earlier sections below are historical snapshots, not the current capacity.
+
+## Historical 30-slot baseline: requested additional 70 shared slots — quota blocked
 
 The 2026-10-19 request adds 70 to the existing 30 shared-only QR slots, targeting 100 while preserving all 125 personal slots. A normal create-volume attempt was explicitly rejected with You can only have 27 volumes per project. The target requires **37 project volumes** including PostgreSQL. Railway must approve that allowance before this expansion can proceed; do not use staged creates or another indirect route to bypass the confirmed limit.
 

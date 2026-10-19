@@ -1,19 +1,19 @@
 {
   "state": "blocked_volume_quota",
   "requested_additional_shared_slots": 70,
-  "existing_shared_slots_preserved": 30,
+  "existing_shared_slots_preserved": 42,
   "target_shared_slots": 100,
   "personal_slots_preserved": 125,
   "existing_workers_preserved": 6,
-  "additional_workers_required": 10,
-  "additional_volumes_required": 10,
+  "additional_workers_required": 9,
+  "additional_volumes_required": 9,
   "target_project_volumes_including_postgres": 37,
   "slots_per_new_worker": 7,
   "vcpus_per_new_worker": 2,
   "memory_gb_per_new_worker": 8,
   "db_pool_size_per_new_worker": 2,
   "current_application_pool_ceiling": 89,
-  "target_application_pool_ceiling": 95,
+  "target_application_pool_ceiling": 93,
   "new_volume_size_mb": 10000,
   "region": "us-east4-eqdc4a",
   "mount_path": "/data",
@@ -21,47 +21,52 @@
   "source": "AnonymousDANIEL/whatsapp",
   "branch": "main",
   "dockerfile": "Dockerfile.worker",
-  "activated_additional_slots": 0,
+  "activated_additional_slots": 12,
   "workers": [
     {
       "group": "shared-07",
-      "service": "whatsapp-shared-07"
+      "service": "whatsapp-shared-07",
+      "max_accounts": 7
     },
     {
       "group": "shared-08",
-      "service": "whatsapp-shared-08"
+      "service": "whatsapp-shared-08",
+      "max_accounts": 7
     },
     {
       "group": "shared-09",
-      "service": "whatsapp-shared-09"
+      "service": "whatsapp-shared-09",
+      "max_accounts": 7
     },
     {
       "group": "shared-10",
-      "service": "whatsapp-shared-10"
+      "service": "whatsapp-shared-10",
+      "max_accounts": 7
     },
     {
       "group": "shared-11",
-      "service": "whatsapp-shared-11"
+      "service": "whatsapp-shared-11",
+      "max_accounts": 7
     },
     {
       "group": "shared-12",
-      "service": "whatsapp-shared-12"
+      "service": "whatsapp-shared-12",
+      "max_accounts": 7
     },
     {
       "group": "shared-13",
-      "service": "whatsapp-shared-13"
+      "service": "whatsapp-shared-13",
+      "max_accounts": 7
     },
     {
       "group": "shared-14",
-      "service": "whatsapp-shared-14"
+      "service": "whatsapp-shared-14",
+      "max_accounts": 7
     },
     {
       "group": "shared-15",
-      "service": "whatsapp-shared-15"
-    },
-    {
-      "group": "shared-16",
-      "service": "whatsapp-shared-16"
+      "service": "whatsapp-shared-15",
+      "max_accounts": 2
     }
   ],
   "activation_requirements": [
@@ -72,9 +77,9 @@
     "Advertise only real fresh capacity; preserve private UID, ownership and process admission guards",
     "Change a candidate idle personal worker pool from 3 to 2 only after a fresh database-backed snapshot and live worker check both show zero assigned and zero running accounts; retain its capacity, group, mounts and profiles",
     "Retain original connected a-f workers without redeploy; if any candidate idle group is now occupied, stop and recompute the budget",
-    "Railway must approve at least 37 project volumes; no further staged or indirect creation after the explicit quota rejection"
+    "Railway must approve the required volume-count quota before further creation; request 100 for staged future growth. The exact 100-slot target needs 36 attached project volumes including PostgreSQL, or 37 total entries while the retained unmounted disk stays separate. Any future supported reuse of that disk must happen only after provider quota approval and a fresh review."
   ],
-  "verification_limits": "A plan, empty disk and synthetic tests do not constitute live QR slots, real linked phones or an uptime guarantee.",
+  "verification_limits": "The additional twelve slots are verified on the existing six workers; the remaining 58 slots and future nine services are inactive. Empty worker startup and seven network-disabled desktops do not certify seven linked phones or guaranteed uptime.",
   "proposed_api_pool_size": 5,
   "personal_pool_ceiling_before": 72,
   "proposed_personal_pool_ceiling_after": 58,
@@ -106,7 +111,26 @@
   "api_deployment_id": "1d5cce83-5d20-4a59-af3d-6e87a9d3942e",
   "source_feature_ci_run": 39219089225,
   "source_main_ci_run": 39219535545,
-  "verification_snapshot": {
+  "idle_personal_pool_changes_applied": false,
+  "shared_routes_changed": false,
+  "reserved_volume": {
+    "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
+    "name": "whatsapp-shared-07-data",
+    "service_name": "whatsapp-shared-07",
+    "mount_path": null,
+    "source": null,
+    "deployment": null,
+    "new_qr_capacity": 0,
+    "state": "unmounted_retained_not_activated",
+    "reason": "Fresh inventory on 2026-10-19 shows the earlier source-less service no longer exists and this retained volume is unmounted. No deletion, attachment or reuse was attempted during the max-account rollout.",
+    "cleanup": "Deletion was rejected by automatic approval review. Preserve this new storage for the planned service until quota approval; never delete it without explicit approval.",
+    "former_service_id": "b6eee626-1858-42c0-b274-8dc3897b97b3",
+    "service_id": null
+  },
+  "original_shared_slots_at_request": 30,
+  "remaining_additional_slots": 58,
+  "requested_long_term_volume_quota": 100,
+  "prior_verification_snapshot": {
     "at": "2026-10-19T08:01:17.732495159Z",
     "shared_groups": 6,
     "shared_total": 30,
@@ -121,19 +145,20 @@
     "native_tests_failed": 0,
     "native_tests_skipped": 0
   },
-  "idle_personal_pool_changes_applied": false,
-  "shared_routes_changed": false,
-  "reserved_volume": {
-    "id": "bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6",
-    "name": "whatsapp-shared-07-data",
-    "service_id": "b6eee626-1858-42c0-b274-8dc3897b97b3",
-    "service_name": "whatsapp-shared-07",
-    "mount_path": "/data",
-    "source": null,
-    "deployment": null,
-    "new_qr_capacity": 0,
-    "state": "reserved_only_not_activated",
-    "reason": "Staged create was accepted; later normal create proved quota 27. Do not use staging to bypass the confirmed quota.",
-    "cleanup": "Deletion was rejected by automatic approval review. Preserve this new storage for the planned service until quota approval; never delete it without explicit approval."
-  }
+  "verification_snapshot": {
+    "at": "2026-10-19T08:40:25.697485696Z",
+    "shared_groups": 6,
+    "shared_total": 42,
+    "shared_used": 0,
+    "shared_available": 42,
+    "all_shared_heartbeats_fresh": true,
+    "personal_worker_deployment_changes": 0,
+    "api_or_postgres_deployment_changes": 0,
+    "profile_mount_changes": 0,
+    "services_online": 28,
+    "volume_entries": 28,
+    "new_services_or_volumes_created": 0
+  },
+  "target_attached_project_volumes_including_postgres": 36,
+  "required_volume_quota_if_reserved_volume_reused_after_approval": 36
 }
