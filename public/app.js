@@ -142,7 +142,7 @@ async function loadPage(quiet=false){
   if(me.role==='owner'&&['tasks','messages'].includes(requested)){
    restoreDashboardDisclosures();const kind=requested,prefix='send-'+kind+':';
    jobs.sendGroups=get('/owner/send-groups?kind='+kind);
-   jobs.sendItems=Promise.all([...dashboardOpen].filter(key=>key.startsWith(prefix)).map(async key=>{const actor=key.slice(prefix.length);try{return[actor,await get('/owner/send-items?kind='+kind+'&actor_id='+encodeURIComponent(actor)+'&page='+(sendPages[kind][actor]||1))];}catch(e){if(e.status===401||controller.signal.aborted)throw e;return[actor,{unavailable:true}];}})).then(Object.fromEntries);
+   jobs.sendItems=jobs.sendGroups.then(data=>Promise.all(visibleActorGroups(data.groups).map(g=>g.user?.id||'external').filter(actor=>dashboardOpen.has(prefix+actor)).map(async actor=>{try{return[actor,await get('/owner/send-items?kind='+kind+'&actor_id='+encodeURIComponent(actor)+'&page='+(sendPages[kind][actor]||1))];}catch(e){if(e.status===401||controller.signal.aborted)throw e;return[actor,{unavailable:true}];}}))).then(Object.fromEntries);
   }
   if(requested==='system'&&me.role==='owner')jobs.systemHourly=optional(get('/shared/hourly'));
   if(requested==='billing'){
@@ -223,7 +223,7 @@ function bindDashboardDisclosures(){
   group.onkeydown=e=>{if(e.key==='Escape'&&group.open){e.preventDefault();group.open=false;group.querySelector('summary').focus();}};
  });
 }
-function inactiveUsersLast(groups){return [...groups.filter(g=>g.user?.active!==false),...groups.filter(g=>g.user?.active===false)];}
+function visibleActorGroups(groups){return groups.filter(g=>!g.user||g.user.role==='owner'||g.user.active===true&&g.user.locked!==true);}
 function overview(data){
  if(me.role!=='owner'){
   $('#content').innerHTML=overviewMarkup(overviewData,null,accounts.filter(a=>!a.deleted_at&&a.status==='ready').length);return;
@@ -234,7 +234,7 @@ function overview(data){
   const id=external?'external':item.user.id,key='actor:'+id,open=dashboardOpen.has(key),status=external?null:userState(item.user),name=external?T('外部 / 未归属','External / unattributed'):item.user.username,total=Object.values(item.counts).reduce((n,v)=>n+Number(v),0);
   return `<details class="panel overview-actor" data-overview-user="${esc(id)}" data-dashboard-key="${esc(key)}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="overview-user-${esc(id)}"><span class="account-group-heading"><span class="account-group-name">${esc(name)}</span>${external?'':`<span class="badge account-user-state ${status}"><span class="status-dot" aria-hidden="true"></span>${status.toUpperCase()}</span><span class="muted">${item.user.role==='owner'?'Owner':'USER ID'}</span>`}</span><span class="muted">${T('全部消息','All messages')} <strong>${num(total)}</strong></span></summary><div class="overview-actor-body" id="overview-user-${esc(id)}">${overviewMarkup(item,name)}</div></details>`;
  };
- const groups=inactiveUsersLast([...overviewData.users,...(Object.keys(overviewData.external.counts).length?[overviewData.external]:[])]);
+ const groups=visibleActorGroups([...overviewData.users,...(Object.keys(overviewData.external.counts).length?[overviewData.external]:[])]);
  $('#content').innerHTML=`<section data-overview-owner>${overviewMarkup(overviewData.owner,me.username+' · '+T('我的消息','My messages'))}</section><section class="overview-users"><h2>${T('USER ID 消息总览','Messages by USER ID')}</h2><p class="muted">${T('按任务创建人和手动发送操作人分开统计，点击 USER ID 查看。统计普通 WhatsApp 消息。','Personal WhatsApp messages are grouped by task creator or manual sender. Select a USER ID to view its data.')}</p>${groups.map(u=>actorGroup(u,!u.user)).join('')}</section>`;
  bindDashboardDisclosures();
 }
@@ -297,7 +297,7 @@ function taskPauseControl(c){
 function ownerSendLists(kind){
  const data=ownerSendData;if(!data||data.kind!==kind)return `<p class="muted">${T('正在加载…','Loading…')}</p>`;
  restoreDashboardDisclosures();
- return inactiveUsersLast(data.groups).map(group=>{
+ return visibleActorGroups(data.groups).map(group=>{
   const u=group.user,id=u?.id||'external',key='send-'+kind+':'+id,open=dashboardOpen.has(key),name=u?u.username:T('外部 / 未归属','External / unattributed'),result=data.items[id],listId='send-'+kind+'-'+id;
   const rows=result?.rows||[],status=u?userState(u):null;
   const pager=result&&!result.unavailable?`<div class="pager"><button data-send-page="-1" data-send-actor="${esc(id)}" ${result.page<=1?'disabled':''}>${T('上一页','Previous')}</button><span>${result.page} / ${Math.max(1,Math.ceil(result.total/result.size))}</span><button data-send-page="1" data-send-actor="${esc(id)}" ${result.page*result.size>=result.total?'disabled':''}>${T('下一页','Next')}</button></div>`:'';

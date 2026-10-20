@@ -1,3 +1,9 @@
+# Hide locked and inactive USER groups (2026-10-20 MY, current)
+
+- Latest Owner request supersedes the earlier inactive-last ordering: Owner Send tasks, Message history and Overview omit USER groups while inactive or locked. Keep Owner and External / unattributed, and preserve the existing order of visible groups. This is presentation only: retain all records, actor attribution, financial state and access flags; do not move hidden USER messages into another bucket.
+- visibleActorGroups filters all three render paths. Lazy send-item reads wait for the current group metadata, then request only visible open actors. A previously open group must stop loading while hidden. Preserve saved disclosure/page choices so reactivation/unlock restores the same group and page through ordinary polling. Do not affect USER ID management or the WhatsApp account page.
+- Only public app.js/index.html deploy. Preserve all 50 browser workers, PostgreSQL and profile mounts, personal125/shared200 capacity and automatic refunds. Existing real Chrome cases must cover both inactive and locked transitions, no hidden actor-detail request, reactivation with page/disclosure/counters intact, Owner/external isolation, and Chinese/English desktop/mobile. No production status change, login, customer send or balance mutation is a test. Never upload the unrelated local mywasap.svg.
+
 # Inactive USER groups last (2026-10-20 MY, current)
 
 - Owner Send tasks, Message history and Overview now display all inactive USER groups after every other group, including External / unattributed. Preserve the Owner section at the top and the existing relative order within each partition; locked-but-active USERs are not inactive. Keep group counters, per-ID pagination, lazy reads, persisted disclosures and automatic refresh intact when status changes.

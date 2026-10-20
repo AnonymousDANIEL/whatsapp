@@ -146,8 +146,8 @@ async function verifyAccountIdentity(page,fixture,role,language){
 
 async function verifySenderGroups(page,fixture,kind,language){
  const start=fixture.requests.length,writes=fixture.requests.filter(r=>r.method!=='GET').length,own='[data-owner-send-actor="ui-owner"]',other='[data-owner-send-actor="active-user"]';
- assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.length),kind==='tasks'?4:5);
- const expected=['ui-owner','active-user','locked-user',...(kind==='messages'?['external']:[]),'inactive-user'];
+ assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.length),kind==='tasks'?2:3);
+ const expected=['ui-owner','active-user',...(kind==='messages'?['external']:[])];
  assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),expected);
  assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.every(n=>!n.open)),true);
  assert.equal(await page.$$eval('#content tbody tr',nodes=>nodes.length),0);
@@ -157,11 +157,15 @@ async function verifySenderGroups(page,fixture,kind,language){
  assert.equal(await page.$eval(own,n=>n.open),false);
  await page.click(other+' [data-send-page="1"]');
  await page.waitForFunction(({selector,text})=>!loading&&document.querySelector(selector)?.textContent.includes(text),{}, {selector:other,text:'Synthetic USER '+(kind==='tasks'?'task':'message')+' page 2'});
- fixture.userAccess={'active-user':{active:false}};await page.evaluate(()=>loadPage(true));
- assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),['ui-owner','locked-user',...(kind==='messages'?['external']:[]),'active-user','inactive-user']);
- assert.equal(await page.$eval(other,n=>n.open),true);assert.match(await page.$eval(other,n=>n.textContent),/page 2/);
- fixture.userAccess={};await page.evaluate(()=>loadPage(true));
- assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),expected);
+ for(const state of [{active:false,locked:false},{active:true,locked:true}]){
+  const hiddenAt=fixture.requests.length;fixture.userAccess={'active-user':state};await page.evaluate(()=>loadPage(true));
+  assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),['ui-owner',...(kind==='messages'?['external']:[])]);
+  assert.equal(await page.$(other),null);assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/Synthetic USER (task|message) page/);
+  assert.equal(fixture.requests.slice(hiddenAt).some(r=>r.path==='/owner/send-items'&&r.query.includes('actor_id=active-user')),false);
+  fixture.userAccess={};await page.evaluate(()=>loadPage(true));
+  assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),expected);
+  assert.equal(await page.$eval(other,n=>n.open),true);assert.match(await page.$eval(other,n=>n.textContent),/page 2/);
+ }
  // One failed group never hides the other groups or invents an empty result.
  fixture.failSendGroup='active-user';await page.evaluate(()=>loadPage(true));
  assert.match(await page.$eval(other,n=>n.textContent),language==='en'?/Cannot load this group/:/暂时无法加载这组记录/);
@@ -364,8 +368,8 @@ async function verifyAccountGroups(page,fixture){
 
 async function verifyGroupedOverview(page,fixture){
  const active='[data-overview-user="active-user"]';
- assert.equal(await page.$$eval('[data-overview-user]',nodes=>nodes.length),4);
- assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','locked-user','external','inactive-user']);
+ assert.equal(await page.$$eval('[data-overview-user]',nodes=>nodes.length),2);
+ assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','external']);
  assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),0);
  assert.match(await page.$eval('[data-overview-owner] .overview-heading',n=>n.textContent),/fixture-owner/);
  assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
@@ -378,11 +382,15 @@ async function verifyGroupedOverview(page,fixture){
  assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
  assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
  await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-overview-owner]');
- fixture.userAccess={'active-user':{active:false}};await page.evaluate(()=>loadPage(true));
- assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['locked-user','external','active-user','inactive-user']);
- assert.equal(await page.$eval(active,n=>n.open),true);assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
- fixture.userAccess={};await page.evaluate(()=>loadPage(true));
- assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','locked-user','external','inactive-user']);
+ for(const state of [{active:false,locked:false},{active:true,locked:true}]){
+  fixture.userAccess={'active-user':state};await page.evaluate(()=>loadPage(true));
+  assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['external']);
+  assert.equal(await page.$(active),null);assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
+  assert.equal(await page.$eval('[data-overview-user="external"] .overview-cards .value',n=>n.textContent),'1');
+  fixture.userAccess={};await page.evaluate(()=>loadPage(true));
+  assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','external']);
+  assert.equal(await page.$eval(active,n=>n.open),true);assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
+ }
  assert.equal(await page.$eval(active,n=>n.open),true);
  assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),1);
  for(const width of [390,1440]){
