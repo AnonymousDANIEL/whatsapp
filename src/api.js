@@ -214,11 +214,11 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   app.get('/api/accounts', route(async (req, res) => res.json(await visibleAccounts(req.user))));
   app.post('/api/accounts', route(async (req, res) => {
     assert(typeof req.body.label === 'string' && req.body.label.trim().length > 0 && req.body.label.length <= 80, '请输入账号名称');
-    assert(Object.hasOwn(routes, req.body.worker_group)&&!sharedOnly.has(req.body.worker_group), '请选择已配置的浏览器分组');
+    assert(req.body.worker_group==='auto'||Object.hasOwn(routes, req.body.worker_group)&&!sharedOnly.has(req.body.worker_group), '请选择已配置的浏览器分组');
     const id=crypto.randomUUID();let assignedGroup=req.body.worker_group;
     await transaction(async db=>{
       await db.query('SELECT pg_advisory_xact_lock($1)',[allocation.PLACEMENT_LOCK]);
-      assignedGroup=await allocation.chooseGroup(db,personalGroups,req.user.role==='owner'?assignedGroup:null);
+      assignedGroup=await allocation.chooseGroup(db,personalGroups,req.user.role==='owner'&&assignedGroup!=='auto'?assignedGroup:null);
       assert(assignedGroup,'暂时没有可用的扫码资源，请稍后重试',409);
       if(req.user.role!=='owner'){
         const u=(await db.query('SELECT account_limit FROM users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];
