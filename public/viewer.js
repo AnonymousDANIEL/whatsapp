@@ -2,6 +2,7 @@ import RFB from '/novnc/core/rfb.js';
 const query=new URLSearchParams(location.search),id=query.get('id'),mode=['operate','scan'].includes(query.get('mode'))?query.get('mode'):'view';
 const status=document.getElementById('status'),screen=document.getElementById('screen'),retry=document.getElementById('retry'),start=document.getElementById('start-browser'),clipboard=document.getElementById('clipboard');
 let rfb,connecting=false,leaving=false,reconnectTimer,handshakeTimer,scanTimer,attempts=0;
+let requestingStart=false,lastStart=0,csrf;
 const linkChecks=new WeakSet(),terminalCodes=new Set(['ALREADY_LINKED','OWNER_LINK_REQUIRED','ACCOUNT_DISABLED','ACCOUNT_IN_USE','WORKER_AUTH_FAILED','WORKER_NOT_CONFIGURED','WORKER_GROUP_MISMATCH','WORKER_ROUTE_INVALID','WORKER_UPDATE_REQUIRED']);
 document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';
 document.getElementById('back').textContent=T('← 返回后台','← Back');
@@ -13,6 +14,12 @@ async function json(path,options={}){const response=await fetch('/api'+path,{...
 function showIssue(message,canStart=false){status.textContent=message;const panel=document.createElement('section');panel.className='connection-panel';const title=document.createElement('h1');title.textContent=T('浏览器画面暂未连接','Browser screen not connected');const detail=document.createElement('p');detail.textContent=message;const guide=document.createElement('p');guide.textContent=T('网络、服务或画面中断不能判断账号被封。需要登录时，请用手机 WhatsApp → 已关联设备 → 关联设备扫码。','A network, service or screen interruption does not establish an account ban. To sign in, open WhatsApp on your phone → Linked devices → Link a device.');panel.append(title,detail,guide);screen.replaceChildren(panel);start.hidden=!canStart;clipboard.disabled=true;}
 function scheduleReconnect(){if(leaving)return;clearTimeout(reconnectTimer);reconnectTimer=setTimeout(()=>{attempts=Math.min(attempts+1,8);connect();},Math.min(30000,2000*2**Math.min(attempts,4)));}
 function clearScreenTimers(){clearTimeout(handshakeTimer);clearTimeout(scanTimer);}
+async function requestStart(force=false){
+ if(leaving||requestingStart||(!force&&Date.now()-lastStart<15000))return;
+ requestingStart=true;lastStart=Date.now();
+ try{csrf=csrf||(await json('/me')).csrf;await json(`/accounts/${encodeURIComponent(id)}/start`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:'{}'});}
+ finally{requestingStart=false;}
+}
 function dropScreen(active=rfb){if(active&&rfb!==active)return;rfb=null;clearScreenTimers();active?.disconnect();}
 async function checkLink(active){
  if(leaving||mode!=='scan'||rfb!==active||linkChecks.has(active))return;
@@ -35,7 +42,7 @@ async function connect(){
   if(rfb)dropScreen();
   status.textContent=T('正在检查连接…','Checking connection…');
   const info=await json(`/accounts/${encodeURIComponent(id)}/connection?mode=${mode}`);if(leaving)return;
-  if(!info.ok){showIssue(connectionText(info),info.can_start);if(!terminalCodes.has(info.code))scheduleReconnect();return;}
+  if(!info.ok){showIssue(connectionText(info),info.can_start);if(!terminalCodes.has(info.code)){if(info.can_start&&(mode==='scan'||mode==='operate'))await requestStart();scheduleReconnect();}return;}
   screen.replaceChildren();start.hidden=true;
   const active=new RFB(screen,`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/screen/${encodeURIComponent(id)}?mode=${mode}`);
   rfb=active;active.scaleViewport=true;active.resizeSession=false;active.viewOnly=mode!=='operate';active.showDotCursor=true;
@@ -56,6 +63,6 @@ async function connect(){
  }catch(error){showIssue(error.status===401?T('登录已过期，请返回后台登录','Session expired. Sign in from the dashboard.'):error.message);if(![401,403].includes(error.status))scheduleReconnect();}
  finally{connecting=false;retry.disabled=false;}
 }
-retry.onclick=()=>{attempts=0;connect();};start.onclick=async()=>{start.disabled=true;try{const session=await json('/me');await json(`/accounts/${encodeURIComponent(id)}/start`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:'{}'});attempts=0;await connect();}catch(e){showIssue(e.message,true);}finally{start.disabled=false;}};
+retry.onclick=()=>{attempts=0;connect();};start.onclick=async()=>{start.disabled=true;try{await requestStart(true);attempts=0;await connect();}catch(e){showIssue(e.message,true);}finally{start.disabled=false;}};
 clipboard.onclick=()=>{if(!rfb)return;const value=prompt(T('粘贴文字后，在远程聊天框按 Ctrl+V：','Paste text here, then press Ctrl+V in the remote chat:'));if(value!==null)rfb.clipboardPasteFrom(value);};document.getElementById('fullscreen').onclick=()=>screen.requestFullscreen();window.addEventListener('pagehide',()=>{leaving=true;clearTimeout(reconnectTimer);dropScreen();});window.addEventListener('online',()=>{if(!rfb){attempts=0;connect();}else if(mode==='scan')checkLink(rfb);});connect();
 

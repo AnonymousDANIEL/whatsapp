@@ -1,14 +1,18 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path');
 const {pool,transaction}=require('./db');
+const {PROCESS_RESERVE}=require('./browser-runtime');
 const PLACEMENT_LOCK=194812737;
 async function chooseGroup(db,groups,preferred,exclude=null){
  const rows=(await db.query(`SELECT h.*,count(a.id)::integer assigned FROM worker_health h
   LEFT JOIN accounts a ON a.worker_group=h.worker_group AND a.enabled AND a.deleted_at IS NULL
-  WHERE h.worker_group=ANY($1::text[]) AND h.heartbeat_at>now()-interval '90 seconds'
+  WHERE h.worker_group=ANY($1::text[]) AND h.heartbeat_at>now()-interval '90 seconds' AND h.heartbeat_at<=now()+interval '5 seconds'
   AND h.can_start_more AND h.worker_group IS DISTINCT FROM $2
-  GROUP BY h.worker_group HAVING count(a.id)<h.max_accounts
-  ORDER BY (h.worker_group=$3) DESC,count(a.id)::float/h.max_accounts,h.worker_group`,[groups,exclude,preferred])).rows;
+  AND h.max_accounts BETWEEN 1 AND 10
+  AND (h.pids_current IS NULL OR h.pids_limit IS NULL OR h.pids_limit-h.pids_current >= $4)
+  GROUP BY h.worker_group HAVING GREATEST(count(a.id),h.accounts_running)<h.max_accounts
+  ORDER BY (h.worker_group=$3) DESC,GREATEST(count(a.id),h.accounts_running)::float/h.max_accounts,
+   COALESCE(h.pids_current::float/NULLIF(h.pids_limit,0),0),h.worker_group`,[groups,exclude,preferred,PROCESS_RESERVE])).rows;
  return rows[0]?.worker_group||null;
 }
 async function moveUnstarted(id,from,to,dataPath,entries){

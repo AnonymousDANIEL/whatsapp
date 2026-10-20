@@ -28,6 +28,12 @@ test('PostgreSQL: independent connection capacity and profile-safe account hando
   assert.equal((await db.pool.query("UPDATE accounts SET profile_bound=true WHERE id=$1 AND worker_group='b' RETURNING id",[id])).rowCount,1);
   assert.equal(await allocation.moveUnstarted(id,'b','a',folder,new Map()),false);
  });
+ await t.test('future heartbeats, actual running desktops and exhausted process budget cannot receive new reservations',async()=>{
+  for(const sql of ["heartbeat_at=now()+interval '20 seconds'","accounts_running=max_accounts","pids_current=950,pids_limit=1000"]){
+   await reset();await db.pool.query('UPDATE worker_health SET '+sql+" WHERE worker_group='b'");assert.equal(await allocation.chooseGroup(db.pool,['a','b'],'b'),null);
+  }
+  await reset();await db.pool.query("UPDATE worker_health SET pids_current=880,pids_limit=1000 WHERE worker_group='b'");assert.equal(await allocation.chooseGroup(db.pool,['a','b'],'b'),'b');
+ });
  await t.test('existing homes, profile folders, Unix identities, phone links and active entries never move',async()=>{
   await reset();const profile=await account(),home=await account(),identity=await account(),linked=await account('a',{phone:'synthetic-linked'}),bound=await account('a',{bound:true}),active=await account();
   await fs.mkdir(path.join(folder,'profiles',profile),{recursive:true});await fs.writeFile(path.join(folder,'profiles',profile,'sentinel'),'preserve');

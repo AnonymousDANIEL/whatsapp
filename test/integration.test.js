@@ -29,7 +29,9 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  async function request(path,method='GET',body=null,s=null){const r=await fetch(base+'/api'+path,{method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json',...(s?{Cookie:s.cookie,'X-CSRF-Token':s.csrf}:{})},...(body!==null?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
  async function login(username,password='user-password-123'){const r=await request('/login','POST',{username,password});assert.equal(r.status,200);const s={cookie:r.cookie};s.csrf=(await request('/me','GET',null,s)).data.csrf;return s;}
  const owner=await login('owner','test-owner-password-123');
+ await db.pool.query("INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES('group-a',now(),0,0,10,true)");
  const a=(await request('/accounts','POST',{label:'A',worker_group:'group-a'},owner)).data.id,b=(await request('/accounts','POST',{label:'B',worker_group:'group-a'},owner)).data.id;
+ await db.pool.query("DELETE FROM worker_health WHERE worker_group='group-a'");
  const uid=(await request('/users','POST',{username:'user1',password:'user-password-123',role:'user',grants:[{account_id:a}]},owner)).data.id;
  const uid2=(await request('/users','POST',{username:'user2',password:'user-password-123',role:'user',grants:[{account_id:b}]},owner)).data.id;
  const user=await login('user1'),user2=await login('user2');
@@ -435,6 +437,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  });
  await t.test('USER creation dates remain; only Owner can add or delete WhatsApp accounts',async()=>{
   const listed=(await request('/users','GET',null,owner)).data.find(u=>u.id===uid);assert.ok(Number.isFinite(Date.parse(listed.created_at)));
+  await db.pool.query("INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more) VALUES('group-a',now(),0,0,10,true) ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=0,max_accounts=10,can_start_more=true");
   const c=(await request('/accounts','POST',{label:'Delete test',worker_group:'group-a'},owner)).data.id;
   await db.pool.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[uid,c]);
   assert.equal((await request('/accounts/'+c,'DELETE',null,user)).status,403);
@@ -560,12 +563,16 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   await db.pool.query("UPDATE accounts SET status='stopped' WHERE id=$1",[b]);
   assert.equal((await request('/accounts/'+a+'/restart','POST',{},user2)).status,403);
   assert.equal((await request('/accounts/'+b,'PATCH',{enabled:false},user2)).status,403);
+  const priorEnabled=(await db.pool.query('SELECT enabled FROM accounts WHERE id=$1',[a])).rows[0].enabled;
+  await db.pool.query('UPDATE accounts SET enabled=false WHERE id=$1',[a]);
+  await db.pool.query("UPDATE worker_health SET heartbeat_at=now(),accounts_running=0,max_accounts=10,can_start_more=true WHERE worker_group='group-a'");
   const ids=[];for(let i=0;i<8;i++){const r=await request('/accounts','POST',{label:'Quota '+i,worker_group:'group-a'},user2);assert.equal(r.status,201);ids.push(r.data.id);}
   const pair=await Promise.all([8,9].map(i=>request('/accounts','POST',{label:'Quota '+i,worker_group:'group-a'},user2)));
   assert.deepEqual(pair.map(r=>r.status).sort(),[201,409]);ids.push(pair.find(r=>r.status===201).data.id);
   assert.equal((await request('/accounts','GET',null,user2)).data.length,10);
   assert.equal((await request('/users/'+uid2,'PATCH',{active:true,grants:[a,b,...ids].map(account_id=>({account_id}))},owner)).status,409);
   for(const id of ids){await request('/accounts/'+id,'DELETE',null,owner);assert.equal(await require('../src/account-deletion').purgeAccountData(id),true);}
+  await db.pool.query('UPDATE accounts SET enabled=$1 WHERE id=$2',[priorEnabled,a]);
  });
  await t.test('FPX switch, signed verified payments, configuration snapshots and duplicate callbacks',async()=>{
   const payments=require('../src/payments'),originalFetch=global.fetch,bills=new Map();let created=0;

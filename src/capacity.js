@@ -6,7 +6,7 @@ function snapshot(row,now=Date.now()){
  const time=row.heartbeat_at==null?NaN:+new Date(row.heartbeat_at),fresh=Number.isFinite(time)&&time<=now+5000&&now-time<FRESH_MS;
  const remaining=Math.max(0,max-used),available=fresh&&row.can_start_more===true?remaining:0;
  return {...row,assigned_accounts:assigned,slots_used:used,slots_available:available,slots_unavailable:remaining-available,
-  capacity_state:!fresh?'offline':!remaining?'full':row.can_start_more===true?'available':'resource_wait'};
+  capacity_state:!fresh?'offline':row.can_start_more!==true&&(remaining>0||assigned>running)?'resource_wait':!remaining?'full':'available'};
 }
 async function read(db,groups){
  const rows=(await db.query(`SELECT h.*,g.worker_group,

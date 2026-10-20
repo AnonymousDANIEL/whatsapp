@@ -6,10 +6,12 @@ const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/novnc/core/rfb.js'){res.setHeader('Content-Type','application/javascript');return res.end(fakeRFB);}
+  if(url.pathname==='/api/me'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({csrf:'synthetic-csrf'}));}
+  if(url.pathname==='/api/accounts/'+id+'/start'){assert.equal(req.method,'POST');assert.equal(req.headers['x-csrf-token'],'synthetic-csrf');fixture.starts++;res.writeHead(202,{'Content-Type':'application/json'});return res.end(JSON.stringify({ok:true,queued:true}));}
   if(url.pathname==='/api/accounts/'+id+'/connection'){
    fixture.checks++;assert.equal(url.searchParams.get('mode'),'scan');res.setHeader('Content-Type','application/json');
    const code=fixture.phase==='ready'?'SCREEN_READY':fixture.phase==='resource'?'BROWSER_RESOURCE_WAIT':fixture.phase==='recovering'?'BROWSER_RECOVERING':'ALREADY_LINKED';
-   return res.end(JSON.stringify({ok:fixture.phase==='ready',connected:fixture.phase==='linked',code,can_start:fixture.phase==='recovering'}));
+   return res.end(JSON.stringify({ok:fixture.phase==='ready',connected:fixture.phase==='linked',code,can_start:fixture.phase==='recovering'||fixture.phase==='resource'}));
   }
   const file=path.resolve(root,url.pathname.slice(1));if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
   res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml'})[path.extname(file)]||'text/plain');res.end(await fs.readFile(file));
@@ -20,15 +22,15 @@ const server=http.createServer(async(req,res)=>{
  try{
   browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
   for(const lang of ['zh','en']){
-   fixture={phase:'resource',checks:0};const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+   fixture={phase:'resource',checks:0,starts:0};const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
    await page.evaluateOnNewDocument(language=>{
     localStorage.setItem('wa_language',language);const schedule=window.setTimeout.bind(window);window.fixtureReconnectDelays=[];
     window.setTimeout=(callback,delay,...args)=>{if(delay>=2000&&delay<=30000){window.fixtureReconnectDelays.push(delay);return schedule(callback,100,...args);}return schedule(callback,delay,...args);};
    },lang);
    await page.goto('http://127.0.0.1:'+server.address().port+'/viewer.html?id='+id+'&mode=scan',{waitUntil:'domcontentloaded'});
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'等待可用资源':'waiting for capacity'),{},lang);
-   assert.match(await page.$eval('#status',n=>n.textContent),lang==='zh'?/等待可用资源/:/waiting for capacity/);assert.equal(await page.$eval('#start-browser',n=>n.hidden),true);
-   for(let wait=0;wait<150&&fixture.checks<10;wait++)await new Promise(resolve=>setTimeout(resolve,20));assert.ok(fixture.checks>=10,'Capacity polling stopped after eight attempts');
+   assert.match(await page.$eval('#status',n=>n.textContent),lang==='zh'?/等待可用资源/:/waiting for capacity/);assert.equal(await page.$eval('#start-browser',n=>n.hidden),false);await page.waitForFunction(()=>!document.querySelector('#retry').disabled);
+   for(let wait=0;wait<150&&fixture.checks<10;wait++)await new Promise(resolve=>setTimeout(resolve,20));assert.ok(fixture.checks>=10,'Capacity polling stopped after eight attempts');assert.equal(fixture.starts,1,'Queued startup should be automatic and coalesced, not repeated on every poll');
    fixture.phase='ready';await page.waitForFunction(()=>window.fixtureRfbCount===1);
    fixture.phase='recovering';await page.evaluate(()=>window.fixtureRfb.disconnect());
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'正在恢复':'is recovering'),{},lang);
@@ -36,7 +38,7 @@ const server=http.createServer(async(req,res)=>{
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'画面已连接':'Screen connected'),{},lang);
    fixture.phase='linked'; // A missing disconnect event must not leave a linked scan window open.
    await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'无需再次扫码':'No further QR scan'),{},lang);
-   const checks=fixture.checks;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(fixture.checks,checks);assert.equal(await page.evaluate(()=>window.fixtureRfbCount),3);assert.deepEqual(errors,[]);
+   const checks=fixture.checks,starts=fixture.starts;await new Promise(resolve=>setTimeout(resolve,2200));assert.equal(fixture.checks,checks);assert.equal(fixture.starts,starts);assert.equal(await page.evaluate(()=>window.fixtureRfbCount),3);assert.deepEqual(errors,[]);
    assert.ok(await page.evaluate(()=>window.fixtureReconnectDelays.every(ms=>ms<=30000)));
    console.log('QR viewer PASS: '+lang+' resource wait, automatic reconnect after crash and stuck RFB handshake, passive link detection, stop polling after successful link');await page.close();
   }

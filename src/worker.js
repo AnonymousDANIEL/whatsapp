@@ -26,6 +26,8 @@ const { WebSocket, WebSocketServer } = require('ws');
 const { pool, audit, transaction } = require('./db');
 const { assert, canDispatch, ackStatus } = require('./domain');
 const allocation=require('./account-allocation');
+const scanDemand=require('./scan-demand');
+require('./desktop-locks').install();
 const group = process.env.WORKER_GROUP;
 const maxAccounts = Number(process.env.MAX_ACCOUNTS_PER_WORKER || 5);
 const dataPath = path.resolve(process.env.DATA_DIR || '/data');
@@ -151,8 +153,8 @@ async function startAccount(account) {
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--kiosk', '--window-size=1366,900', '--window-position=0,0', '--disable-session-crashed-bubble', '--no-first-run'] }
     });
     const on=(event,callback)=>e.client.on(event,lifecycle.guard(entries,e,(...args)=>{watchBrowser();return callback(...args);}));
-    on('qr', () => { failures.delete(account.id);retryAt.delete(account.id);e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
-    on('authenticated', () => { e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
+    on('qr', () => { failures.delete(account.id);retryAt.delete(account.id);e.authenticated=false;e.ready=false;e.awaitingScan=true;e.launching=false;e.progressAt=Date.now();state(account.id,'scan_required').catch(()=>{}); });
+    on('authenticated', () => { e.authenticated=true;e.ready=false;e.awaitingScan=false;e.launching=false;e.progressAt=Date.now();state(account.id,'loading').catch(()=>{}); });
     on('auth_failure', () => { fail(account.id,'AUTH_FAILURE_RESCAN_MAY_BE_REQUIRED',e).catch(()=>{}); });
     on('disconnected', reason => { fail(account.id,'DISCONNECTED_'+String(reason).slice(0,60),e).catch(()=>{}); });
     on('workspace_navigation_error', reason => { fail(account.id,reason,e).catch(()=>{}); });
@@ -389,8 +391,10 @@ async function tick() {
     await billing.reconcile();
     await billing.recoverCreditTasks(null,group);
     await shared.rebalance();
-    const accounts = (await pool.query(accountWorkSQL,[group,[...entries.keys()]])).rows;
-    for (const a of accounts) {
+    const accounts = (await pool.query(accountWorkSQL,[group,[...entries.keys()]])).rows,demands=await scanDemand.read(pool,group);
+    const released=await scanDemand.releaseIdle(accounts,entries,demands,busy,(id,e)=>stopAccount(id,e,{beforeRelease:()=>state(id,'scan_required','QR_SCAN_IDLE')}));
+    if(released)console.log('Idle QR screens released:',JSON.stringify({group,released,profiles_preserved:true}));
+    for (const a of scanDemand.ordered(accounts,demands)) {
       if(a.purge_requested){
         const current=entries.get(a.id);
         if(busy.has(a.id)||current?.syncing)continue;
@@ -402,28 +406,30 @@ async function tick() {
         if (busy.has(a.id)) continue; // in-flight sends can finish; no further sends are dispatched
         const running=entries.has(a.id);await stopAccount(a.id);if(running||a.status!=='disabled')await state(a.id, 'disabled');continue;
       }
-      if (!entries.has(a.id) && entries.size < maxAccounts && !lifecycle.starting(entries) && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
+      if (!entries.has(a.id) && scanDemand.shouldStart(a,demands.get(a.id)) && entries.size < maxAccounts && !lifecycle.starting(entries) && Date.now() >= (retryAt.get(a.id) || 0)) await startAccount(a);
       const e = entries.get(a.id);
+      if(!e&&!scanDemand.shouldStart(a,demands.get(a.id))){if(a.status!=='scan_required'||a.last_error!=='QR_SCAN_IDLE')await state(a.id,'scan_required','QR_SCAN_IDLE');continue;}
       if(e&&!e.closing&&lifecycle.browserClosed(e)){await fail(a.id,'BROWSER_EXITED',e);continue;}
-      if(e&&lifecycle.expired(e)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
+      if(e&&lifecycle.expired(e,Date.now(),180000)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
       if (e) {
         await pool.query('UPDATE accounts SET heartbeat_at=now() WHERE id=$1', [a.id]);
         if (e.client?.pupPage && !e.ready) e.client.pupPage.bringToFront().catch(() => {});
         if(e.ready && Date.now()>=(e.nextSync||0))syncHistory(a.id,e).catch(()=>{});
         if (e.ready) dispatch(a, e).catch(() => {});
-      } else if (entries.size >= maxAccounts&&a.status!=='capacity_wait') await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
+      } else if (scanDemand.active(demands.get(a.id))&&entries.size >= maxAccounts&&a.status!=='capacity_wait') await state(a.id, 'capacity_wait', 'WORKER_CAPACITY_REACHED');
     }
     const resources=await lifecycle.resourceSummary();
     await pool.query(`INSERT INTO worker_health(worker_group,heartbeat_at,accounts_running,rss_mb,max_accounts,can_start_more,pids_current,pids_limit) VALUES($1,now(),$2,$3,$4,$5,$6,$7)
       ON CONFLICT(worker_group) DO UPDATE SET heartbeat_at=now(),accounts_running=excluded.accounts_running,rss_mb=excluded.rss_mb,max_accounts=excluded.max_accounts,
       can_start_more=excluded.can_start_more,pids_current=excluded.pids_current,pids_limit=excluded.pids_limit`, [group, entries.size, Math.round(process.memoryUsage().rss / 1048576),maxAccounts,entries.size<maxAccounts&&runtime.hasLaunchCapacity(resources),resources.pids,Number.isFinite(resources.pids_limit)?resources.pids_limit:null]);
     shared.checkGroup(group,entries).catch(e=>console.error('shared connection check:',e.code||e.name));
-    if(Date.now()>=nextResourceLog){nextResourceLog=Date.now()+60000;const active=[...entries.values()];console.log('Browser capacity:',JSON.stringify({...await lifecycle.resourceSummary(),running:active.length,ready:active.filter(e=>e.ready&&!e.closing).length,scan_waiting:active.filter(e=>e.awaitingScan&&!e.closing).length,cpus_per_browser:runtime.CPUS_PER_BROWSER}));}
+    if(Date.now()>=nextResourceLog){nextResourceLog=Date.now()+60000;const active=[...entries.values()];console.log('Browser capacity:',JSON.stringify({...await lifecycle.resourceSummary(),running:active.length,ready:active.filter(e=>e.ready&&!e.closing).length,scan_waiting:active.filter(e=>e.awaitingScan&&!e.closing).length,assigned:accounts.filter(a=>a.enabled&&!a.deleted_at).length,scan_demand:demands.size,idle_profiles:accounts.filter(a=>a.enabled&&!a.deleted_at&&!entries.has(a.id)&&!scanDemand.shouldStart(a,demands.get(a.id))).length,cpus_per_browser:runtime.CPUS_PER_BROWSER}));}
   } finally { ticking = false; }
 }
 async function start() {
   assert(/^[\w-]{1,40}$/.test(group || ''), 'WORKER_GROUP is required', 500);
   assert(Number.isInteger(maxAccounts) && maxAccounts >= 1 && maxAccounts <= 10, 'MAX_ACCOUNTS_PER_WORKER must be 1–10', 500);
+  await scanDemand.ensure(pool);
   await fs.mkdir(dataPath, { recursive: true });
   const lock = await pool.connect();
   const held = (await lock.query('SELECT pg_try_advisory_lock(hashtext($1)) ok', ['wa-worker-' + group])).rows[0].ok;
@@ -432,7 +438,7 @@ async function start() {
   await pool.query(`UPDATE recipients r SET status='unknown',error_code='WORKER_RESTART_REVIEW_REQUIRED',updated_at=now()
     FROM campaigns c JOIN accounts a ON a.id=c.account_id WHERE r.campaign_id=c.id AND a.worker_group=$1 AND r.status='sending'`, [group]);
   await shared.recoverInterrupted(group);
-  await pool.query("UPDATE accounts SET status='starting',shared_state=CASE WHEN shared_pool THEN 'waiting' ELSE shared_state END,shared_checked_at=CASE WHEN shared_pool THEN NULL ELSE shared_checked_at END WHERE worker_group=$1 AND enabled AND deleted_at IS NULL",[group]);
+  await pool.query("UPDATE accounts SET status='starting',shared_state=CASE WHEN shared_pool THEN 'waiting' ELSE shared_state END,shared_checked_at=CASE WHEN shared_pool THEN NULL ELSE shared_checked_at END WHERE worker_group=$1 AND enabled AND deleted_at IS NULL AND status<>'scan_required'",[group]);
   const app = express();
   app.get('/healthz', async (_, res) => { try { await lock.query('SELECT 1'); res.json({ ok: true, role: 'worker', group }); } catch { res.sendStatus(503); } });
   app.use((req, res, next) => authorized(req) ? next() : res.sendStatus(401));
@@ -441,7 +447,7 @@ async function start() {
       const a = (await pool.query('SELECT status,enabled,last_error FROM accounts WHERE id=$1 AND worker_group=$2', [req.params.id, group])).rows[0];
       if (!a) return res.status(404).json({ error: 'Account unavailable' });
       const e = entries.get(req.params.id);
-      const healthy=e&&!e.closing&&!lifecycle.browserClosed(e),code=a.last_error==='BROWSER_RESOURCE_WAIT'?'BROWSER_RESOURCE_WAIT':e?.rendererCrashed||!healthy&&['BROWSER_PAGE_CRASHED','BROWSER_PAGE_CLOSED','BROWSER_EXITED'].includes(a.last_error)?'BROWSER_RECOVERING':null;
+      const healthy=e&&!e.closing&&!lifecycle.browserClosed(e),code=a.last_error==='QR_SCAN_IDLE'?'QR_SCAN_IDLE':['BROWSER_RESOURCE_WAIT','WORKER_CAPACITY_REACHED'].includes(a.last_error)?'BROWSER_RESOURCE_WAIT':e?.rendererCrashed||!healthy&&['BROWSER_PAGE_CRASHED','BROWSER_PAGE_CLOSED','BROWSER_EXITED','DESKTOP_EXITED','DESKTOP_START_FAILED','DESKTOP_NOT_READY'].includes(a.last_error)?'BROWSER_RECOVERING':!e&&a.status==='starting'?'BROWSER_QUEUED':null;
       res.json({ role: 'worker', group, status: a.status, code, screen_ready: Boolean(a.enabled && e?.desktopReady && healthy), connected: Boolean(a.enabled && e?.ready && healthy) });
     } catch { res.status(500).json({ error: 'Worker status unavailable' }); }
   });
@@ -454,13 +460,13 @@ async function start() {
   app.post('/accounts/:id/:command', async (req, res) => {
     try {
       assert(['start', 'restart'].includes(req.params.command), 'Unknown command');
-      const a = (await pool.query('SELECT * FROM accounts WHERE id=$1 AND worker_group=$2 AND enabled', [req.params.id, group])).rows[0]; assert(a, 'Account unavailable', 404);
+      const a = (await pool.query('SELECT * FROM accounts WHERE id=$1 AND worker_group=$2 AND enabled AND deleted_at IS NULL', [req.params.id, group])).rows[0]; assert(a, 'Account unavailable', 404);
       assert(!busy.has(a.id), '账号正在发送，请稍后重启', 409);
-      assert(entries.has(a.id) || entries.size < maxAccounts, '浏览器分组已满', 409);
       if (req.params.command === 'restart') await stopAccount(a.id);
-      retryAt.delete(a.id); await startAccount(a);
-      const e = entries.get(a.id); assert(e?.desktopReady && !e.closing, '浏览器启动失败，请查看分组日志', 503);
-      await audit(null, 'worker.start', a.id); res.json({ ok: true });
+      await scanDemand.request(pool,a.id);retryAt.delete(a.id);
+      const e=entries.get(a.id),ready=!!e?.desktopReady&&!e.closing;
+      if(!e)await state(a.id,'starting');
+      res.status(ready?200:202).json({ok:true,queued:!ready,role:'worker',group});
     } catch (err) { res.status(err.status || 500).json({ error: err.status ? err.message : 'Worker command failed' }); }
   });
   const server = http.createServer(app), wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
@@ -488,6 +494,7 @@ async function start() {
   tick().catch(e => console.error('worker startup:', e.code || e.name));
   await new Promise(resolve => server.listen(Number(process.env.PORT || 8080), '::', resolve));
   console.log('Browser worker ready:', group);
+  console.log('QR demand ready:',JSON.stringify({version:1,group,idle_grace_seconds:scanDemand.LEASE_MS/1000,desktop_lock_cleanup:true,profiles_preserved:true}));
   console.log('Browser resources:',JSON.stringify(await lifecycle.resourceSummary()));
   process.on('SIGTERM', async () => {
     shuttingDown = true; clearInterval(interval); server.close();

@@ -40,8 +40,16 @@ test('PostgreSQL: Owner QR slots reserve pending accounts, honor live resources 
   const row=(await db.pool.query('SELECT worker_group,profile_bound FROM accounts WHERE id=$1',[userMade.data.id])).rows[0];assert.equal(row.worker_group,'group-c');assert.equal(row.profile_bound,false);
   const ownerMade=await request('/accounts','POST',{label:'Synthetic Owner placement',worker_group:'group-a'},owner);assert.equal(ownerMade.status,201);assert.equal((await db.pool.query('SELECT worker_group FROM accounts WHERE id=$1',[ownerMade.data.id])).rows[0].worker_group,'group-a');
   assert.equal((await db.pool.query('SELECT count(*)::integer n FROM account_grants WHERE user_id=(SELECT id FROM users WHERE username=\'capacity_user\') AND account_id=$1',[userMade.data.id])).rows[0].n,1);
+  const originalFetch=global.fetch,commands=[];global.fetch=async(url,options)=>{const target=new URL(url);if(target.hostname==='127.0.0.1'&&target.port==='9'){commands.push(target.pathname);return new Response(JSON.stringify({ok:true,queued:true,role:'worker',group:target.pathname.includes(userMade.data.id)?'group-c':'group-a'}),{status:202,headers:{'Content-Type':'application/json'}});}return originalFetch(url,options);};
+  try{assert.equal((await request('/accounts/'+userMade.data.id+'/restart','POST',{},user)).status,202);assert.equal((await request('/accounts/'+ownerMade.data.id+'/restart','POST',{},owner)).status,202);assert.deepEqual(commands,['/accounts/'+userMade.data.id+'/start','/accounts/'+ownerMade.data.id+'/restart']);}finally{global.fetch=originalFetch;}
+
   for(const old of before.accounts)assert.deepEqual((await db.pool.query('SELECT id,enabled,status,profile_bound FROM accounts WHERE id=$1',[old.id])).rows[0],old);
   assert.deepEqual((await db.pool.query('SELECT id,credit_units,account_limit FROM users ORDER BY id')).rows,before.wallets);
+ });
+ await t.test('unavailable personal groups reject creation without falling back into the full first group',async()=>{
+  await db.pool.query('UPDATE worker_health SET can_start_more=false');const count=(await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n;
+  for(const session of [owner,user])assert.equal((await request('/accounts','POST',{label:'No physical capacity',worker_group:'group-a'},session)).status,409);
+  assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts')).rows[0].n,count);
  });
 
 });

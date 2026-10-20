@@ -33,7 +33,9 @@ async function greeting(port){for(let n=0;n<100;n++){try{return await new Promis
   assert.equal(await replacementPage.title(),'Replacement independent desktop');assert.ok((await replacementPage.screenshot()).length>500);assert.equal(await healthyPage.title(),'Healthy unrelated desktop');assert.ok((await healthyPage.screenshot()).length>500);
   // A sweeper must refuse the live identity and preserve its real X server.
   assert.equal((await require('../src/desktop-locks').clear(replacement,{settleMs:0})).removed,0);assert.equal(await replacementPage.title(),'Replacement independent desktop');
-  await lifecycle.retire(entries,replacement);await assert.rejects(()=>fs.lstat('/tmp/.X106-lock'),{code:'ENOENT'});
+  healthy.ready=true;healthy.awaitingScan=true;replacement.awaitingScan=true;
+  const released=await require('../src/scan-demand').releaseIdle([...entries.keys()].map(id=>({id})),entries,new Map(),new Set(),(id,e)=>lifecycle.retire(entries,e));
+  assert.equal(released,1);assert.equal(entries.has(healthy.id),true);await assert.rejects(()=>fs.lstat('/tmp/.X106-lock'),{code:'ENOENT'});
   const third=await desktop(await identity(28014),6);assert.equal(third.children[0].exitCode,null);assert.equal(await healthyPage.title(),'Healthy unrelated desktop');
   console.log('Desktop lock reuse PASS: reproduced foreign-UID X106 lock failure; SIGKILL orphan cleared before slot release; two new identities reuse the slot; real Chromium screenshots and control/view VNC work; unrelated desktop and all profile markers preserved; network disabled');
  }finally{for(const e of [...entries.values()])await lifecycle.retire(entries,e);for(const c of allChildren)try{c.kill('SIGKILL');}catch{}for(const profile of profiles)assert.equal(await fs.readFile(path.join(profile,'keep-session.marker'),'utf8'),'preserved');await fs.rm(base,{recursive:true,force:true});}

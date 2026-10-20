@@ -154,7 +154,8 @@ window.translateError=(message)=>{
  '没有任务权限':'You cannot manage tasks.',
  '没有导出权限':'You cannot export results.',
  '登录过于频繁，请稍后重试':'Too many sign-in attempts. Please try again later.',
- 'send_now 无效':'Invalid immediate-send setting.'};
+ 'send_now 无效':'Invalid immediate-send setting.',
+ '暂时没有可用的扫码资源，请稍后重试':'No QR capacity is available right now. Please retry shortly.'};
  return WA_LANG==='en'?(map[message]||(/[^\x00-\x7F]/.test(message)?'The request could not be completed. Please check the account and service status.':message)):message;
 };
 window.connectionText=info=>({
@@ -167,6 +168,8 @@ window.connectionText=info=>({
  WORKER_UPDATE_REQUIRED:T('浏览器服务需要更新或检查分组','Update the browser service or check its group.'),
  BROWSER_START_FAILED:T('浏览器启动失败，请查看服务日志','Browser startup failed. Check service logs.'),
  BROWSER_RESOURCE_WAIT:T('扫码服务正在等待可用资源，系统会自动继续，请稍后重试','The QR service is waiting for capacity and will continue automatically. Please retry shortly.'),
+ QR_SCAN_IDLE:T('正在启动扫码画面，请稍候','Starting the QR screen. Please wait.'),
+ BROWSER_QUEUED:T('扫码画面已排队，系统会自动连接','The QR screen is queued and will connect automatically.'),
  BROWSER_RECOVERING:T('扫码浏览器正在恢复，画面会自动重新连接','The QR browser is recovering. The screen will reconnect automatically.'),
  WORKER_BUSY:T('浏览器分组已满或正在发送，请稍后重试','The browser group is full or a send is in progress. Please retry.'),
  ALREADY_LINKED:T('WhatsApp 已连接，无需再次扫码','WhatsApp is linked. No further QR scan is needed.'),

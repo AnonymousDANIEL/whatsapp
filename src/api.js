@@ -5,6 +5,7 @@ const billing=require('./billing');
 const payments=require('./payments'),vault=require('./secrets'),banks=require('./banks');
 const shared=require('./shared');
 const allocation=require('./account-allocation');
+const scanDemand=require('./scan-demand');
 const capacity=require('./capacity');
 const overview=require('./overview');
 const ownerHistory=require('./owner-history'),sharedConsole=require('./shared-console');
@@ -135,6 +136,7 @@ async function ensureLoginActivity() {
 async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000}={}) {
   await ensureLoginActivity();
   await loginHistory.ensure(pool);
+  await scanDemand.ensure(pool);
   console.log('Login history ready: '+JSON.stringify({version:1,owner_only:true,source:process.env.RAILWAY_ENVIRONMENT_ID&&process.env.RAILWAY_SERVICE_ID?'railway_edge':'direct_socket',lookup_key_configured:!!process.env.LOGIN_IP_LOOKUP_KEY}));
   await sharedConsole.ensureOptions();
   await sharedAccounts.ensureLinking();
@@ -216,17 +218,19 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     const id=crypto.randomUUID();let assignedGroup=req.body.worker_group;
     await transaction(async db=>{
       await db.query('SELECT pg_advisory_xact_lock($1)',[allocation.PLACEMENT_LOCK]);
-      assignedGroup=await allocation.chooseGroup(db,personalGroups,req.user.role==='owner'?assignedGroup:null)||assignedGroup;
+      assignedGroup=await allocation.chooseGroup(db,personalGroups,req.user.role==='owner'?assignedGroup:null);
+      assert(assignedGroup,'暂时没有可用的扫码资源，请稍后重试',409);
       if(req.user.role!=='owner'){
         const u=(await db.query('SELECT account_limit FROM users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];
         const n=(await db.query('SELECT count(*)::int n FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=$1 AND a.deleted_at IS NULL',[req.user.id])).rows[0].n;
         assert(n<u.account_limit,'每个 USER 最多连接 10 个 WhatsApp 账号',409);
       }
       await db.query('INSERT INTO accounts(id,label,worker_group) VALUES($1,$2,$3)',[id,req.body.label.trim(),assignedGroup]);
+      await scanDemand.request(db,id);
       if(req.user.role!=='owner')await db.query('INSERT INTO account_grants(user_id,account_id,operate) VALUES($1,$2,true)',[req.user.id,id]);
     });
     await audit(req.user.id,'account.create',id,{label:req.body.label.trim()});
-    try {await workerCommand({id,worker_group:assignedGroup},'start');res.status(201).json({id,started:true});}
+    try {const result=await workerCommand({id,worker_group:assignedGroup},'start');res.status(201).json({id,started:!result.queued,queued:!!result.queued});}
     catch(error){if(!error.publicMessage)throw error;res.status(201).json({id,started:false,connection:{code:error.code,message:error.message}});}
   }));
   app.get('/api/accounts/:id/connection', route(async (req, res) => {
@@ -240,8 +244,8 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     }
     try {
       const connection = await browser.status(a);
-      const issue=['BROWSER_RESOURCE_WAIT','BROWSER_RECOVERING'].includes(connection.code)?connection.code:'BROWSER_NOT_READY';
-      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||scan&&!connection.connected||!scan&&connection.connected), code: scan&&connection.connected?'ALREADY_LINKED':connection.screen_ready ? 'SCREEN_READY' : issue, message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart&&issue!=='BROWSER_RESOURCE_WAIT' });
+      const issue=['BROWSER_RESOURCE_WAIT','BROWSER_RECOVERING','QR_SCAN_IDLE','BROWSER_QUEUED'].includes(connection.code)?connection.code:'BROWSER_NOT_READY';
+      res.json({ ok: connection.screen_ready&&(req.user.role==='owner'||scan&&!connection.connected||!scan&&connection.connected), code: scan&&connection.connected?'ALREADY_LINKED':connection.screen_ready ? 'SCREEN_READY' : issue, message: connection.screen_ready ? '请用手机 WhatsApp → 已关联设备 → 关联设备扫码；显示已连接后才能发送。' : '浏览器尚未准备好，请启动后重试；若仍无法打开，请管理员检查浏览器服务日志。', connected: connection.connected, status: connection.status, can_start: canStart });
     } catch (error) {
       if (!error.publicMessage) throw error;
       res.json({ ok: false, code: error.code, message: error.message, can_start: false });
@@ -280,7 +284,9 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
 
     assert(['start', 'restart'].includes(req.params.command), '指令无效');
     const a = await access(req.user, req.params.id, true); assert(a.enabled, '账号已停用');
-    const result = await workerCommand(a, req.params.command); await audit(req.user.id, 'account.' + req.params.command, a.id); res.json(result);
+    // USER reconnect is idempotent and must never tear down an already linked phone.
+    const command=req.user.role==='owner'?req.params.command:'start';
+    const result = await workerCommand(a, command); await audit(req.user.id, 'account.' + command, a.id); res.status(result.queued?202:200).json(result);
   }));
   app.post('/api/users/password-access',rateLimit({windowMs:15*60000,limit:10,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id}),route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
