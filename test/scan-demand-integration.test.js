@@ -34,4 +34,10 @@ test('PostgreSQL: real worker queues QR starts quickly, coalesces demand, retain
  const restart=await fetch(base+'/accounts/'+id+'/start',{method:'POST',headers});assert.equal(restart.status,202);await restart.arrayBuffer();
  assert.ok(+(await db.pool.query('SELECT requested_at FROM scan_demand WHERE account_id=$1',[id])).rows[0].requested_at>+first.requested_at);
  await db.pool.query('DELETE FROM accounts WHERE id=$1',[id]);assert.equal((await db.pool.query('SELECT count(*)::int n FROM scan_demand')).rows[0].n,0);assert.equal(await fs.readFile(path.join(folder,'keep-session.marker'),'utf8'),'preserved');
+  await db.pool.query(`INSERT INTO accounts(id,label,worker_group,profile_bound,status,last_error,phone) VALUES
+   ($1,'Existing bound resource waiter',$4,true,'capacity_wait','BROWSER_RESOURCE_WAIT',NULL),
+   ($2,'Existing phone',$4,true,'capacity_wait','BROWSER_RESOURCE_WAIT','synthetic-linked'),
+   ($3,'Idle QR',$4,true,'scan_required','QR_SCAN_IDLE',NULL)`,[id,randomUUID(),randomUUID(),group]);
+  const demand=require('../src/scan-demand');assert.equal(await demand.recoverBlocked(db.pool,group),1);assert.equal(await demand.recoverBlocked(db.pool,group),0);
+  const recovered=(await db.pool.query('SELECT account_id FROM scan_demand')).rows;assert.deepEqual(recovered,[{account_id:id}]);assert.equal(await fs.readFile(path.join(folder,'keep-session.marker'),'utf8'),'preserved');
 });

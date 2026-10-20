@@ -435,6 +435,7 @@ async function start() {
   const held = (await lock.query('SELECT pg_try_advisory_lock(hashtext($1)) ok', ['wa-worker-' + group])).rows[0].ok;
   assert(held, 'Another worker owns this group. Use distinct groups, never replicas with the same profile.', 500);
   lock.on('error', () => { console.error('Worker ownership lost'); process.exit(1); });
+  const recovered=await scanDemand.recoverBlocked(pool,group);if(recovered)console.log('Recovered QR requests:',JSON.stringify({group,recovered,profiles_preserved:true}));
   await pool.query(`UPDATE recipients r SET status='unknown',error_code='WORKER_RESTART_REVIEW_REQUIRED',updated_at=now()
     FROM campaigns c JOIN accounts a ON a.id=c.account_id WHERE r.campaign_id=c.id AND a.worker_group=$1 AND r.status='sending'`, [group]);
   await shared.recoverInterrupted(group);

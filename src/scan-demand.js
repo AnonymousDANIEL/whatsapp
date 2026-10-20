@@ -25,6 +25,17 @@ async function read(db,group){
   WHERE a.worker_group=$1 AND a.enabled AND a.deleted_at IS NULL AND d.expires_at>clock_timestamp()`,[group])).rows;
  return new Map(rows.map(r=>[r.account_id,r]));
 }
+async function recoverBlocked(db,group){
+ // Give only an existing bound, never-linked resource waiter a fresh startup
+ // opportunity. Already-idle screens and actual phone links are not candidates.
+ const r=await db.query(`INSERT INTO scan_demand(account_id,requested_at,expires_at)
+  SELECT id,clock_timestamp(),clock_timestamp()+interval '120 seconds' FROM accounts
+  WHERE worker_group=$1 AND enabled AND deleted_at IS NULL AND profile_bound AND phone IS NULL
+   AND status='capacity_wait' AND last_error IN ('BROWSER_RESOURCE_WAIT','WORKER_CAPACITY_REACHED')
+  ON CONFLICT(account_id) DO UPDATE SET requested_at=excluded.requested_at,expires_at=excluded.expires_at
+   WHERE scan_demand.expires_at<=clock_timestamp() RETURNING account_id`,[group]);
+ return r.rowCount;
+}
 function active(demand,now=Date.now()){return !!demand&&Number.isFinite(+new Date(demand.expires_at))&&+new Date(demand.expires_at)>now;}
 function shouldStart(account,demand,now=Date.now()){
  return active(demand,now)||!!account.phone&&account.status!=='scan_required'&&account.last_error!=='QR_SCAN_IDLE';
@@ -47,4 +58,4 @@ async function releaseIdle(accounts,entries,demands,busy,stop,now=Date.now()){
  }
  return released;
 }
-module.exports={LEASE_MS,ensure,request,read,active,shouldStart,idle,ordered,releaseIdle};
+module.exports={LEASE_MS,ensure,request,read,recoverBlocked,active,shouldStart,idle,ordered,releaseIdle};
