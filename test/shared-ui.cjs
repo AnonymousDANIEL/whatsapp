@@ -41,7 +41,12 @@ const server=http.createServer(async(req,res)=>{
     const personal={id:accountId,label:'fixture personal'+(s.accountSuffix||''),enabled:true,status:s.accountStatus||'ready',phone:s.accountPhone||'15555550101',history_synced_at:null};
     result=s.role==='owner'?[...managedUsers.map((u,i)=>({...personal,id:i?'account-'+i:accountId,assigned_users:[{id:u.id,username:u.username,active:u.active}]})),{...personal,id:'owner-account',assigned_users:[]}]:[personal];
    }
-   else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers].map(u=>({...u,last_login_at:s.loginDates[u.id]??null}));
+   else if(p==='/users')result=[{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},...managedUsers].map(u=>({...u,last_login_at:s.loginDates[u.id]??null,latest_login_ip:u.id==='active-user'?'8.8.8.8':null}));
+   else if(/^\/users\/[^/]+\/logins$/.test(p)){
+    if(s.role!=='owner'){res.statusCode=403;result={error:'Owner only'};}
+    else if(p.includes('active-user'))result={rows:url.searchParams.has('before')?[{id:'1',logged_at:'2026-01-02T03:04:05.123Z',ip:null,user_agent:null,geo_status:'legacy'}]:[{id:'2',logged_at:s.loginDates['active-user'],ip:'8.8.8.8',isp:'Synthetic <img src=x onerror=alert(1)>',city:'Kuala Lumpur',country:'Malaysia',user_agent:'Synthetic browser <script>alert(1)</script>',geo_status:'ready',geo_provider:'ipapi.is'}],next_cursor:url.searchParams.has('before')?null:'fixture-next'};
+    else result={rows:[],next_cursor:null};
+   }
    else if(p==='/owner/send-groups')result=senderGroups(s,url.searchParams.get('kind'));
    else if(p==='/owner/send-items'){
     const actor=url.searchParams.get('actor_id');if(s.failSendGroup===actor){res.statusCode=503;result={error:'Synthetic group unavailable'};}else result=senderItems(s,url.searchParams.get('kind'),actor,Number(url.searchParams.get('page')||1));
@@ -405,6 +410,18 @@ async function verifyOwnerLoginActivity(page,fixture,language){
  await page.evaluate(()=>{page='users';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});
  assert.match(await page.$eval('#content thead',n=>n.textContent),language==='en'?/Last sign-in UTC\+8/:/最新登入时间 UTC\+8/);
  assert.doesNotMatch(await page.$eval('#content thead',n=>n.textContent),/Password updated|密码更新时间/);
+ assert.equal(await page.$('#show-passwords'),null);assert.equal(await page.$('[data-reveal-password]'),null);
+ assert.equal(await page.$eval('tr:has([data-remark="active-user"]) .code',n=>n.textContent),'8.8.8.8');
+ await page.click('[data-login-history="active-user"]');await page.waitForSelector('#login-history-refresh');
+ assert.deepEqual(await page.$$eval('#modal th',nodes=>nodes.map(n=>n.textContent)),['TIME (UTC+8)','IP','ISP','CITY','COUNTRY','USER AGENT']);
+ assert.match(await page.$eval('#modal tbody',n=>n.textContent),/Synthetic <img/);assert.match(await page.$eval('#modal tbody',n=>n.textContent),/<script>/);assert.equal(await page.$('#modal tbody img,#modal tbody script'),null);
+ const signInTime=await page.evaluate(v=>new Date(v).toLocaleString(document.documentElement.lang==='en'?'en-GB':'zh-CN',{timeZone:'Asia/Kuala_Lumpur',hourCycle:'h23'}),fixture.loginDates['active-user']);
+ assert.equal(await page.$eval('#modal tbody tr td',n=>n.textContent),signInTime);
+ for(const width of [390,1440]){await page.setViewport({width,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Login history fits desktop and mobile');}
+ await page.click('#login-history-next');await page.waitForFunction(()=>document.querySelector('#login-history-next')?.disabled);
+ assert.equal(await page.$$eval('#modal tbody tr td',nodes=>nodes.slice(1).map(n=>n.textContent).join('')),'—————');
+ await page.click('#login-history-prev');await page.waitForFunction(()=>document.querySelector('#login-history-prev')?.disabled);await page.click('#login-history-refresh');await page.waitForSelector('#login-history-refresh');await page.click('#close-modal');
+ await page.click('[data-login-history="ui-owner"]');await page.waitForSelector('#login-history-refresh');assert.equal(await page.$('#modal tbody tr'),null);await page.keyboard.press('Escape');
  const active='tr:has([data-remark="active-user"]) .last-login';
  assert.equal(await page.$$eval('.last-login',nodes=>nodes.map(n=>n.dataset.loginRecency).sort().join(',')),'green,orange');
  assert.equal(await page.$eval('.last-login.green',n=>getComputedStyle(n).color),'rgb(103, 216, 177)');
@@ -430,7 +447,7 @@ async function verifyOwnerLoginActivity(page,fixture,language){
  await page.setViewport({width:1440,height:1000});
  assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);assert.equal(fixture.requests.some(r=>r.path==='/users/password-access'||r.query.includes('passwords=true')),false);
  await page.click('#nav [data-page=shared]');await waitReady(page);
- console.log('Owner login recency PASS: '+language+' / real timestamps, green/orange/red/no-history, exact 24h/7d boundaries, automatic aging and mobile');
+ console.log('Owner login history and recency PASS: '+language+' / real timestamps, green/orange/red/no-history, exact 24h/7d boundaries, automatic aging and mobile');
 }
 
 async function verifyOwnerBilling(page,language){

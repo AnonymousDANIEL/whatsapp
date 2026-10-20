@@ -1,3 +1,13 @@
+# Owner IP and sign-in history — 2026-10-20 MY
+
+Owner USER ID management replaces its Password display with latest-login IP and per-ID, newest-first paginated TIME / IP / ISP / CITY / COUNTRY / USER AGENT history. Malaysia UTC+8 and existing login-recency colors remain. Old audit login events retain their real timestamp, with unavailable historical IP/browser fields absent. Owner password reset and self-password controls remain. USER access is refused server-side.
+
+The API-only migration captures successful authentication atomically with the session and preserves an independent login history through audit purge. Railway ingress uses its documented X-Real-IP; direct environments use the socket and ignore untrusted forwarding claims. Provider data is approximate network location, not proof of physical location. Background fixed-HTTPS lookups have time/body limits, public-IP filtering, seven-day caching, thirty-day cache expiry, persisted leases, quotas and failure backoff. No login awaits the external service.
+
+Local syntax checks passed. The full locally available test run passed 103 tests with zero failures; 12 native database suites were unavailable in this scratch environment. GitHub's release workflow must run all native PostgreSQL suites, actual Chinese/English Owner/USER desktop/mobile browser cases, QR/media checks, three image builds and isolated worker/backup smoke tests before production promotion. New cases cover authentication and role denial, genuine timestamps and legacy absence, stable microsecond pagination, forged forwarding claims, escaped strings, cache reuse, provider failure/quota/concurrency and retained accounting/password state.
+
+Release scope is API/public assets only. All50 browser active deployment IDs, PostgreSQL and mounts, personal125/shared200 capacity and existing linked phone state must be compared before/after deployment. Do not claim real production login/IP capture, phone linking, customer sending or financial tests: no such production mutations are used for validation.
+
 # 2026-10-19: arrow-only sidebar and personal capacity placement
 
 - Sidebar chevrons alone change a list disclosure. Parent labels and icons navigate without collapsing or reopening the list. Native keyboard activation, Escape, nested Banks, per-identity persisted state, polling and logout cleanup remain.

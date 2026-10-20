@@ -24,6 +24,7 @@ const { assert, hash, PERMISSIONS, parseRecipients, validateSchedule, validatePa
 const { createWorkerConnection } = require('./connection');
 const security = require('./http-security');
 const requestBody = require('./request-body');
+const loginHistory = require('./login-history');
 
 const SESSION_HOURS = 168;
 const {routes,sharedGroups}=require('./shared-routing').routingConfiguration(process.env);
@@ -131,8 +132,10 @@ async function ensureLoginActivity() {
       WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
   });
 }
-async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000}={}) {
+async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000}={}) {
   await ensureLoginActivity();
+  await loginHistory.ensure(pool);
+  console.log('Login history ready: '+JSON.stringify({version:1,owner_only:true,source:process.env.RAILWAY_ENVIRONMENT_ID&&process.env.RAILWAY_SERVICE_ID?'railway_edge':'direct_socket',lookup_key_configured:!!process.env.LOGIN_IP_LOOKUP_KEY}));
   await sharedConsole.ensureOptions();
   await sharedAccounts.ensureLinking();
   console.log('Login activity metadata ready: v1');
@@ -155,8 +158,14 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     const parentOK = true;
     assert(u && u.active && !u.locked && parentOK && valid, '账号或密码不正确，或账号已停用或锁定', 401);
     const token = crypto.randomBytes(32).toString('hex'), csrf = crypto.randomBytes(24).toString('hex');
-    await pool.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`, [hash(token), u.id, csrf]);
-    sessionCookie(res, token); await audit(u.id, 'login', u.id); res.json({ ok: true });
+    const network=loginHistory.requestContext(req);
+    await transaction(async c=>{
+      const current=(await c.query('SELECT active,locked FROM users WHERE id=$1 FOR SHARE',[u.id])).rows[0];
+      assert(current?.active&&!current.locked,'账号或密码不正确，或账号已停用或锁定',401);
+      await c.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`,[hash(token),u.id,csrf]);
+      await c.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1::uuid,'login',$1::text,$2)",[u.id,{login_network:network}]);
+    });
+    sessionCookie(res, token); res.json({ ok: true });
   }));
   requestBody.publicCallbacks(app);
   payments.callbackRoutes(app,route,uuid);
@@ -285,9 +294,15 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     if(req.query.compact==='true')return res.json((await pool.query('SELECT id,username,role FROM users ORDER BY created_at')).rows);
     const reveal=req.query.passwords==='true'&&req.user.password_reveal_until&&new Date(req.user.password_reveal_until)>new Date();
     const rows=(await pool.query(`SELECT u.id,u.username,u.role,u.active,u.locked,u.created_at,u.permissions,u.credit_units,u.account_limit,u.password_changed_at,u.password_cipher,u.remark,u.last_login_at,
+      (SELECT h.ip FROM login_history h WHERE h.user_id=u.id ORDER BY h.logged_at DESC,h.id DESC LIMIT 1) AS latest_login_ip,
       (SELECT count(*)::int FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL) AS account_count,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('account_id',g.account_id,'operate',true)) FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=u.id AND a.deleted_at IS NULL),'[]'::jsonb) grants FROM users u ORDER BY u.created_at`)).rows;
     res.json(rows.map(u=>{const cipher=u.password_cipher;delete u.password_cipher;return{...u,password_available:!!cipher,password:reveal&&u.role!=='owner'&&cipher?vault.open(cipher,'user-password:'+u.id):undefined,password_access:!!reveal};}));
+  }));
+  app.get('/api/users/:id/logins',route(async(req,res)=>{
+    assert(req.user.role==='owner','只有 Owner 可以查看登录记录',403);
+    const id=uuid(req.params.id);assert((await pool.query('SELECT id FROM users WHERE id=$1',[id])).rowCount,'USER ID 不存在',404);
+    res.json(await loginHistory.read(pool,id,req.query.before));
   }));
   app.post('/api/users',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理 USER ID',403);
@@ -604,6 +619,8 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   console.log('Management service ready');
   const stopRefundMonitor=refundMonitorIntervalMs>0?automaticRefunds.monitor(refundMonitorIntervalMs):()=>{};
   server.on('close',stopRefundMonitor);
+  const stopLoginMonitor=loginMonitorIntervalMs>0?loginHistory.monitor(pool,loginMonitorIntervalMs):()=>{};
+  server.on('close',stopLoginMonitor);
   pool.query("SELECT id FROM users WHERE role='owner' ORDER BY created_at LIMIT 1").then(async({rows})=>{
     if(!rows.length)return;
     const data=await overview.readGrouped(pool,rows[0].id);
