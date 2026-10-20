@@ -1,3 +1,9 @@
+# Inactive USER groups last (2026-10-20 MY, current)
+
+- Owner Send tasks, Message history and Overview now display all inactive USER groups after every other group, including External / unattributed. Preserve the Owner section at the top and the existing relative order within each partition; locked-but-active USERs are not inactive. Keep group counters, per-ID pagination, lazy reads, persisted disclosures and automatic refresh intact when status changes.
+- This is public-assets-only presentation: inactiveUsersLast returns new arrays without changing API data, access statuses, attribution, message outcomes or counts. External / unattributed still means outgoing personal-account history without a recorded system actor (for example phone sends or sends without a matching control lease), not an account with access to the workspace. Do not reassign those records from current grants or remove them.
+- Preserve all 50 browser deployments, PostgreSQL, profile mounts, ordinary125/shared200 capacity and the live automatic-refund policy. Only API hosting of the changed app.js/index.html should redeploy. Verify Owner/USER Chinese/English desktop/mobile, all three ordering views and live status refresh with open-group/page state retained. No production login, USER status change, real customer send or balance mutation is a test. Never upload the unrelated local mywasap.svg.
+
 # Automatic unconfirmed-send refunds (2026-10-20 MY, current)
 
 - Owner now explicitly requests automatic returns of unconfirmed prepaid send holds, without human review, with records in Owner billing. This supersedes all older instructions to preserve unknown holds for manual resolution; keep the distinct honest message outcomes and never retry unknown recipients.

@@ -223,6 +223,7 @@ function bindDashboardDisclosures(){
   group.onkeydown=e=>{if(e.key==='Escape'&&group.open){e.preventDefault();group.open=false;group.querySelector('summary').focus();}};
  });
 }
+function inactiveUsersLast(groups){return [...groups.filter(g=>g.user?.active!==false),...groups.filter(g=>g.user?.active===false)];}
 function overview(data){
  if(me.role!=='owner'){
   $('#content').innerHTML=overviewMarkup(overviewData,null,accounts.filter(a=>!a.deleted_at&&a.status==='ready').length);return;
@@ -233,7 +234,8 @@ function overview(data){
   const id=external?'external':item.user.id,key='actor:'+id,open=dashboardOpen.has(key),status=external?null:userState(item.user),name=external?T('外部 / 未归属','External / unattributed'):item.user.username,total=Object.values(item.counts).reduce((n,v)=>n+Number(v),0);
   return `<details class="panel overview-actor" data-overview-user="${esc(id)}" data-dashboard-key="${esc(key)}" ${open?'open':''}><summary aria-expanded="${open}" aria-controls="overview-user-${esc(id)}"><span class="account-group-heading"><span class="account-group-name">${esc(name)}</span>${external?'':`<span class="badge account-user-state ${status}"><span class="status-dot" aria-hidden="true"></span>${status.toUpperCase()}</span><span class="muted">${item.user.role==='owner'?'Owner':'USER ID'}</span>`}</span><span class="muted">${T('全部消息','All messages')} <strong>${num(total)}</strong></span></summary><div class="overview-actor-body" id="overview-user-${esc(id)}">${overviewMarkup(item,name)}</div></details>`;
  };
- $('#content').innerHTML=`<section data-overview-owner>${overviewMarkup(overviewData.owner,me.username+' · '+T('我的消息','My messages'))}</section><section class="overview-users"><h2>${T('USER ID 消息总览','Messages by USER ID')}</h2><p class="muted">${T('按任务创建人和手动发送操作人分开统计，点击 USER ID 查看。统计普通 WhatsApp 消息。','Personal WhatsApp messages are grouped by task creator or manual sender. Select a USER ID to view its data.')}</p>${overviewData.users.map(u=>actorGroup(u)).join('')}${Object.keys(overviewData.external.counts).length?actorGroup(overviewData.external,true):''}</section>`;
+ const groups=inactiveUsersLast([...overviewData.users,...(Object.keys(overviewData.external.counts).length?[overviewData.external]:[])]);
+ $('#content').innerHTML=`<section data-overview-owner>${overviewMarkup(overviewData.owner,me.username+' · '+T('我的消息','My messages'))}</section><section class="overview-users"><h2>${T('USER ID 消息总览','Messages by USER ID')}</h2><p class="muted">${T('按任务创建人和手动发送操作人分开统计，点击 USER ID 查看。统计普通 WhatsApp 消息。','Personal WhatsApp messages are grouped by task creator or manual sender. Select a USER ID to view its data.')}</p>${groups.map(u=>actorGroup(u,!u.user)).join('')}</section>`;
  bindDashboardDisclosures();
 }
 function accountTable(items=accounts){
@@ -295,7 +297,7 @@ function taskPauseControl(c){
 function ownerSendLists(kind){
  const data=ownerSendData;if(!data||data.kind!==kind)return `<p class="muted">${T('正在加载…','Loading…')}</p>`;
  restoreDashboardDisclosures();
- return data.groups.map(group=>{
+ return inactiveUsersLast(data.groups).map(group=>{
   const u=group.user,id=u?.id||'external',key='send-'+kind+':'+id,open=dashboardOpen.has(key),name=u?u.username:T('外部 / 未归属','External / unattributed'),result=data.items[id],listId='send-'+kind+'-'+id;
   const rows=result?.rows||[],status=u?userState(u):null;
   const pager=result&&!result.unavailable?`<div class="pager"><button data-send-page="-1" data-send-actor="${esc(id)}" ${result.page<=1?'disabled':''}>${T('上一页','Previous')}</button><span>${result.page} / ${Math.max(1,Math.ceil(result.total/result.size))}</span><button data-send-page="1" data-send-actor="${esc(id)}" ${result.page*result.size>=result.total?'disabled':''}>${T('下一页','Next')}</button></div>`:'';

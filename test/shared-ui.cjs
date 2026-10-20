@@ -10,9 +10,10 @@ let current;
 const ledgerNote='Synthetic transfer remark <img src=x onerror=alert(1)>\nSecond line';
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
 const managedUsers=[{id:'active-user',username:'Active fixture',role:'user',active:true,locked:false},{id:'inactive-user',username:'Inactive fixture',role:'user',active:false,locked:false},{id:'locked-user',username:'Locked fixture',role:'user',active:true,locked:true}];
+function accessUsers(s){return managedUsers.map(u=>({...u,...s.userAccess?.[u.id]}));}
 function personalTask(s){return {id:taskId,title:'Review fixture',body:'Synthetic caption',account_label:'fixture personal',creator:'fixture-'+s.role,created_by:'ui-'+s.role,enabled:false,pause_reason:'review',interval_ms:10000,created_at:'2026-10-16T03:00:00Z',operation_at:'2026-10-16T03:10:00Z',counts:{unknown:1}};}
 function personalRecords(s){return ['submitted','delivered','failed','pending','unknown'].map((status,i)=>({recipient_id:i+1,campaign_id:taskId,account_label:'fixture personal',actor:'fixture-'+s.role,raw_phone:'+15555550101',body:'fixture '+status,status,sent_at:'2026-10-15T06:00:00Z'}));}
-function senderGroups(s,kind){return {kind,groups:[{user:{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},total:kind==='tasks'?(s.taskReview?1:0):5},...managedUsers.map(u=>({user:u,total:u.id==='active-user'?2:0})),...(kind==='messages'?[{user:null,total:1}]:[])]};}
+function senderGroups(s,kind){return {kind,groups:[{user:{id:'ui-owner',username:'fixture-owner',role:'owner',active:true,locked:false},total:kind==='tasks'?(s.taskReview?1:0):5},...accessUsers(s).map(u=>({user:u,total:u.id==='active-user'?2:0})),...(kind==='messages'?[{user:null,total:1}]:[])]};}
 function senderItems(s,kind,actor,page){
  if(actor==='ui-owner')return{kind,actor_id:actor,rows:kind==='tasks'?(s.taskReview?[personalTask(s)]:[]):personalRecords(s),total:kind==='tasks'?(s.taskReview?1:0):5,page,size:100};
  const text='Synthetic USER '+(kind==='tasks'?'task':'message')+' page '+page;
@@ -21,7 +22,7 @@ function senderItems(s,kind,actor,page){
 }
 function groupedOverview(s){
  const bucket=(user,counts)=>({user,counts,days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+11).padStart(2,'0'),counts:i===6?counts:{}}))});
- return{owner:bucket({id:'ui-owner',username:'fixture-owner',role:'owner'},{submitted:2,unknown:1}),users:managedUsers.map((u,i)=>bucket(u,i===0?{submitted:8+(s.overviewRevision||0),failed:2}:i===1?{}:{read:1})),external:bucket(null,{delivered:1}),timezone:'Asia/Kuala_Lumpur'};
+ return{owner:bucket({id:'ui-owner',username:'fixture-owner',role:'owner'},{submitted:2,unknown:1}),users:accessUsers(s).map((u,i)=>bucket(u,i===0?{submitted:8+(s.overviewRevision||0),failed:2}:i===1?{}:{read:1})),external:bucket(null,{delivered:1}),timezone:'Asia/Kuala_Lumpur'};
 }
 
 const server=http.createServer(async(req,res)=>{
@@ -146,6 +147,8 @@ async function verifyAccountIdentity(page,fixture,role,language){
 async function verifySenderGroups(page,fixture,kind,language){
  const start=fixture.requests.length,writes=fixture.requests.filter(r=>r.method!=='GET').length,own='[data-owner-send-actor="ui-owner"]',other='[data-owner-send-actor="active-user"]';
  assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.length),kind==='tasks'?4:5);
+ const expected=['ui-owner','active-user','locked-user',...(kind==='messages'?['external']:[]),'inactive-user'];
+ assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),expected);
  assert.equal(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.every(n=>!n.open)),true);
  assert.equal(await page.$$eval('#content tbody tr',nodes=>nodes.length),0);
  assert.equal(fixture.requests.slice(start).some(r=>r.path==='/owner/send-items'),false);
@@ -154,6 +157,11 @@ async function verifySenderGroups(page,fixture,kind,language){
  assert.equal(await page.$eval(own,n=>n.open),false);
  await page.click(other+' [data-send-page="1"]');
  await page.waitForFunction(({selector,text})=>!loading&&document.querySelector(selector)?.textContent.includes(text),{}, {selector:other,text:'Synthetic USER '+(kind==='tasks'?'task':'message')+' page 2'});
+ fixture.userAccess={'active-user':{active:false}};await page.evaluate(()=>loadPage(true));
+ assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),['ui-owner','locked-user',...(kind==='messages'?['external']:[]),'active-user','inactive-user']);
+ assert.equal(await page.$eval(other,n=>n.open),true);assert.match(await page.$eval(other,n=>n.textContent),/page 2/);
+ fixture.userAccess={};await page.evaluate(()=>loadPage(true));
+ assert.deepEqual(await page.$$eval('[data-owner-send-actor]',nodes=>nodes.map(n=>n.dataset.ownerSendActor)),expected);
  // One failed group never hides the other groups or invents an empty result.
  fixture.failSendGroup='active-user';await page.evaluate(()=>loadPage(true));
  assert.match(await page.$eval(other,n=>n.textContent),language==='en'?/Cannot load this group/:/暂时无法加载这组记录/);
@@ -357,6 +365,7 @@ async function verifyAccountGroups(page,fixture){
 async function verifyGroupedOverview(page,fixture){
  const active='[data-overview-user="active-user"]';
  assert.equal(await page.$$eval('[data-overview-user]',nodes=>nodes.length),4);
+ assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','locked-user','external','inactive-user']);
  assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),0);
  assert.match(await page.$eval('[data-overview-owner] .overview-heading',n=>n.textContent),/fixture-owner/);
  assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
@@ -369,6 +378,11 @@ async function verifyGroupedOverview(page,fixture){
  assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
  assert.equal(await page.$eval('[data-overview-owner] .overview-cards .value',n=>n.textContent),'3');
  await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('[data-overview-owner]');
+ fixture.userAccess={'active-user':{active:false}};await page.evaluate(()=>loadPage(true));
+ assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['locked-user','external','active-user','inactive-user']);
+ assert.equal(await page.$eval(active,n=>n.open),true);assert.equal(await page.$eval(active+' .overview-cards .value',n=>n.textContent),'11');
+ fixture.userAccess={};await page.evaluate(()=>loadPage(true));
+ assert.deepEqual(await page.$$eval('[data-overview-user]',nodes=>nodes.map(n=>n.dataset.overviewUser)),['active-user','locked-user','external','inactive-user']);
  assert.equal(await page.$eval(active,n=>n.open),true);
  assert.equal(await page.$$eval('[data-overview-user][open]',nodes=>nodes.length),1);
  for(const width of [390,1440]){
