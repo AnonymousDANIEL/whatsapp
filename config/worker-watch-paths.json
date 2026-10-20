@@ -31,5 +31,8 @@
   "/vendor/**",
   "/package*.json",
   "/Dockerfile.worker",
-  "/railway.worker.json"
+  "/railway.worker.json",
+  "/src/scan-demand.js",
+  "/src/desktop-locks.js",
+  "/src/desktop-lock-preload.js"
 ]
