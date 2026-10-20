@@ -410,7 +410,7 @@ async function tick() {
       const e = entries.get(a.id);
       if(!e&&!scanDemand.shouldStart(a,demands.get(a.id))){if(a.status!=='scan_required'||a.last_error!=='QR_SCAN_IDLE')await state(a.id,'scan_required','QR_SCAN_IDLE');continue;}
       if(e&&!e.closing&&lifecycle.browserClosed(e)){await fail(a.id,'BROWSER_EXITED',e);continue;}
-      if(e&&lifecycle.expired(e,Date.now(),180000)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
+      if(e&&lifecycle.expired(e,Date.now(),e.authenticated?600000:180000)){await fail(a.id,'LOGIN_TIMEOUT',e);continue;}
       if (e) {
         await pool.query('UPDATE accounts SET heartbeat_at=now() WHERE id=$1', [a.id]);
         if (e.client?.pupPage && !e.ready) e.client.pupPage.bringToFront().catch(() => {});
