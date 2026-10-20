@@ -34,4 +34,14 @@ test('PostgreSQL: Owner QR slots reserve pending accounts, honor live resources 
  await t.test('capacity reads never change accounts, funds or the ten-account USER quota',async()=>{
   assert.deepEqual(await state(),before);assert.equal((await db.pool.query("SELECT account_limit FROM users WHERE username='capacity_user'")).rows[0].account_limit,10);
  });
+ await t.test('USER adds use the least-loaded healthy personal worker; an Owner selection remains explicit',async()=>{
+  await db.pool.query("UPDATE worker_health SET heartbeat_at=now(),can_start_more=true WHERE worker_group IN ('group-a','group-c')");
+  const userMade=await request('/accounts','POST',{label:'Synthetic USER placement',worker_group:'group-a'},user);assert.equal(userMade.status,201);
+  const row=(await db.pool.query('SELECT worker_group,profile_bound FROM accounts WHERE id=$1',[userMade.data.id])).rows[0];assert.equal(row.worker_group,'group-c');assert.equal(row.profile_bound,false);
+  const ownerMade=await request('/accounts','POST',{label:'Synthetic Owner placement',worker_group:'group-a'},owner);assert.equal(ownerMade.status,201);assert.equal((await db.pool.query('SELECT worker_group FROM accounts WHERE id=$1',[ownerMade.data.id])).rows[0].worker_group,'group-a');
+  assert.equal((await db.pool.query('SELECT count(*)::integer n FROM account_grants WHERE user_id=(SELECT id FROM users WHERE username=\'capacity_user\') AND account_id=$1',[userMade.data.id])).rows[0].n,1);
+  for(const old of before.accounts)assert.deepEqual((await db.pool.query('SELECT id,enabled,status,profile_bound FROM accounts WHERE id=$1',[old.id])).rows[0],old);
+  assert.deepEqual((await db.pool.query('SELECT id,credit_units,account_limit FROM users ORDER BY id')).rows,before.wallets);
+ });
+
 });

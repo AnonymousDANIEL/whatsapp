@@ -92,6 +92,13 @@ jobs:
         run: >-
           docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1000
           --entrypoint /bin/bash whatsapp-maintenance:ci /app/test/maintenance-smoke.sh
+      - name: Reproduce private-UID X11 lock collision and verify isolated slot reuse
+        if: matrix.image == 'worker'
+        run: >-
+          docker run --rm --network none --cpus 2 --memory 2g --pids-limit 1000
+          --env NODE_OPTIONS=--require=/app/src/desktop-lock-preload.js
+          --mount type=bind,source="$GITHUB_WORKSPACE/test/desktop-lock-smoke.cjs",target=/app/test/desktop-lock-smoke.cjs,readonly
+          --entrypoint node whatsapp-worker:ci /app/test/desktop-lock-smoke.cjs
       - name: Test worker orphan reaping below the Railway-style init wrapper
         if: matrix.image == 'worker'
         run: >-

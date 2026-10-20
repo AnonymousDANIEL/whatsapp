@@ -216,7 +216,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     const id=crypto.randomUUID();let assignedGroup=req.body.worker_group;
     await transaction(async db=>{
       await db.query('SELECT pg_advisory_xact_lock($1)',[allocation.PLACEMENT_LOCK]);
-      assignedGroup=await allocation.chooseGroup(db,personalGroups,assignedGroup)||assignedGroup;
+      assignedGroup=await allocation.chooseGroup(db,personalGroups,req.user.role==='owner'?assignedGroup:null)||assignedGroup;
       if(req.user.role!=='owner'){
         const u=(await db.query('SELECT account_limit FROM users WHERE id=$1 FOR UPDATE',[req.user.id])).rows[0];
         const n=(await db.query('SELECT count(*)::int n FROM account_grants g JOIN accounts a ON a.id=g.account_id WHERE g.user_id=$1 AND a.deleted_at IS NULL',[req.user.id])).rows[0].n;
