@@ -5,6 +5,9 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  '只有 Owner 可以查看登录记录':'Only the Owner can view sign-in history.',
+  '登录记录页码无效':'Invalid sign-in history cursor.',
+  'USER ID 不存在':'USER ID does not exist.',
   '只有 Owner 可以查看自动退款记录':'Only the Owner can view automatic refund records.',
   '待核对消息会自动退款，无需人工核对':'Unconfirmed messages are refunded automatically; no manual review is needed.',
   '分页编号无效':'Invalid pagination cursor.',

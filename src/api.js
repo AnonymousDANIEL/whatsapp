@@ -160,10 +160,10 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     const token = crypto.randomBytes(32).toString('hex'), csrf = crypto.randomBytes(24).toString('hex');
     const network=loginHistory.requestContext(req);
     await transaction(async c=>{
-      const current=(await c.query('SELECT active,locked FROM users WHERE id=$1 FOR SHARE',[u.id])).rows[0];
+      const current=(await c.query('SELECT active,locked FROM users WHERE id=$1 FOR UPDATE',[u.id])).rows[0];
       assert(current?.active&&!current.locked,'账号或密码不正确，或账号已停用或锁定',401);
       await c.query(`INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '168 hours')`,[hash(token),u.id,csrf]);
-      await c.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1::uuid,'login',$1::text,$2)",[u.id,{login_network:network}]);
+      await c.query("INSERT INTO audit(actor_id,action,entity_id,details,created_at) VALUES($1::uuid,'login',$1::text,$2,clock_timestamp())",[u.id,{login_network:network}]);
     });
     sessionCookie(res, token); res.json({ ok: true });
   }));

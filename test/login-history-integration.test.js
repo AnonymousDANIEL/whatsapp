@@ -31,6 +31,23 @@ test('PostgreSQL: precise Owner-only login history survives audit purge and enri
   assert.equal((await history.read(db.pool,userId)).rows.length,2);assert.equal((await history.read(db.pool,lockedId)).rows.length,0);assert.equal((await history.read(db.pool,inactiveId)).rows.length,0);
   assert.equal((await request('/users')).data.find(u=>u.id===userId).latest_login_ip,'127.0.0.1');
  });
+ await t.test('concurrent successful logins serialize safely and failed audit insertion rolls back the session',async()=>{
+  const count=async(table)=>(await db.pool.query('SELECT count(*)::integer n FROM '+table+' WHERE '+'user_id'+'=$1',[userId])).rows[0].n;
+  const historyBefore=await count('login_history');const results=await Promise.all([1,2].map(()=>request('/login',null,'POST',{username:'login-user',password:'synthetic-owner-password-123'})));assert.ok(results.every(r=>r.status===200));assert.equal(await count('login_history'),historyBefore+2);
+  const sessionsBefore=await count('sessions'),eventsBefore=await count('login_history');
+  await db.pool.query(`CREATE FUNCTION synthetic_login_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Synthetic login transaction failure'; END;$$;
+   CREATE TRIGGER synthetic_login_failure BEFORE INSERT ON audit FOR EACH ROW WHEN(NEW.action='login') EXECUTE FUNCTION synthetic_login_failure()`);
+  try{const failed=await request('/login',null,'POST',{username:'login-user',password:'synthetic-owner-password-123'});assert.equal(failed.status,500);assert.equal(failed.cookie,null);assert.equal(await count('sessions'),sessionsBefore);assert.equal(await count('login_history'),eventsBefore);}
+  finally{await db.pool.query('DROP TRIGGER synthetic_login_failure ON audit; DROP FUNCTION synthetic_login_failure()');}
+  await db.audit(userId,'password.change',userId);assert.equal(await count('login_history'),eventsBefore);
+ });
+ await t.test('Railway edge mode records its header exactly and ignores forwarded client claims',async()=>{
+  Object.assign(process.env,{RAILWAY_ENVIRONMENT_ID:'synthetic-env',RAILWAY_SERVICE_ID:'synthetic-api'});
+  try{const r=await request('/login',null,'POST',{username:'login-user',password:'synthetic-owner-password-123'},{'x-real-ip':'2001:4860:4860::8888','x-forwarded-for':'1.1.1.1','cf-connecting-ip':'9.9.9.9'});assert.equal(r.status,200);const last=(await history.read(db.pool,userId)).rows[0];assert.equal(last.ip,'2001:4860:4860::8888');assert.equal(last.ip_source,'railway_edge');}
+  finally{delete process.env.RAILWAY_ENVIRONMENT_ID;delete process.env.RAILWAY_SERVICE_ID;}
+  // Isolate the next fake-provider case without ever contacting a real service.
+  await db.pool.query("UPDATE login_history SET geo_status='unavailable' WHERE ip='2001:4860:4860::8888'");
+ });
  await t.test('history is authenticated and Owner-only, including hidden-status IDs; compact/USER responses omit network data',async()=>{
   assert.equal((await request('/users/'+userId+'/logins',null)).status,401);assert.equal((await request('/users/'+userId+'/logins',user)).status,403);
   for(const id of [ownerId,userId,lockedId,inactiveId])assert.equal((await request('/users/'+id+'/logins')).status,200);
