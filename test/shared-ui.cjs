@@ -56,6 +56,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
    else if(p==='/notice')result={enabled:false};
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
+   else if(p==='/billing/automatic-refunds')result={rows:[{id:'900',user_id:'ui-owner',username:'Synthetic <img src=x onerror=alert(1)>',recipient_id:'11',amount_units:'1061',reason:'AUTO_REFUND_UNCONFIRMED',service:'personal',message_status:'unknown',created_at:'2026-10-20T02:54:43Z'}],next_cursor:url.searchParams.has('before')?null:'800'};
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
     result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
@@ -224,12 +225,12 @@ async function verifyPersonalPages(page,fixture,role,language){
     assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal input[name=batch_size]'));await page.click('#close-modal');
    }else assert.doesNotMatch(text,/修改间隔\s*\/\s*数量|Edit interval\s*\/\s*quantity/);
    assert.equal(await page.$$eval('[data-now]',nodes=>nodes.length),0);
-   if(role==='owner')assert.match(text,language==='en'?/Review uncertain results/:/查看待核对/);
+   if(role==='owner')assert.match(text,language==='en'?/View results/:/查看结果/);
    else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$('[data-pause]'),null);assert.equal(await page.$$eval('.actions button',nodes=>nodes.length),1);}
    assert.match(text,language==='en'?/Last action/:/最近操作/);assert.match(text,/11:10:00/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
    await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
-   assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Needs review/:/结果待核对/);
+   assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Unconfirmed/:/结果未确认/);
    assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');
    await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
    assert.equal(await page.$('#modal input[name=title]'),null);
@@ -243,7 +244,7 @@ async function verifyPersonalPages(page,fixture,role,language){
    assert.equal(!!await page.$('#history-sync-note'),role==='owner');
    if(role==='user')assert.doesNotMatch(text,/等待连接后核对|Waiting for connection to check/);
    assert.equal(await page.$$eval('#content tbody .badge',nodes=>nodes.length),5);
-   assert.match(text,language==='en'?/Needs review/:/结果待核对/);
+   assert.match(text,language==='en'?/Unconfirmed/:/结果未确认/);
   }
   if(target==='overview'){
    if(role==='user')assert.doesNotMatch(text,/按首次发送日期统计|Grouped by first send date|发送成功包含|Successful includes submitted/);
@@ -268,6 +269,7 @@ async function verifyUserBilling(page,fixture,language){
   assert.equal(await page.$('#nav [data-nav-toggle=billing]'),null);
   assert.equal(await page.$('[data-billing-view]'),null);
   assert.equal(await page.$('.credit-ledger'),null);
+  assert.equal(await page.$('.automatic-refunds'),null);assert.equal(current.requests.some(r=>r.path==='/billing/automatic-refunds'),false);
   assert.doesNotMatch(await page.$eval('#content',n=>n.textContent),/余额流水|Credit ledger/);
   assert.equal(await page.$eval('#bank-topup',n=>!!(n.compareDocumentPosition(document.querySelector('#online-fpx'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
   assert.match(await page.$eval('#content > section:last-of-type h2',n=>n.textContent),language==='en'?/My deposits/:/我的充值记录/);
@@ -418,6 +420,13 @@ async function verifyOwnerBilling(page,language){
  assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>n.textContent),ledgerNote);
  assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>getComputedStyle(n).whiteSpace),'pre-wrap');
  assert.equal(await page.$('.credit-ledger img'),null);
+ assert.equal(await page.$('[data-resolve]'),null);assert.equal(await page.$('.automatic-refunds img'),null);
+ assert.match(await page.$eval('.automatic-refunds',n=>n.textContent),language==='en'?/Automatically refunded/:/已自动退款/);
+ assert.match(await page.$eval('.automatic-refunds',n=>n.textContent),/RM 0\.1061/);
+ assert.match(await page.$eval('.automatic-refunds',n=>n.textContent),/10:54:43/);
+ assert.equal(await page.$eval('.automatic-refunds',n=>!!(n.compareDocumentPosition(document.querySelector('.credit-ledger'))&Node.DOCUMENT_POSITION_FOLLOWING)),true);
+ await page.click('#refund-next');await page.waitForFunction(()=>!loading&&billingRefundBefore==='800');assert.equal(await page.$eval('#refund-prev',n=>n.disabled),false);
+ await page.click('#refund-prev');await page.waitForFunction(()=>!loading&&billingRefundBefore===null);assert.equal(await page.$eval('#refund-prev',n=>n.disabled),true);
  await page.setViewport({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
  assert.equal(await page.$eval('.credit-ledger .ledger-note',n=>n.textContent),ledgerNote);await page.setViewport({width:1440,height:1000});
  console.log('Owner ledger remark PASS: '+language+' / escaped multiline note, unchanged balance and mobile layout');

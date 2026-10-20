@@ -5,6 +5,9 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  '只有 Owner 可以查看自动退款记录':'Only the Owner can view automatic refund records.',
+  '待核对消息会自动退款，无需人工核对':'Unconfirmed messages are refunded automatically; no manual review is needed.',
+  '分页编号无效':'Invalid pagination cursor.',
   '尚未配置共享专用扫码容量':'Dedicated shared QR capacity is not configured.',
   '共享扫码容量暂不可用，请查看共享运行容量':'Shared QR capacity is temporarily unavailable. Check Shared running capacity.',
   '请选择已配置的共享浏览器分组':'Select a configured shared running group.',

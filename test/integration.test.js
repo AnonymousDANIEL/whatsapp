@@ -11,7 +11,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
  await db.pool.query(`INSERT INTO audit(actor_id,action,created_at) VALUES
   ($1,'login','2023-01-01'),($1,'login','2020-01-01'),($1,'password.change','2025-01-01'),($2,'user.create','2025-01-01')`,[legacyLogin,noLogin]);
  const legacyBefore=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[ [legacyLogin,noLogin] ])).rows;
- const api=require('../src/api');await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity()]);server=await api.start({connectionMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
+ const api=require('../src/api');await Promise.all([api.ensureLoginActivity(),api.ensureLoginActivity()]);server=await api.start({connectionMonitorIntervalMs:0,refundMonitorIntervalMs:0});const base='http://127.0.0.1:'+server.address().port;
  await t.test('login metadata migrates real history once, survives audit removal and never downgrades concurrent logins',async()=>{
   try{
    const first=(await db.pool.query('SELECT id,to_jsonb(u) snapshot FROM users u WHERE id=ANY($1::uuid[])',[[legacyLogin,noLogin]])).rows;
@@ -365,7 +365,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    await request('/campaigns/'+created.id,'PATCH',{enabled:false},owner);
   }finally{global.fetch=originalFetch;}
  });
- await t.test('USER tasks have details only; stale ACKs isolate the old task and Owner can purge without refunding unknown credit',async()=>{
+ await t.test('USER tasks have details only; stale ACKs isolate the old task and Owner can purge while automatic refund records remain separate',async()=>{
   const make=async title=>{const r=await request('/campaigns','POST',{...template,title,recipients:'0123456789',pacing:true,interval_ms:5000,batch_size:1,send_now:true},user);assert.equal(r.status,201);return r.data.id;};
   const old=await make('Old uncertain task'),fresh=await make('Independent new task');
   await db.pool.query('UPDATE campaigns SET enabled=false WHERE id<>ALL($1::uuid[])',[[old,fresh]]);
@@ -394,9 +394,11 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE id=$1',[old])).rowCount,0);
   assert.equal((await db.pool.query('SELECT credit_units FROM users WHERE id=$1',[uid])).rows[0].credit_units,balance);
   const held=(await request('/billing?user_id='+uid,'GET',null,owner)).data.held.find(r=>r.recipient_id===oldRow.id);assert.equal(held.status,'unknown');
-  assert.equal((await request('/billing/resolve','POST',{recipient_id:oldRow.id,action:'refund',note:'Synthetic Owner-confirmed review'},owner)).status,200);
+  assert.equal((await request('/billing/resolve','POST',{recipient_id:oldRow.id,action:'refund',note:'Synthetic stale manual client'},owner)).status,409);
+  await require('../src/automatic-refunds').reconcile();
   assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[oldRow.id])).rows[0].state,'refunded');
-  assert.equal((await request('/billing/resolve','POST',{recipient_id:stranded.id,action:'refund',note:'Synthetic Owner-confirmed stranded-send review'},owner)).status,200);
+  assert.equal((await db.pool.query('SELECT state FROM message_charges WHERE recipient_id=$1',[stranded.id])).rows[0].state,'refunded');
+  assert.ok((await request('/billing/automatic-refunds?user_id='+uid,'GET',null,owner)).data.rows.some(r=>r.recipient_id===oldRow.id));
   const results=await request('/campaigns/'+fresh+'/results','GET',null,user);assert.ok(results.data.rows[0].created_at);assert.ok(results.data.rows[0].started_at);
   const listed=(await request('/campaigns','GET',null,user)).data.find(c=>c.id===fresh);assert.ok(listed.created_at);assert.ok(listed.operation_at);
  });

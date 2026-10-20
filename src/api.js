@@ -10,6 +10,7 @@ const overview=require('./overview');
 const ownerHistory=require('./owner-history'),sharedConsole=require('./shared-console');
 const sharedAccounts=require('./shared-accounts');
 const connectionFailures=require('./connection-failures');
+const automaticRefunds=require('./automatic-refunds');
 const http = require('node:http');
 const {monitorSockets}=require('./socket-health');
 const path = require('node:path');
@@ -130,7 +131,7 @@ async function ensureLoginActivity() {
       WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
   });
 }
-async function start({connectionMonitorIntervalMs=5000}={}) {
+async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000}={}) {
   await ensureLoginActivity();
   await sharedConsole.ensureOptions();
   await sharedAccounts.ensureLinking();
@@ -177,6 +178,7 @@ async function start({connectionMonitorIntervalMs=5000}={}) {
     await transaction(async c => { await c.query('UPDATE users SET password_hash=$1,password_cipher=NULL,password_changed_at=now() WHERE id=$2', [await bcrypt.hash(req.body.password, 12), req.user.id]); await c.query('DELETE FROM sessions WHERE user_id=$1', [req.user.id]); });
     await audit(req.user.id, 'password.change', req.user.id); res.json({ ok: true });
   }));
+  automaticRefunds.routes(app,route,uuid);
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
   banks.routes(app,route);
@@ -600,6 +602,8 @@ async function start({connectionMonitorIntervalMs=5000}={}) {
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
   await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '::', resolve));
   console.log('Management service ready');
+  const stopRefundMonitor=refundMonitorIntervalMs>0?automaticRefunds.monitor(refundMonitorIntervalMs):()=>{};
+  server.on('close',stopRefundMonitor);
   pool.query("SELECT id FROM users WHERE role='owner' ORDER BY created_at LIMIT 1").then(async({rows})=>{
     if(!rows.length)return;
     const data=await overview.readGrouped(pool,rows[0].id);
