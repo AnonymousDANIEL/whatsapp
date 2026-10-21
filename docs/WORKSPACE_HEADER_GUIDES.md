@@ -1,0 +1,11 @@
+# Workspace header and usage guides
+
+The compact top-right controls follow the supplied reference: a two-line Malaysia clock/date, theme toggle, language selector and current-account menu. The clock uses the existing server-adjusted offset and Asia/Kuala_Lumpur, including at midnight. Dark remains the default; the light/dark choice is saved locally. Both account names in the header use textContent.
+
+The Guides menu opens two read-only tutorials: WhatsApp accounts and Shared WhatsApp. Personal steps cover credit (USER), adding an account, phone linking, a new send task, pacing, optional photos and recipient results. The shared USER guide explains the Owner-provided sender pool, Coming soon, credit, opt-in, optional photo visibility and results. The Owner guide additionally explains separate shared capacity, QR linking, availability, pricing and settings. It does not claim to create phone numbers or register a mobile WhatsApp account.
+
+Tutorials use a separate dialog, preserving task forms. Open menus support keyboard navigation and Escape; popovers remain inside narrow viewports. Guides and themes make no API writes and do not start browsers, send messages or change balances. USER password controls remain unavailable. All previous navigation, refresh, notices and existing Owner controls remain.
+
+The change is restricted to presentation, documentation and browser verification. Release only the API hosting public files; retain all 50 fixed browser deployments, PostgreSQL, profiles, ordinary125/shared200 capacity and USER quota10. Do not update runtime sources or credentials for this change.
+
+Validation uses npm run check, node --check public/workspace-header.js and the existing real Chromium suite in test/shared-ui.cjs. Its new cases cover Owner/USER in Chinese/English, midnight/timezone behavior, escaping, keyboard menus, theme persistence, role-specific tutorials, background-poll reading stability, CTA navigation and 1440/390/320px layouts with no data writes. Synthetic screenshots are attached to the GitHub Actions run. Keep the existing QR/media, database and container checks. The local workspace has no Chrome/PostgreSQL/Docker binaries, so complete those checks in the repository's isolated CI before deployment and record the exact run and actual Railway version in the release PR.

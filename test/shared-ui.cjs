@@ -127,6 +127,75 @@ async function verifySidebar(page,fixture,role,language){
  console.log('Sidebar PASS: '+role+' / '+language+' / arrow-only disclosure, parent labels/icons, nested banks, keyboard, polling, reload and mobile');
 }
 
+async function verifyWorkspaceHeader(page,fixture,role,language){
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ const screenshot=async name=>{
+  if(!process.env.UI_SCREENSHOT_DIR||language!=='zh')return;
+  await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});
+  await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,name+'-'+role+'.png')});
+ };
+ const greeting=language==='en'?'Hi, ':'你好，';
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting);
+ assert.equal(await page.$eval('#account-name',n=>n.textContent),'fixture-'+role);
+ assert.equal(await page.$eval('#clock',n=>n.getAttribute('title')),language==='en'?'Malaysia time UTC+8':'马来西亚时间 UTC+8');
+ await screenshot('header-dark');
+ const originalOffset=await page.evaluate(()=>clockOffset);
+ await page.evaluate(()=>{clockOffset=Date.UTC(2026,9,21,16,0,5)-Date.now();WorkspaceHeader.update(me,clockOffset);});
+ assert.match(await page.$eval('#clock-time',n=>n.textContent),/^00:00:0[5-9]$/);
+ assert.match(await page.$eval('#clock-date',n=>n.textContent),language==='en'?/22 October 2026/:/2026年10月22日/);
+ await page.evaluate(originalOffset=>{clockOffset=originalOffset;WorkspaceHeader.update(me,clockOffset);},originalOffset);
+ await page.evaluate(()=>WorkspaceHeader.update({...me,username:'<img src=x onerror=alert(1)>'},clockOffset));
+ assert.equal(await page.$eval('#account-name',n=>n.textContent),'<img src=x onerror=alert(1)>');
+ assert.equal(await page.$eval('#account-toggle',n=>n.querySelectorAll('img,script').length),0);
+ await page.evaluate(()=>WorkspaceHeader.update(me,clockOffset));
+ await page.focus('#help-toggle');await page.keyboard.press('ArrowDown');
+ assert.equal(await page.$eval('#help-toggle',n=>n.getAttribute('aria-expanded')),'true');
+ assert.equal(await page.$$eval('#help-menu button',nodes=>nodes.length),2);
+ assert.equal(await page.$eval('#help-menu button',n=>n===document.activeElement),true);
+ await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
+ assert.equal(await page.$eval('#guide-content h3',n=>n.textContent),language==='en'?'How to use WhatsApp accounts':'WhatsApp 账号怎么使用');
+ assert.equal(await page.$$eval('#guide-content li',nodes=>nodes.length),role==='owner'?6:7);
+ assert.equal(await page.$$eval('#guide-content input,#guide-content form',nodes=>nodes.length),0);
+ await page.click('#guide-topics [data-help-topic=shared]');
+ const guide=await page.$eval('#guide-content',n=>n.textContent);
+ assert.match(guide,role==='owner'?(language==='en'?/Shared running capacity/:/共享运行容量/):(language==='en'?/Coming soon/:/Coming soon/));
+ if(role==='user')assert.doesNotMatch(guide,language==='en'?/Open Shared sending settings/:/打开「共享发送设置」/);
+ await screenshot('guide-shared');
+ const preserved=await page.evaluate(async()=>{const node=document.querySelector('#guide-content');const before=node.innerHTML;await loadPage(true);return node.innerHTML===before;});
+ assert.equal(preserved,true,'Background polling leaves the reading guide intact');
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#guide-dialog').open);
+ assert.equal(await page.$eval('#help-toggle',n=>n===document.activeElement),true);
+ await page.click('#account-toggle');
+ assert.equal(await page.$eval('#header-password',n=>n.hidden),role!=='owner');
+ await page.keyboard.press('Escape');
+ assert.equal(await page.$eval('#account-menu',n=>n.hidden),true);
+ await page.click('#theme-toggle');
+ assert.equal(await page.$eval('html',n=>n.dataset.theme),'light');
+ await screenshot('header-light');
+ assert.equal(await page.evaluate(()=>localStorage.getItem('wa_theme')),'light');
+ await page.reload({waitUntil:'networkidle0'});await waitReady(page);
+ assert.equal(await page.$eval('html',n=>n.dataset.theme),'light','Theme persists after refresh');
+ await page.click('#theme-toggle');assert.equal(await page.$eval('html',n=>n.dataset.theme),'dark');
+ for(const width of [1440,390,320]){
+  await page.setViewport({width,height:900});
+  assert.ok(await page.$eval('#clock-time',n=>n.getBoundingClientRect().width>0),'The time is visible on desktop and mobile');
+  assert.ok(await page.$eval('#language',n=>n.getBoundingClientRect().width>0));
+  await page.click('#help-toggle');
+  const rect=await page.$eval('#help-menu',n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right};});
+  assert.ok(rect.left>=0&&rect.right<=width,'The tutorial menu stays inside the viewport');
+  await page.click('#help-menu [data-help-topic=personal]');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  assert.ok(await page.$eval('#guide-dialog',n=>n.scrollWidth<=n.clientWidth+1),'Guide content fits a narrow viewport');
+  if(width===390)await screenshot('guide-mobile');
+  await page.click('#guide-open-page');await page.waitForFunction(()=>page==='accounts'&&!loading);
+  await page.click('#help-toggle');await page.click('#help-menu [data-help-topic=shared]');
+  await page.click('#guide-open-page');await waitReady(page);
+ }
+ await page.setViewport({width:1440,height:1000});
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Header, themes and tutorials do not change data or start a QR browser');
+ console.log('Workspace header PASS: '+role+' / '+language+' / Malaysia midnight, escaping, theme persistence, keyboard menus, role-specific guides, reading stability and 320px layout; no writes');
+}
+
 async function verifyAccountIdentity(page,fixture,role,language){
  const cell=role==='owner'?'[data-account-user=owner] tbody tr td:first-child':'#content tbody tr td:first-child';
  const oldPhone='+15555550101',newPhone='+15555550102',writes=fixture.requests.filter(r=>r.method!=='GET').length;
@@ -592,6 +661,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$$eval('#nav .nav-entry',nodes=>nodes.every(n=>n.querySelectorAll('svg.nav-icon[aria-hidden=true][focusable=false]').length===1)),true);
  assert.equal(await page.$eval('#nav [data-page=overview] .nav-icon',n=>getComputedStyle(n).width),'18px');
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script,img[onerror]').length),0);
+ await verifyWorkspaceHeader(page,fixture,role,language);
  await verifySidebar(page,fixture,role,language);
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);

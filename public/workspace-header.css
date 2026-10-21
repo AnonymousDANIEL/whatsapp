@@ -1,0 +1,82 @@
+/* Compact workspace controls, with the existing dark theme as the default. */
+.login-tools{position:fixed;top:12px;right:16px;z-index:30}
+.appearance-controls,.header-right,#header-appearance-slot{display:flex;align-items:center;gap:10px}
+.header-right{flex-wrap:wrap;justify-content:flex-end;color:var(--text);gap:10px}
+.header-right .language-control #language-code{display:inline}
+.header-right #account-name{display:block;min-width:0}
+.header-right .header-icon-button{display:grid;place-items:center;width:38px;height:36px;padding:8px;background:transparent;border-color:var(--line)}
+.header-icon-button svg,.language-control>svg,.header-menu-trigger>svg,.clock-badge>svg{width:18px;height:18px;flex:none}
+.header-icon-button:focus-visible,.header-menu-trigger:focus-visible,.header-popover button:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.appearance-controls .header-icon-button{display:grid;place-items:center;width:38px;height:36px;padding:8px;background:transparent;border-color:var(--line)}
+.language-control{height:36px;display:flex;align-items:center;gap:7px;position:relative;border:1px solid var(--line);border-radius:7px;padding:0 10px;background:transparent}
+.language-control>svg{width:17px;height:17px;pointer-events:none}
+.language-control #language-code{font-size:9px;color:var(--muted);pointer-events:none}
+.language-control select{width:auto;min-width:93px;margin:0;padding:0 12px 0 0;border:0;outline-offset:5px;background:transparent;font-size:12px;appearance:none;cursor:pointer;line-height:34px}
+.language-control::after{content:'';position:absolute;right:10px;width:5px;height:5px;border:solid var(--muted);border-width:0 1px 1px 0;transform:rotate(45deg);pointer-events:none}
+.clock-badge{display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 13px;border-radius:9px;background:var(--panel);white-space:nowrap}
+.clock-badge>svg{width:16px;height:16px;color:#22d67b}
+.clock-badge .clock-lines{display:grid;line-height:1.25}
+.clock-badge strong{font-size:15px;letter-spacing:.3px;font-variant-numeric:tabular-nums;font-weight:700}
+.clock-badge small{font-size:10px;margin-top:3px}
+.header-menu-trigger{display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:6px 9px;font-size:12px;background:transparent;color:var(--text)}
+.header-menu-trigger .header-chevron{width:12px;height:12px;color:var(--muted)}
+#account-toggle{border-color:transparent;max-width:190px;padding-right:0}
+#account-name{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.header-popover{position:fixed;z-index:60;width:254px;max-width:calc(100vw - 24px);padding:7px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 12px 32px #0005}
+.header-popover button{display:flex;width:100%;align-items:center;gap:9px;text-align:left;line-height:1.5;background:transparent;border:0;padding:11px 10px;font-size:13px;border-radius:6px}
+.header-popover button:hover{background:#5796ff18;filter:none}
+.popover-caption{display:block;padding:7px 10px 4px;font-size:11px;color:var(--muted)}
+.account-menu-detail{display:grid;gap:4px;padding:10px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.account-menu-detail strong{overflow-wrap:anywhere;font-size:14px}
+.account-menu-detail small{font-size:11px}
+.header-popover .logout-action{color:var(--red)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+main>header{padding-top:20px;align-items:center}
+dialog.guide-dialog{width:860px;padding:0;overflow:auto}
+.guide-dialog>.modal-head{position:sticky;top:0;z-index:1;padding:20px 24px;margin:0;border-bottom:1px solid var(--line);background:var(--panel)}
+.guide-layout{display:grid;grid-template-columns:205px minmax(0,1fr)}
+.guide-topics{display:flex;flex-direction:column;gap:8px;padding:20px 14px;border-right:1px solid var(--line)}
+.guide-topics button{text-align:left;background:transparent;line-height:1.6;padding:12px;font-size:13px}
+.guide-topics button[aria-pressed=true]{border-color:var(--green);background:#67d8b111;color:var(--green)}
+.guide-content{padding:24px 28px 12px;min-width:0}
+.guide-category{font-size:10px;letter-spacing:1.5px;color:var(--green);margin-bottom:8px}
+.guide-content>h3{font-size:22px;margin-bottom:8px;line-height:1.45}
+.guide-intro{color:var(--muted);font-size:13px;margin-bottom:24px}
+.guide-steps{list-style:none;margin:0;padding:0;display:grid;gap:20px}
+.guide-steps li{display:flex;align-items:flex-start;gap:13px}
+.guide-number{display:grid;place-items:center;flex:0 0 29px;height:29px;border-radius:8px;background:#67d8b116;color:var(--green);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.guide-steps h4{font-size:14px;line-height:1.5;margin:3px 0 6px}
+.guide-steps p{font-size:13px;color:var(--muted);line-height:1.8;margin:0;overflow-wrap:anywhere}
+.guide-footer{display:flex;justify-content:flex-end;padding:18px 24px;border-top:1px solid var(--line);margin-top:12px}
+/* All light surfaces use the same role and status meanings as the dark theme. */
+:root[data-theme=light]{color-scheme:light;--bg:#f4f6fa;--panel:#fff;--line:#dce3ed;--text:#202c3d;--muted:#5f6f84;--blue:#3979e0;--green:#107c57;--red:#ba354c}
+[data-theme=light] button{background:#edf2fa}
+[data-theme=light] button.primary{background:var(--blue);color:white}
+[data-theme=light] button.ghost,[data-theme=light] .header-icon-button,[data-theme=light] .header-menu-trigger,[data-theme=light] .header-popover button,[data-theme=light] .guide-topics button{background:transparent}
+[data-theme=light] input,[data-theme=light] textarea,[data-theme=light] select{background:#fff;border-color:#c4cfde}
+[data-theme=light] .language-control select{background:transparent}
+[data-theme=light] label{color:#4c5f77}
+[data-theme=light] aside{background:#fff}
+[data-theme=light] #nav .nav-entry{color:#50617a}
+[data-theme=light] #nav .nav-entry.active{color:#174d99;background:#eaf1ff;border-color:#c7d8f5}
+[data-theme=light] #nav .nav-entry.ancestor{color:#265b9f}
+[data-theme=light] #nav .nav-icon{color:#119b58}
+[data-theme=light] td{border-color:var(--line)}
+[data-theme=light] .badge{color:#53647c;background:#edf1f7}
+[data-theme=light] .badge.green,[data-theme=light] .account-user-state.active{color:#087a50;background:#e1f5eb}
+[data-theme=light] .badge.red,[data-theme=light] .account-user-state.inactive{color:#b52c45;background:#ffebef}
+[data-theme=light] .badge.blue{color:#235faa;background:#e9f0ff}
+[data-theme=light] .badge.orange{color:#93530c;background:#fff1dd}
+[data-theme=light] .badge.neutral,[data-theme=light] .account-user-state.locked{color:#606b7b;background:#edf0f5}
+[data-theme=light] .note,[data-theme=light] .workspace-notice{background:#eaf1ff;color:#36567e}
+[data-theme=light] .notice-heading strong{color:#235faa}
+[data-theme=light] .section-label,[data-theme=light] .summary-line strong{color:var(--text)}
+[data-theme=light] .code,[data-theme=light] .overview-week span,[data-theme=light] .overview-week small{color:var(--muted)}
+[data-theme=light] .overview-chart text{fill:var(--muted)}
+[data-theme=light] .overview-week>div,[data-theme=light] .bank-payment{background:#f1f5fa}
+[data-theme=light] .overview-track{background:#e6ecf4}
+[data-theme=light] .bank-receipt{color:#235faa}
+[data-theme=light] .header-popover button:hover{background:#eaf1ff}
+[data-theme=light] .guide-topics button[aria-pressed=true]{background:#e8f7ef}
+@media(max-width:1100px){.header-right .clock-badge span,.header-right .header-menu-trigger span{display:initial}.header-right .clock-badge .clock-lines{display:grid}.header-right{gap:8px}.appearance-controls{gap:8px}main>header{flex-wrap:wrap;gap:14px}.header-right{margin-left:auto}}
+@media(max-width:720px){main>header{align-items:stretch;padding-top:8px;margin-bottom:22px}.header-right{width:100%;margin:0;justify-content:flex-start;gap:8px}.clock-badge{padding:7px 10px;gap:8px}.clock-badge strong{font-size:14px}.language-control{gap:5px;padding:0 8px}.language-control select{min-width:87px}.appearance-controls{gap:8px}#account-toggle{max-width:170px}.guide-layout{grid-template-columns:minmax(0,1fr)}.guide-topics{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:14px;gap:8px}.guide-topics button{flex:1;padding:10px;font-size:12px}.guide-content{padding:20px 18px 10px}.guide-content>h3{font-size:19px}.guide-dialog>.modal-head{padding:16px 18px}.guide-steps{gap:18px}.guide-footer{padding:16px 18px}.login-tools{right:12px}.header-popover{width:258px}}
