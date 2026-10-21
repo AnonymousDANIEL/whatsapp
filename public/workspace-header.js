@@ -123,7 +123,7 @@ window.WorkspaceHeader = (() => {
   for (const name of ['help','account']) {
     $(name+'-toggle').addEventListener('click',()=>showMenu(name));
     $(name+'-toggle').addEventListener('keydown',event=>{
-      if (['ArrowDown','ArrowUp'].includes(event.key)) { event.preventDefault(); showMenu(name,true); if(event.key==='ArrowUp')menuItems().at(-1)?.focus(); }
+      if (['ArrowDown','ArrowUp'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); showMenu(name,true); if(event.key==='ArrowUp')menuItems().at(-1)?.focus(); }
     });
   }
   document.addEventListener('click',event=>{
