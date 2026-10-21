@@ -1,3 +1,9 @@
+# Comprehensive release recovery and concurrent password reset (2026-10-21 MY, current)
+
+- Continue from fda8927. Preserve the reference-style header, both role-specific bilingual guides and all existing behavior. API source follows main; only release a tested API commit after Railway accepts builds. A platform-wide build pause cannot be repaired by deleting data, changing capacity, rotating credentials or restarting linked workers. Report the actual active commit separately from GitHub/CI.
+- Login must recheck the exact password hash under the user's row lock after bcrypt succeeds. An Owner password reset that commits during verification must prevent the old login from inserting a session or successful-login audit; a reset after a completed login revokes that session. Real isolated PostgreSQL/HTTP regression must exercise the actual reset route with bcrypt paused after successful verification, retained unrelated sessions, account/profile sentinels and unchanged money/grants.
+- Retain all50 browser deployments at fixed c4ab5dc, their unique /data mounts, PostgreSQL/backup, personal125/shared200 capacity and USER quota10. No production login, customer send, password/fund mutation, Session deletion or profile reset is a test. Read public readiness and bounded scoped runtime logs; disclose unavailable production business-row/handset tests and DNS-management errors accurately.
+
 # Reference-style workspace header and tutorials (2026-10-21 MY, current)
 
 - Owner asks for the top-right style in the supplied clock/theme/language/greeting sample and a clickable list teaching WhatsApp accounts and Shared WhatsApp. Keep the existing dark default and logo. The Malaysia clock has separate time/date and the existing server offset. Theme and language preferences are local only; escape identity text.
