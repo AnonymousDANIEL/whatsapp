@@ -94,6 +94,10 @@ window.WorkspaceHeader = (() => {
     $('guide-open-page').textContent = topic==='personal'?text('前往 WhatsApp 账号','Open WhatsApp accounts'):text('前往共享 WhatsApp','Open Shared WhatsApp');
     if (!$('guide-dialog').open) $('guide-dialog').showModal();
   }
+  function closeGuide() {
+    $('guide-dialog').close();
+    if (user) $('help-toggle').focus({preventScroll:true});
+  }
   function update(nextUser, nextOffset = 0) {
     const changed = user?.id !== nextUser?.id || user?.role !== nextUser?.role;
     user = nextUser || null; offset = Number.isFinite(nextOffset) ? nextOffset : 0;
@@ -143,10 +147,11 @@ window.WorkspaceHeader = (() => {
   window.addEventListener('scroll',()=>closeMenu(),{passive:true});
   $('header-logout').addEventListener('click',()=>{closeMenu();$('logout').click();});
   $('header-password').addEventListener('click',()=>{closeMenu();if(user?.role==='owner')$('password-btn').click();});
-  $('guide-close').addEventListener('click',()=>$('guide-dialog').close());
+  $('guide-close').addEventListener('click',closeGuide);
+  $('guide-dialog').addEventListener('cancel',event=>{event.preventDefault();closeGuide();});
   $('guide-dialog').addEventListener('close',()=>{if(user)$('help-toggle').focus();});
   $('guide-open-page').addEventListener('click',()=>{
-    const target=topic==='personal'?'accounts':'shared'; $('guide-dialog').close();
+    const target=topic==='personal'?'accounts':'shared'; closeGuide();
     document.querySelector('#nav [data-page="'+target+'"]')?.click();
   });
   return {update,tick};

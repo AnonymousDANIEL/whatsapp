@@ -163,7 +163,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  await screenshot('guide-shared');
  const preserved=await page.evaluate(async()=>{const node=document.querySelector('#guide-content');const before=node.innerHTML;await loadPage(true);return node.innerHTML===before;});
  assert.equal(preserved,true,'Background polling leaves the reading guide intact');
- await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#guide-dialog').open);
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#guide-dialog').open&&document.activeElement===document.querySelector('#help-toggle'));
  assert.equal(await page.$eval('#help-toggle',n=>n===document.activeElement),true);
  await page.click('#account-toggle');
  assert.equal(await page.$eval('#header-password',n=>n.hidden),role!=='owner');
