@@ -28,8 +28,14 @@ const server=http.createServer(async(req,res)=>{
     window.setTimeout=(callback,delay,...args)=>{if(delay>=2000&&delay<=30000){window.fixtureReconnectDelays.push(delay);return schedule(callback,100,...args);}return schedule(callback,delay,...args);};
    },lang);
    await page.goto('http://127.0.0.1:'+server.address().port+'/viewer.html?id='+id+'&mode=scan',{waitUntil:'domcontentloaded'});
-   await page.waitForFunction(language=>document.querySelector('#status').textContent.includes(language==='zh'?'等待可用资源':'waiting for capacity'),{},lang);
-   assert.match(await page.$eval('#status',n=>n.textContent),lang==='zh'?/等待可用资源/:/waiting for capacity/);assert.equal(await page.$eval('#start-browser',n=>n.hidden),false);await page.waitForFunction(()=>!document.querySelector('#retry').disabled);
+   // Reconnects are accelerated to100ms. Capture this state in one evaluation:
+   // a later protocol read may already observe the next connection check.
+   const resourceHandle=await page.waitForFunction(language=>{
+    const message=document.querySelector('#status').textContent,canStart=!document.querySelector('#start-browser').hidden,retryEnabled=!document.querySelector('#retry').disabled;
+    return message.includes(language==='zh'?'等待可用资源':'waiting for capacity')&&canStart&&retryEnabled?{message,canStart,retryEnabled}:false;
+   },{},lang);
+   const resource=await resourceHandle.jsonValue();await resourceHandle.dispose();
+   assert.match(resource.message,lang==='zh'?/等待可用资源/:/waiting for capacity/);assert.equal(resource.canStart,true);assert.equal(resource.retryEnabled,true);
    for(let wait=0;wait<150&&fixture.checks<10;wait++)await new Promise(resolve=>setTimeout(resolve,20));assert.ok(fixture.checks>=10,'Capacity polling stopped after eight attempts');assert.equal(fixture.starts,1,'Queued startup should be automatic and coalesced, not repeated on every poll');
    fixture.phase='ready';await page.waitForFunction(()=>window.fixtureRfbCount===1);
    fixture.phase='recovering';await page.evaluate(()=>window.fixtureRfb.disconnect());
