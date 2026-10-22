@@ -242,6 +242,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  for(const width of [1440,390,320]){
   await page.setViewport({width,height:900});
   assert.ok(await page.$eval('#clock-time',n=>n.getBoundingClientRect().width>0),'The time is visible on desktop and mobile');
+  assert.ok(await page.$eval('#account-greeting',n=>n.getBoundingClientRect().width>0),'Greeting stays visible despite the legacy mobile span rule');
   assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits');
   await page.click('#help-toggle');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
