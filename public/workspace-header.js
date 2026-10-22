@@ -58,7 +58,7 @@ window.WorkspaceHeader = (() => {
     $('guide-close').textContent = text('关闭','Close');
     $('guide-content').innerHTML = '<p class="guide-category">USER GUIDE</p><h3>'+escape(entry.title)+'</h3><p class="guide-intro">'+escape(entry.intro)+'</p><ol class="guide-steps">'+entry.steps.map(([title,body])=>'<li><h4>'+escape(title)+'</h4><p>'+escape(body)+'</p></li>').join('')+'</ol>';
     $('guide-open-page').textContent = text('前往 WhatsApp 账号','Open WhatsApp accounts');
-    if (!$('guide-dialog').open) $('guide-dialog').showModal();
+    if (!$('guide-dialog').open) { $('guide-dialog').showModal(); $('guide-dialog').scrollTop = 0; }
   }
   function closeGuide() {
     $('guide-dialog').close();

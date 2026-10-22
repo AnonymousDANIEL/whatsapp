@@ -246,6 +246,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
   assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits');
   await page.click('#help-toggle');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  assert.equal(await page.$eval('#guide-dialog',n=>n.scrollTop),0,'Reopening the tutorial starts at step 1');
   const rect=await page.$eval('#guide-dialog',n=>{const r=n.getBoundingClientRect();return{left:r.left,right:r.right,fits:n.scrollWidth<=n.clientWidth+1};});
   assert.ok(rect.left>=0&&rect.right<=width&&rect.fits,'The direct guide fits desktop and narrow screens');
   if(width===390)await uiScreenshot(page,'guide-mobile',role,language);
