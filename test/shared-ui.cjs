@@ -33,7 +33,15 @@ const server=http.createServer(async(req,res)=>{
    const body=raw?JSON.parse(raw):null,p=url.pathname.slice(4),s=current;
    s.requests.push({path:p,query:url.search,method:req.method,body,csrf:req.headers['x-csrf-token']});
    let result;
-   if(p==='/me')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
+   if(p==='/me'){
+    if(s.meDelayMs)await new Promise(resolve=>setTimeout(resolve,s.meDelayMs));
+    if(s.meStatus||s.signedOut){res.statusCode=s.meStatus||401;result={error:'Synthetic session unavailable'};}
+    else result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role},csrf:'fake-ui-csrf',worker_groups:['fixture-group'],server_time:new Date().toISOString(),password_access:false};
+   }
+   else if(p==='/login'){
+    if(s.loginRejectedNext){s.loginRejectedNext=false;res.statusCode=401;result={error:'Synthetic incorrect credentials'};}
+    else{s.signedOut=false;result={ok:true};}
+   }
    else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
@@ -78,7 +86,7 @@ const server=http.createServer(async(req,res)=>{
    }else if(p==='/shared/tasks')result={rows:[{id:taskId,title:'<script>fixture</script>',body:'fake UI message',created_at:'2026-10-14T14:00:00Z',enabled:true,creator:'fixture-'+s.role,counts:{pending:1,submitted:1}}],page:1,size:100};
    else if(p==='/shared/records')result={rows:[{id:1,title:'fixture task',body:'fake UI message',creator:'fixture-'+s.role,phone:'+60123456789',status:'submitted',updated_at:'2026-10-14T14:00:00Z'}],page:1,size:100};
    else if(p==='/campaigns/'+taskId+'/results')result={rows:[{phone:'+60123456789',status:s.taskReview?'unknown':'submitted',updated_at:'2026-10-14T14:00:00Z'}],total:1};
-   else if(p==='/logout')result={ok:true};
+   else if(p==='/logout'){s.signedOut=true;result={ok:true};}
    else {res.statusCode=404;result={error:'Unexpected fixture request: '+p};}
    res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
   }
@@ -148,55 +156,78 @@ async function verifyLanguageSelector(page,language,theme){
  }
 }
 
+async function uiScreenshot(page,name,role,language){
+ if(!process.env.UI_SCREENSHOT_DIR||language!=='zh')return;
+ await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});
+ await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,name+'-'+role+'.png')});
+}
+async function verifySessionRefresh(page,fixture,role,language){
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ fixture.meDelayMs=1200;
+ await page.reload({waitUntil:'domcontentloaded'});
+ assert.equal(await page.$eval('#session-loading',n=>n.hidden),false);
+ assert.equal(await page.$eval('#login',n=>n.hidden),true,'An unverified session must not flash the login form');
+ assert.equal(await page.$eval('#shell',n=>n.hidden),true,'Private content waits for session verification');
+ assert.equal(await page.$eval('#login-tools',n=>n.hidden),true);
+ assert.equal(await page.$('#session-loading .brand,#session-loading .login-card'),null,'No centered logo/card during refresh');
+ assert.equal(await page.$$eval('dialog[open]',n=>n.length),0);
+ await uiScreenshot(page,'refresh-pending',role,language);
+ await waitReady(page);fixture.meDelayMs=0;
+ const frames=await page.evaluate(()=>window.fixtureBootFrames);
+ assert.ok(frames.some(f=>f.loading),'Sample an actual pending session paint');
+ assert.ok(frames.every(f=>!f.login&&!f.card&&!f.dialog&&!f.toast),'A restored session never paints a login card, popup, dialog or toast');
+ fixture.meStatus=503;
+ await page.reload({waitUntil:'networkidle0'});
+ await page.waitForSelector('#session-retry',{visible:true});
+ assert.equal(await page.$eval('#login',n=>n.hidden),true,'Temporary server failure is not a logout');
+ assert.equal(await page.$eval('#shell',n=>n.hidden),true);
+ assert.match(await page.$eval('#session-message',n=>n.textContent),language==='en'?/Cannot reach the server/:/暂时无法连接服务器/);
+ assert.equal(await page.$eval('#session-message',n=>n.getBoundingClientRect().height>0&&!n.classList.contains('sr-only')),true,'Connection errors remain readable');
+ fixture.meStatus=0;await page.click('#session-retry');await waitReady(page);
+ assert.equal(await page.$eval('#session-loading',n=>n.hidden),true);
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Refresh and retry are read-only');
+ console.log('Session refresh PASS: '+role+' / '+language+' / delayed restoration without login/logo/popups, private content hidden, recoverable 503 retry');
+}
 async function verifyWorkspaceHeader(page,fixture,role,language){
  const writes=fixture.requests.filter(r=>r.method!=='GET').length;
- const screenshot=async name=>{
-  if(!process.env.UI_SCREENSHOT_DIR||language!=='zh')return;
-  await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});
-  await page.screenshot({path:path.join(process.env.UI_SCREENSHOT_DIR,name+'-'+role+'.png')});
- };
- const greeting=language==='en'?'Hi, ':'你好，';
- assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting);
- assert.equal(await page.$eval('#account-name',n=>n.textContent),'fixture-'+role);
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),language==='en'?'Hi,':'你好，');
+ assert.equal(await page.$eval('#account-greeting',n=>n.tagName),'SPAN');
+ assert.equal(await page.$('#account-toggle,#account-name,#account-menu,#header-logout,#header-password,#refresh,#help-menu'),null,'Removed controls are absent, not a hidden menu');
  assert.equal(await page.$eval('#clock',n=>n.getAttribute('title')),language==='en'?'Malaysia time UTC+8':'马来西亚时间 UTC+8');
+ assert.equal(await page.$eval('#password-btn',n=>n.hidden),role!=='owner','Owner password control stays in the sidebar');
  await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'light'}]);
  await verifyLanguageSelector(page,language,'dark');
- await screenshot('header-dark');
+ await uiScreenshot(page,'header-dark',role,language);
  const originalOffset=await page.evaluate(()=>clockOffset);
  await page.evaluate(()=>{clockOffset=Date.UTC(2026,9,21,16,0,5)-Date.now();WorkspaceHeader.update(me,clockOffset);});
  assert.match(await page.$eval('#clock-time',n=>n.textContent),/^00:00:0[5-9]$/);
  assert.match(await page.$eval('#clock-date',n=>n.textContent),language==='en'?/22 October 2026/:/2026年10月22日/);
- await page.evaluate(originalOffset=>{clockOffset=originalOffset;WorkspaceHeader.update(me,clockOffset);},originalOffset);
- await page.evaluate(()=>WorkspaceHeader.update({...me,username:'<img src=x onerror=alert(1)>'},clockOffset));
- assert.equal(await page.$eval('#account-name',n=>n.textContent),'<img src=x onerror=alert(1)>');
- assert.equal(await page.$eval('#account-toggle',n=>n.querySelectorAll('img,script').length),0);
+ await page.evaluate(originalOffset=>{clockOffset=originalOffset;WorkspaceHeader.update({...me,username:'<img src=x onerror=alert(1)>'},clockOffset);},originalOffset);
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),language==='en'?'Hi,':'你好，','Identity data is not injected into the greeting');
+ assert.equal(await page.$eval('.header-right',n=>n.querySelectorAll('img,script').length),0);
  await page.evaluate(()=>WorkspaceHeader.update(me,clockOffset));
- await page.focus('#help-toggle');await page.keyboard.press('ArrowDown');
- assert.equal(await page.$eval('#help-toggle',n=>n.getAttribute('aria-expanded')),'true');
- assert.equal(await page.$$eval('#help-menu button',nodes=>nodes.length),2);
- assert.equal(await page.$eval('#help-menu button',n=>n===document.activeElement),true);
- await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
+ await page.focus('#help-toggle');await page.keyboard.press('Enter');
+ await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
+ assert.equal(await page.$eval('#help-toggle',n=>n.getAttribute('aria-haspopup')),'dialog');
  assert.equal(await page.$eval('#guide-content h3',n=>n.textContent),language==='en'?'How to use WhatsApp accounts':'WhatsApp 账号怎么使用');
- assert.equal(await page.$$eval('#guide-content li',nodes=>nodes.length),role==='owner'?6:7);
- assert.equal(await page.$$eval('#guide-content input,#guide-content form',nodes=>nodes.length),0);
- await page.click('#guide-topics [data-help-topic=shared]');
+ assert.equal(await page.$$eval('#guide-content li',nodes=>nodes.length),8);
  const guide=await page.$eval('#guide-content',n=>n.textContent);
- assert.match(guide,role==='owner'?(language==='en'?/Shared running capacity/:/共享运行容量/):(language==='en'?/Coming soon/:/Coming soon/));
- if(role==='user')assert.doesNotMatch(guide,language==='en'?/Open Shared sending settings/:/打开「共享发送设置」/);
- await screenshot('guide-shared');
+ assert.doesNotMatch(guide,/共享 WhatsApp|Shared WhatsApp|共享运行容量|Pricing \/ settings/);
+ assert.match(guide,language==='en'?/Each USER can add up to 10 accounts/:/每个 USER 最多添加 10 个账号/);
+ assert.match(guide,language==='en'?/5 seconds to 1 hour/:/5 秒至 1 小时/);
+ assert.match(guide,language==='en'?/without manual administrator approval/:/不需要管理员人工批准/);
+ assert.match(guide,language==='en'?/Ask the administrator to resume, delete or change the pacing/:/恢复、删除或修改间隔，请联系管理员/);
+ assert.match(guide,language==='en'?/refunded automatically/:/系统自动退回/);
+ assert.equal(await page.$$eval('#guide-content input,#guide-content form',nodes=>nodes.length),0);
+ await uiScreenshot(page,'guide-user',role,language);
  const preserved=await page.evaluate(async()=>{const node=document.querySelector('#guide-content');const before=node.innerHTML;await loadPage(true);return node.innerHTML===before;});
  assert.equal(preserved,true,'Background polling leaves the reading guide intact');
  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('#guide-dialog').open&&document.activeElement===document.querySelector('#help-toggle'));
- assert.equal(await page.$eval('#help-toggle',n=>n===document.activeElement),true);
- await page.click('#account-toggle');
- assert.equal(await page.$eval('#header-password',n=>n.hidden),role!=='owner');
- await page.keyboard.press('Escape');
- assert.equal(await page.$eval('#account-menu',n=>n.hidden),true);
  await page.click('#theme-toggle');
  assert.equal(await page.$eval('html',n=>n.dataset.theme),'light');
  await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
  await verifyLanguageSelector(page,language,'light');
- await screenshot('header-light');
+ await uiScreenshot(page,'header-light',role,language);
  assert.equal(await page.evaluate(()=>localStorage.getItem('wa_theme')),'light');
  await page.reload({waitUntil:'networkidle0'});await waitReady(page);
  assert.equal(await page.$eval('html',n=>n.dataset.theme),'light','Theme persists after refresh');
@@ -211,22 +242,50 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  for(const width of [1440,390,320]){
   await page.setViewport({width,height:900});
   assert.ok(await page.$eval('#clock-time',n=>n.getBoundingClientRect().width>0),'The time is visible on desktop and mobile');
-  assert.ok(await page.$eval('#language',n=>n.getBoundingClientRect().width>0));
-  assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits on desktop and mobile');
-  await page.click('#help-toggle');
-  const rect=await page.$eval('#help-menu',n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right};});
-  assert.ok(rect.left>=0&&rect.right<=width,'The tutorial menu stays inside the viewport');
-  await page.click('#help-menu [data-help-topic=personal]');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
+  assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits');
+  await page.click('#help-toggle');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-  assert.ok(await page.$eval('#guide-dialog',n=>n.scrollWidth<=n.clientWidth+1),'Guide content fits a narrow viewport');
-  if(width===390)await screenshot('guide-mobile');
+  const rect=await page.$eval('#guide-dialog',n=>{const r=n.getBoundingClientRect();return{left:r.left,right:r.right,fits:n.scrollWidth<=n.clientWidth+1};});
+  assert.ok(rect.left>=0&&rect.right<=width&&rect.fits,'The direct guide fits desktop and narrow screens');
+  if(width===390)await uiScreenshot(page,'guide-mobile',role,language);
   await page.click('#guide-open-page');await page.waitForFunction(()=>page==='accounts'&&!loading);
-  await page.click('#help-toggle');await page.click('#help-menu [data-help-topic=shared]');
-  await page.click('#guide-open-page');await waitReady(page);
+  await page.evaluate(()=>{page='shared';sessionStorage.setItem('wa_page',page);navigation();return loadPage();});await waitReady(page);
  }
  await page.setViewport({width:1440,height:1000});
- assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Header, themes and tutorials do not change data or start a QR browser');
- console.log('Workspace header PASS: '+role+' / '+language+' / Malaysia midnight, escaping, theme persistence, readable native language options, language switching, keyboard menus, role-specific guides, reading stability and 320px layout; no writes');
+ assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Header, themes and guides never start a QR browser or mutate data');
+ console.log('Workspace header PASS: '+role+' / '+language+' / greeting only, no refresh/account dropdown, direct keyboard USER guide, Malaysia midnight, themes/languages and 320px layout; no writes');
+}
+async function verifyLoginPage(page,fixture,role,language){
+ await page.reload({waitUntil:'networkidle0'});
+ await page.waitForSelector('#login-form',{visible:true});
+ assert.equal(await page.$eval('#shell',n=>n.hidden),true);
+ assert.equal(await page.$eval('#session-loading',n=>n.hidden),true,'A real 401 reveals login after verification');
+ assert.equal(await page.$eval('#login-tools',n=>n.hidden),false);
+ assert.match(await page.$eval('.login-access',n=>n.textContent),language==='en'?/Ask your administrator/:/请联系管理员/);
+ assert.equal(await page.$eval('#login-form input[name=password]',n=>n.type),'password');
+ assert.equal(await page.$eval('#login-form input[name=password]',n=>n.autocomplete),'current-password');
+ for(const theme of ['dark','light']){
+  if(await page.$eval('html',n=>n.dataset.theme)!==theme)await page.click('#theme-toggle');
+  await verifyLanguageSelector(page,language,theme);
+  for(const width of [1440,390,320]){
+   await page.setViewport({width,height:1000});
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   const layout=await page.evaluate(()=>{const a=document.querySelector('.login-brand').getBoundingClientRect(),b=document.querySelector('#login-form').getBoundingClientRect();return{brandRight:a.right,brandBottom:a.bottom,formLeft:b.left,formTop:b.top};});
+   assert.ok(width===1440?layout.brandRight<layout.formLeft:layout.brandBottom<=layout.formTop,'Brand/credentials follow reference columns, stacked on mobile');
+   assert.ok(await page.$eval('#login-form button[type=submit]',n=>n.getBoundingClientRect().width>0&&!n.disabled));
+   if(width!==320)await uiScreenshot(page,'login-'+theme+'-'+width,role,language);
+  }
+ }
+ const loginCount=()=>fixture.requests.filter(r=>r.path==='/login').length;
+ const before=loginCount();await page.click('#login-form button[type=submit]');assert.equal(loginCount(),before,'Required empty inputs cannot submit');
+ await page.type('#login-form input[name=username]','synthetic-user');await page.type('#login-form input[name=password]','synthetic-ui-password');
+ fixture.loginRejectedNext=true;await page.click('#login-form button[type=submit]');
+ await page.waitForFunction(()=>document.querySelector('#login-error').textContent.includes('Synthetic incorrect')&&!document.querySelector('#login-form button').disabled);
+ assert.equal(await page.$eval('#shell',n=>n.hidden),true);
+ await page.click('#login-form button[type=submit]');await waitReady(page);
+ assert.equal(await page.$eval('#login-form input[name=password]',n=>n.value),'','Successful synthetic sign-in clears the password field');
+ assert.deepEqual(fixture.requests.filter(r=>r.path==='/login').map(r=>({method:r.method,body:r.body})),[1,2].map(()=>({method:'POST',body:{username:'synthetic-user',password:'synthetic-ui-password'}})));
+ console.log('Reference login PASS: '+role+' / '+language+' / actual 401, dark/light, desktop/390/320, validation, synthetic failed/successful sign-in; no production account');
 }
 
 async function verifyAccountIdentity(page,fixture,role,language){
@@ -685,6 +744,12 @@ async function runCase(browser,base,role,language){
  await page.setViewport({width:1440,height:1000});
  await page.evaluateOnNewDocument(lang=>{
   if(!localStorage.getItem('wa_language'))localStorage.setItem('wa_language',lang);if(!sessionStorage.getItem('wa_page'))sessionStorage.setItem('wa_page','shared');
+  window.fixtureBootFrames=[];
+  requestAnimationFrame(function sample(){
+   const visible=selector=>{const n=document.querySelector(selector);return !!n&&!n.hidden&&n.getClientRects().length>0&&getComputedStyle(n).display!=='none';};
+   window.fixtureBootFrames.push({loading:visible('#session-loading'),login:visible('#login'),card:visible('#session-loading .login-card'),dialog:!!document.querySelector('dialog[open]'),toast:visible('#toast')});
+   if(window.fixtureBootFrames.length<240)requestAnimationFrame(sample);
+  });
   window.open=(...args)=>{window.fixturePopup=args;return null;};
  },language);
  await page.goto(base,{waitUntil:'networkidle0'});await waitReady(page);
@@ -694,6 +759,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$$eval('#nav .nav-entry',nodes=>nodes.every(n=>n.querySelectorAll('svg.nav-icon[aria-hidden=true][focusable=false]').length===1)),true);
  assert.equal(await page.$eval('#nav [data-page=overview] .nav-icon',n=>getComputedStyle(n).width),'18px');
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script,img[onerror]').length),0);
+ await verifySessionRefresh(page,fixture,role,language);
  await verifyWorkspaceHeader(page,fixture,role,language);
  await verifySidebar(page,fixture,role,language);
  if(role==='user'){
@@ -771,7 +837,7 @@ async function runCase(browser,base,role,language){
  await page.waitForFunction(()=>document.querySelector('#content .badge.submitted, #content .badge.green'));
  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Sent successfully/:/发送成功/);
  await page.click('#nav [data-page=shared]');
- await waitReady(page);fixture.enabled=false;await page.click('#refresh');
+ await waitReady(page);fixture.enabled=false;await page.evaluate(()=>loadPage());
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
  if(role==='user')assert.match(await page.$eval('#content',n=>n.textContent),/Coming soon/);
  else assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Shared service is currently closed/:/共享服务暂未开启/);
@@ -795,6 +861,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_account_groups')),null);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_dashboard_open')),null);
  assert.equal(await page.$eval('#content',n=>n.textContent),'');
+ await verifyLoginPage(page,fixture,role,language);
  assert.deepEqual(errors,[]);
  await context.close();console.log('Browser PASS: '+role+' / '+language+' / desktop + mobile');
 }

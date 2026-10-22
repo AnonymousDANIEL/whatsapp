@@ -4,7 +4,7 @@ window.WorkspaceHeader = (() => {
   const $ = id => document.getElementById(id);
   const text = (zh, en) => window.T(zh, en);
   const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let user = null, offset = 0, locale = '', timeFormat, dateFormat, openMenu = null, topic = 'personal';
+  let user = null, offset = 0, locale = '', timeFormat, dateFormat;
   let theme = 'dark';
   try { if (localStorage.getItem('wa_theme') === 'light') theme = 'light'; } catch { /* Use the default when storage is unavailable. */ }
   const icons = {
@@ -34,64 +34,30 @@ window.WorkspaceHeader = (() => {
     $('clock').title = text('马来西亚时间 UTC+8','Malaysia time UTC+8');
     $('clock').setAttribute('aria-label', $('clock-time').textContent+' · '+$('clock-date').textContent+' · UTC+8');
   }
-  function closeMenu(restoreFocus = false) {
-    if (!openMenu) return;
-    const name = openMenu;
-    $(name+'-menu').hidden = true;
-    $(name+'-toggle').setAttribute('aria-expanded','false');
-    openMenu = null;
-    if (restoreFocus) $(name+'-toggle').focus();
-  }
-  function menuItems() { return openMenu ? [...$(openMenu+'-menu').querySelectorAll('button:not([hidden]):not(:disabled)')] : []; }
-  function showMenu(name, focus = false) {
-    if (!user) return;
-    if (openMenu === name && !focus) return closeMenu();
-    closeMenu(); openMenu = name;
-    const menu = $(name+'-menu'), button = $(name+'-toggle');
-    menu.hidden = false; button.setAttribute('aria-expanded','true');
-    const rect = button.getBoundingClientRect();
-    menu.style.left = Math.max(12, Math.min(rect.right-menu.offsetWidth, innerWidth-menu.offsetWidth-12))+'px';
-    menu.style.top = Math.max(12, Math.min(rect.bottom+8, innerHeight-menu.offsetHeight-12))+'px';
-    if (focus) menuItems()[0]?.focus();
-  }
-  function guides() {
-    const owner = user?.role === 'owner';
-    const commonPersonal = [
-      [text('添加 WhatsApp 账号','Add a WhatsApp account'),text('打开「WhatsApp 账号」，点击「添加账号」，填写备注 / 名称并保存。','Open WhatsApp accounts, choose Add account, enter a name / note and save.')],
-      [text('用手机扫码连接','Link using your phone'),text('点击账号的扫码按钮。手机 WhatsApp → 设置（Android 可点右上角 ⋮）→ 已关联设备 → 关联设备，扫描网页二维码。','Choose the account’s QR button. On your phone, open WhatsApp → Settings (or ⋮ on Android) → Linked devices → Link a device, then scan the web QR code.')],
-      [text('确认显示「已连接」','Wait for Connected'),text('二维码画面会自动更新。账号显示「已连接」后再创建发送任务；若画面正在排队或恢复，先等待自动连接。','The QR screen updates automatically. Create a send task after the account shows Connected. If the screen is queued or recovering, allow it to reconnect.')],
-      [text('新建发送任务','Create a send task'),text('进入「发送任务」→「新建任务」，选择已连接账号，填写消息和收件号码（每行一个，包含国家代码）。也可导入 TXT / CSV 号码文件。','Open Send tasks → New task, select a connected account and enter the message and one recipient number per line, including the country code. You can also import a TXT / CSV number file.')],
-      [text('选择图片和发送节奏','Choose a photo and send pacing'),text('图片选填，支持 JPEG / PNG / WebP，最大 5 MB。设置发送间隔与每批条数，确认联系人同意接收后，点击「立刻发送」。','A photo is optional: JPEG / PNG / WebP, up to 5 MB. Set the interval and messages per batch, confirm the contacts agreed to receive your message, then choose Send now.')],
-      [text('查看每个号码的发送结果','Check each recipient’s result'),text('在「发送任务」查看进度及明细，在「发送记录」查看每个号码的状态。成功提交、已送达和已读是不同状态；结果未确认时先查看记录，不要重复提交。','Use Send tasks for progress and details, and Message history for each recipient’s status. Submitted, delivered and read are different states. Check the records before resubmitting an unconfirmed message.')]
-    ];
-    const sharedSteps = owner ? [
-      [text('打开独立共享账号区','Open the separate shared account area'),text('进入「共享 WhatsApp」，查看上方「共享运行容量」。共享账号与普通 WhatsApp 账号分别管理，使用各自的扫码名额。','Open Shared WhatsApp and check Shared running capacity. Shared and personal accounts are managed separately with their own QR slots.')],
-      [text('添加并连接共享账号','Add and link a shared account'),text('点击「添加账号」，填写备注 / 名称，保留自动分配或选择有名额的共享分组并保存。然后点击「扫码连接」，用手机 WhatsApp 的「关联设备」扫码。','Choose Add account, enter a name / note, keep Automatic allocation or select an available shared group, then save. Choose Link / QR and scan through Linked devices on the phone.')],
-      [text('设置服务与价格','Set availability and pricing'),text('点击「价格 / 设置」，设置开关、每条价格、马来西亚各小时价格以及发送间隔 / 每批条数。需要让 USER 上传图片时，开启 USER 图片。','Choose Pricing / settings to set availability, the per-message rate, Malaysia-time hourly rates, and interval / batch size. Enable USER photos when USERs may upload images.')],
-      [text('确认账号可用后开放','Open the service when accounts are available'),text('确认共享账号显示「已连接」且可用，再开放给 USER ID。只有 Owner 可以添加、扫码和管理共享账号。','Confirm shared accounts are connected and available before opening the service to USER IDs. Only the Owner can add, link or manage shared accounts.')],
-      [text('查看共享任务和记录','Monitor shared tasks and records'),text('「共享发送任务」和「共享发送记录」分别显示进度与结果。失败、无效号码或未确认预扣会自动退款；自动退款记录可在「余额 / 充值」查看。','Shared send tasks and Shared message history show progress and results separately. Failed, invalid and unconfirmed holds are refunded automatically; view automatic refund records in Credit / top-up.')]
-    ] : [
-      [text('确认余额和服务开放','Check credit and availability'),text('先到「余额 / 充值」查看余额，再打开「共享 WhatsApp」。如果显示 Coming soon，表示服务暂未开放，请等待管理员开启。','Check your balance in Credit / top-up, then open Shared WhatsApp. Coming soon means the service is not open yet; wait for the administrator to enable it.')],
-      [text('使用管理员连接的共享账号','Use the shared accounts linked by the Owner'),text('共享账号由 Owner 添加和扫码。你可以直接填写消息，系统会从可用的独立共享账号中自动选择发送账号。','The Owner adds and links shared accounts. Enter your message directly; the system automatically selects an available dedicated shared sender.')],
-      [text('填写消息和收件号码','Enter the message and recipients'),text('在「共享发送」填写消息内容和收件号码，每行一个，包含国家代码。请只发送给已同意接收消息的联系人。','In Shared sending, enter the message and one recipient number per line, including the country code. Send only to contacts who agreed to receive the message.')],
-      [text('按需要上传图片','Add a photo when available'),text('如果页面有图片上传选项，可上传 JPEG / PNG / WebP，最大 5 MB。没有图片选项时，使用文字发送即可。','If the photo field is available, upload a JPEG / PNG / WebP up to 5 MB. Use a text message when the photo field is not available.')],
-      [text('确认后点击「发送」','Confirm and choose Send'),text('勾选联系人同意接收消息，点击「发送」。共享发送节奏由管理员设定；提交后在「共享发送任务」查看进度。','Confirm the contacts agreed to receive the message and choose Send. The administrator sets shared send pacing. Track progress in Shared send tasks.')],
-      [text('查看结果与余额','Check results and credit'),text('「共享发送记录」会显示每个号码的结果。失败、无效号码或未确认预扣会自动退回；余额不足时任务会等待充值，充足后自动继续。','Shared message history shows each recipient’s result. Failed, invalid and unconfirmed holds are refunded automatically. Tasks waiting for credit continue automatically after a sufficient top-up.')]
-    ];
+  function personalGuide() {
+    // This guide describes USER controls, including when an administrator is needed.
     return {
-      personal:{title:text('WhatsApp 账号怎么使用','How to use WhatsApp accounts'),intro:owner?text('连接自己的账号，再创建发送任务。','Link your own account, then create a send task.'):text('先确认余额，再连接自己的 WhatsApp 账号。每个 USER 最多连接 10 个账号。','Check your credit, then link your own WhatsApp accounts. Each USER can link up to 10 accounts.'),steps:[...(!owner?[[text('先确认可用余额','Check available credit'),text('在「余额 / 充值」查看余额并通过开放的方式充值。余额不足暂停的任务，在充值足够后会自动继续。','Check your balance in Credit / top-up and use an available top-up method. Tasks waiting for credit continue after a sufficient top-up.')]]:[]),...commonPersonal]},
-      shared:{title:text('共享 WhatsApp 怎么使用','How to use Shared WhatsApp'),intro:owner?text('共享账号使用独立运行容量，由你统一连接和管理。','Shared accounts use dedicated capacity and are linked and managed by you.'):text('不需要自己扫码，使用管理员提供的共享发送服务。','Use the shared sending service provided by the administrator without linking a shared account yourself.'),steps:sharedSteps}
+      title:text('WhatsApp 账号怎么使用','How to use WhatsApp accounts'),
+      intro:text('USER 操作教学：先充值，再连接自己的 WhatsApp 账号，最后创建发送任务。','USER guide: top up, link your own WhatsApp account, then create a send task.'),
+      steps:[
+        [text('1. 确认余额','1. Check your balance'),text('打开「余额 / 充值」查看可用余额，选择已开放的充值方式。Coming soon 表示该方式暂未开放。余额不足的任务会等待充值，余额足够后自动继续。','Open Credit / top-up to check your available balance and choose an enabled top-up method. Coming soon means that method is not open yet. Tasks waiting for credit continue after a sufficient top-up.')],
+        [text('2. 添加自己的账号','2. Add your own account'),text('打开「WhatsApp 账号」→「添加账号」，填写备注 / 名称，再点「保存」。系统会自动分配连接位置，每个 USER 最多添加 10 个账号。','Open WhatsApp accounts → Add account, enter a Name / note, then choose Save. The system assigns the connection slot automatically. Each USER can add up to 10 accounts.')],
+        [text('3. 用手机扫码','3. Scan with your phone'),text('在账号旁点击「扫码」，二维码会在新页面打开。手机 WhatsApp → 设置（Android 点右上角 ⋮）→ 已关联设备 → 关联设备，扫描网页上的二维码。请使用要连接的 WhatsApp 手机账号扫码。','Choose Scan QR beside the account to open the QR screen in a new page. On your phone, open WhatsApp → Settings (⋮ on Android) → Linked devices → Link a device, then scan the web QR code with the account you want to link.')],
+        [text('4. 等待显示「已连接」','4. Wait for Connected'),text('扫码后稍等，账号名称下方会自动显示关联号码。看到「已连接」后才创建发送任务。若显示等待连接资源，保持扫码页面打开并等待；若需要恢复，可点「启动 / 重连」。持续无法连接时请联系管理员，不要重复添加同一账号。','After scanning, wait for the linked number to appear below the account name and the status to show Connected. If waiting for connection capacity, keep the QR page open. Use Start / reconnect if recovery is needed. Contact the administrator if it stays disconnected; do not repeatedly add the same account.')],
+        [text('5. 填写消息和号码','5. Enter the message and recipients'),text('进入「发送任务」→「新建任务」，选择已连接账号，填写消息和收件号码。每行一个号码，包含国家代码（马来西亚为 +60）；也可导入 TXT / CSV 号码文件。无需填写任务名称。','Open Send tasks → New task, select a connected account, and enter your message and recipients. Use one number per line with its country code (+60 for Malaysia), or import a TXT / CSV number file. A task name is not required.')],
+        [text('6. 选择图片和发送间隔','6. Choose a photo and send interval'),text('照片选填，支持 JPEG / PNG / WebP，最大 5 MB；填写的文字会与照片一起发送。创建任务时可设发送间隔和每批条数：间隔 5 秒至 1 小时，每批 1 至 100 条。每批逐条发送，完成后等待间隔再发下一批。','A photo is optional: JPEG / PNG / WebP, up to 5 MB. Your text is sent as its caption. When creating the task, set an interval of 5 seconds to 1 hour and 1 to 100 messages per batch. Each batch sends sequentially, then waits for the interval before the next batch.')],
+        [text('7. 点击「立刻发送」','7. Choose Send now'),text('确认号码和内容正确，勾选联系人同意接收消息，再点「立刻发送」。符合连接和余额条件后系统会开始处理，不需要管理员人工批准。提交任务不等于所有号码已发送完成；请查看进度，不要重复点击新建相同任务。','Check the recipients and content, confirm the contacts agreed to receive the message, then choose Send now. Processing starts when connection and credit requirements are met, without manual administrator approval. Submission does not mean every message has finished sending; check progress before creating the same task again.')],
+        [text('8. 查看结果和处理异常','8. Check results and exceptions'),text('在「发送任务」点「明细」，或打开「发送记录」查看每个号码的状态。等待、发送成功（已提交）、已送达、已读和失败分别显示；已提交不代表已送达。失败、无效号码或结果未确认的预扣由系统自动退回；未确认的号码不会自动重发。已暂停任务的恢复、删除或修改间隔，请联系管理员。','Choose Details in Send tasks, or open Message history for each recipient’s status: Waiting, Sent successfully (submitted), Delivered, Read or Failed. Submitted does not mean delivered. Failed, invalid and unconfirmed holds are refunded automatically; unconfirmed recipients are not automatically resent. Ask the administrator to resume, delete or change the pacing of an existing task.')]
+      ]
     };
   }
-  function showGuide(nextTopic) {
-    if (!user || !['personal','shared'].includes(nextTopic)) return;
-    topic = nextTopic; closeMenu();
-    const entries = guides(), entry = entries[topic];
+  function showGuide() {
+    if (!user) return;
+    const entry = personalGuide();
     $('guide-title').textContent = text('使用教学','Usage guides');
     $('guide-close').textContent = text('关闭','Close');
-    $('guide-topics').innerHTML = Object.entries(entries).map(([key,value])=>'<button type="button" data-help-topic="'+key+'" aria-pressed="'+(key===topic)+'">'+escape(value.title)+'</button>').join('');
-    $('guide-content').innerHTML = '<p class="guide-category">'+(topic==='personal'?'WHATSAPP':'SHARED WHATSAPP')+'</p><h3>'+escape(entry.title)+'</h3><p class="guide-intro">'+escape(entry.intro)+'</p><ol class="guide-steps">'+entry.steps.map(([title,body],i)=>'<li><span class="guide-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><div><h4>'+escape(title)+'</h4><p>'+escape(body)+'</p></div></li>').join('')+'</ol>';
-    $('guide-open-page').textContent = topic==='personal'?text('前往 WhatsApp 账号','Open WhatsApp accounts'):text('前往共享 WhatsApp','Open Shared WhatsApp');
+    $('guide-content').innerHTML = '<p class="guide-category">USER GUIDE</p><h3>'+escape(entry.title)+'</h3><p class="guide-intro">'+escape(entry.intro)+'</p><ol class="guide-steps">'+entry.steps.map(([title,body])=>'<li><h4>'+escape(title)+'</h4><p>'+escape(body)+'</p></li>').join('')+'</ol>';
+    $('guide-open-page').textContent = text('前往 WhatsApp 账号','Open WhatsApp accounts');
     if (!$('guide-dialog').open) $('guide-dialog').showModal();
   }
   function closeGuide() {
@@ -101,57 +67,28 @@ window.WorkspaceHeader = (() => {
   function update(nextUser, nextOffset = 0) {
     const changed = user?.id !== nextUser?.id || user?.role !== nextUser?.role;
     user = nextUser || null; offset = Number.isFinite(nextOffset) ? nextOffset : 0;
-    if (changed) { closeMenu(); $('guide-dialog').close(); }
+    if (changed) $('guide-dialog').close();
     const appearanceParent = user ? $('header-appearance-slot') : $('login-tools');
     if ($('appearance-controls').parentElement !== appearanceParent) appearanceParent.append($('appearance-controls'));
-    $('login-tools').hidden = !!user;
-    $('account-name').textContent = user?.username || '';
-    $('account-detail-name').textContent = user?.username || '';
-    $('account-greeting').textContent = text('你好，','Hi, ');
-    $('account-role').textContent = user?.role === 'owner' ? 'Owner' : 'USER ID';
-    $('account-toggle').setAttribute('aria-label',text('账号菜单','Account menu')+(user?' · '+user.username:''));
-    $('header-password').hidden = user?.role !== 'owner';
+    $('login-tools').hidden = !!user || $('login').hidden;
+    $('account-greeting').textContent = text('你好，','Hi,');
     $('language').value = window.WA_LANG;
     $('language').setAttribute('aria-label',text('选择语言','Choose language'));
     $('help-toggle').setAttribute('aria-label',text('使用教学','Usage guides'));
-    $('refresh').setAttribute('aria-label',text('刷新','Refresh'));
-    $('refresh').title = text('刷新','Refresh');
     applyTheme(); tick();
-    if (!user) { $('guide-content').replaceChildren(); $('guide-topics').replaceChildren(); }
+    if (!user) $('guide-content').replaceChildren();
   }
   $('theme-toggle').addEventListener('click', () => {
     theme = theme === 'dark' ? 'light' : 'dark'; applyTheme();
     try { localStorage.setItem('wa_theme', theme); } catch { /* Theme still works without persistence. */ }
   });
-  for (const name of ['help','account']) {
-    $(name+'-toggle').addEventListener('click',()=>showMenu(name));
-    $(name+'-toggle').addEventListener('keydown',event=>{
-      if (['ArrowDown','ArrowUp'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); showMenu(name,true); if(event.key==='ArrowUp')menuItems().at(-1)?.focus(); }
-    });
-  }
-  document.addEventListener('click',event=>{
-    const guide = event.target.closest('[data-help-topic]');
-    if (guide) return showGuide(guide.dataset.helpTopic);
-    if (openMenu && !event.target.closest('#'+openMenu+'-menu,#'+openMenu+'-toggle')) closeMenu();
-  });
-  document.addEventListener('keydown',event=>{
-    if (!openMenu) return;
-    if (event.key === 'Escape') { event.preventDefault(); closeMenu(true); return; }
-    const items=menuItems(), index=items.indexOf(document.activeElement);
-    if (['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
-      event.preventDefault(); const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length; items[next]?.focus();
-    } else if (event.key === 'Tab') closeMenu();
-  });
-  window.addEventListener('resize',()=>closeMenu());
-  window.addEventListener('scroll',()=>closeMenu(),{passive:true});
-  $('header-logout').addEventListener('click',()=>{closeMenu();$('logout').click();});
-  $('header-password').addEventListener('click',()=>{closeMenu();if(user?.role==='owner')$('password-btn').click();});
+  $('help-toggle').addEventListener('click',showGuide);
   $('guide-close').addEventListener('click',closeGuide);
   $('guide-dialog').addEventListener('cancel',event=>{event.preventDefault();closeGuide();});
   $('guide-dialog').addEventListener('close',()=>{if(user)$('help-toggle').focus();});
   $('guide-open-page').addEventListener('click',()=>{
-    const target=topic==='personal'?'accounts':'shared'; closeGuide();
-    document.querySelector('#nav [data-page="'+target+'"]')?.click();
+    closeGuide();
+    document.querySelector('#nav [data-page="accounts"]')?.click();
   });
   return {update,tick};
 })();

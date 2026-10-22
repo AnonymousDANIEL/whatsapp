@@ -1,3 +1,9 @@
+## Header / USER tutorial / login simplification — 2026-10-22
+
+The requested change removes the header account dropdown and refresh button, opens a single numbered USER account guide directly, and presents the reference two-column login. Session restoration uses the background and a thin status line instead of the logo card; genuine authentication failures and temporary connection failures remain distinct. The shared sending feature, sidebar sign-out and Owner password controls are retained. Existing USER controls were checked against app.js: initial pacing is configurable; existing task edits/resume/delete are Owner-only; USER Scan QR opens a separate page; unknown holds refund automatically without resending.
+
+Validation and production release evidence will be recorded in the release PR and PR44 after the exact commit's CI and actual Railway checks. Synthetic sign-ins/QR/media fixtures do not verify production credentials, phone pairing or customer delivery. This public-asset change does not rotate environment secrets or complete www domain validation.
+
 # Language menu readability and shared-07 inspection — 2026-10-22 MY
 
 The native language options now use explicit theme-colored opaque backgrounds and text, with the control's color-scheme following the app theme. Exact labels are CN 中文简体 and EN English, without a duplicate prefix badge. Both updated header assets use header2 cache versions. Existing Owner/USER Chinese/English browser cases check at least4.5:1 option contrast in both themes (including the opposite OS preference), actual language switching and persistence, login-screen controls and full labels at320/390/1440px. Clock/date, theme, guides, account controls and all business behavior remain.
