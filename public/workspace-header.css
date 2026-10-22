@@ -2,7 +2,6 @@
 .login-tools{position:fixed;top:12px;right:16px;z-index:30}
 .appearance-controls,.header-right,#header-appearance-slot{display:flex;align-items:center;gap:10px}
 .header-right{flex-wrap:wrap;justify-content:flex-end;color:var(--text);gap:10px}
-.header-right .language-control #language-code{display:inline}
 .header-right #account-name{display:block;min-width:0}
 .header-right .header-icon-button{display:grid;place-items:center;width:38px;height:36px;padding:8px;background:transparent;border-color:var(--line)}
 .header-icon-button svg,.language-control>svg,.header-menu-trigger>svg,.clock-badge>svg{width:18px;height:18px;flex:none}
@@ -10,8 +9,9 @@
 .appearance-controls .header-icon-button{display:grid;place-items:center;width:38px;height:36px;padding:8px;background:transparent;border-color:var(--line)}
 .language-control{height:36px;display:flex;align-items:center;gap:7px;position:relative;border:1px solid var(--line);border-radius:7px;padding:0 10px;background:transparent}
 .language-control>svg{width:17px;height:17px;pointer-events:none}
-.language-control #language-code{font-size:9px;color:var(--muted);pointer-events:none}
-.language-control select{width:auto;min-width:93px;margin:0;padding:0 12px 0 0;border:0;outline-offset:5px;background:transparent;font-size:12px;appearance:none;cursor:pointer;line-height:34px}
+.language-control select{width:auto;min-width:93px;margin:0;padding:0 12px 0 0;border:0;outline-offset:5px;background:transparent;color:var(--text);color-scheme:dark;font-size:12px;appearance:none;cursor:pointer;line-height:34px}
+/* Native option popups need an opaque surface as well as the selected field. */
+.language-control option{background:var(--panel);color:var(--text)}
 .language-control::after{content:'';position:absolute;right:10px;width:5px;height:5px;border:solid var(--muted);border-width:0 1px 1px 0;transform:rotate(45deg);pointer-events:none}
 .clock-badge{display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 13px;border-radius:9px;background:var(--panel);white-space:nowrap}
 .clock-badge>svg{width:16px;height:16px;color:#22d67b}
@@ -54,7 +54,7 @@ dialog.guide-dialog{width:860px;padding:0;overflow:auto}
 [data-theme=light] button.primary{background:var(--blue);color:white}
 [data-theme=light] button.ghost,[data-theme=light] .header-icon-button,[data-theme=light] .header-menu-trigger,[data-theme=light] .header-popover button,[data-theme=light] .guide-topics button{background:transparent}
 [data-theme=light] input,[data-theme=light] textarea,[data-theme=light] select{background:#fff;border-color:#c4cfde}
-[data-theme=light] .language-control select{background:transparent}
+[data-theme=light] .language-control select{background:transparent;color-scheme:light}
 [data-theme=light] label{color:#4c5f77}
 [data-theme=light] aside{background:#fff}
 [data-theme=light] #nav .nav-entry{color:#50617a}

@@ -127,6 +127,27 @@ async function verifySidebar(page,fixture,role,language){
  console.log('Sidebar PASS: '+role+' / '+language+' / arrow-only disclosure, parent labels/icons, nested banks, keyboard, polling, reload and mobile');
 }
 
+async function verifyLanguageSelector(page,language,theme){
+ const view=await page.$eval('#language',select=>{
+  const css=getComputedStyle(select);
+  return {scheme:css.colorScheme,value:select.value,selected:select.selectedOptions[0].textContent,
+   options:[...select.options].map(option=>{const s=getComputedStyle(option);return {value:option.value,label:option.textContent,color:s.color,background:s.backgroundColor};})};
+ });
+ assert.equal(view.scheme,theme,'Native language controls follow the chosen app theme');
+ assert.equal(view.value,language);
+ assert.equal(view.selected,language==='en'?'EN English':'CN 中文简体');
+ assert.deepEqual(view.options.map(({value,label})=>({value,label})),[{value:'zh',label:'CN 中文简体'},{value:'en',label:'EN English'}]);
+ const rgb=value=>value.match(/[\d.]+/g).map(Number);
+ const luminance=channels=>channels.slice(0,3).map(c=>{c/=255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+ for(const option of view.options){
+  const background=rgb(option.background),foreground=rgb(option.color);
+  assert.ok(background.length===3||background[3]===1,'Dropdown choices have an opaque background');
+  const a=luminance(foreground),b=luminance(background);
+  assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,'Both language choices remain readable in '+theme+' mode');
+  assert.ok(theme==='dark'?b<.1:b>.8,'The expanded options use the app theme surface');
+ }
+}
+
 async function verifyWorkspaceHeader(page,fixture,role,language){
  const writes=fixture.requests.filter(r=>r.method!=='GET').length;
  const screenshot=async name=>{
@@ -138,6 +159,8 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting);
  assert.equal(await page.$eval('#account-name',n=>n.textContent),'fixture-'+role);
  assert.equal(await page.$eval('#clock',n=>n.getAttribute('title')),language==='en'?'Malaysia time UTC+8':'马来西亚时间 UTC+8');
+ await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'light'}]);
+ await verifyLanguageSelector(page,language,'dark');
  await screenshot('header-dark');
  const originalOffset=await page.evaluate(()=>clockOffset);
  await page.evaluate(()=>{clockOffset=Date.UTC(2026,9,21,16,0,5)-Date.now();WorkspaceHeader.update(me,clockOffset);});
@@ -171,15 +194,25 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  assert.equal(await page.$eval('#account-menu',n=>n.hidden),true);
  await page.click('#theme-toggle');
  assert.equal(await page.$eval('html',n=>n.dataset.theme),'light');
+ await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
+ await verifyLanguageSelector(page,language,'light');
  await screenshot('header-light');
  assert.equal(await page.evaluate(()=>localStorage.getItem('wa_theme')),'light');
  await page.reload({waitUntil:'networkidle0'});await waitReady(page);
  assert.equal(await page.$eval('html',n=>n.dataset.theme),'light','Theme persists after refresh');
+ for(const nextLanguage of [language==='en'?'zh':'en',language]){
+  await Promise.all([page.waitForNavigation({waitUntil:'networkidle0'}),page.select('#language',nextLanguage)]);await waitReady(page);
+  assert.equal(await page.evaluate(()=>localStorage.getItem('wa_language')),nextLanguage);
+  assert.equal(await page.$eval('html',n=>n.lang),nextLanguage==='en'?'en':'zh-CN');
+  await verifyLanguageSelector(page,nextLanguage,'light');
+ }
  await page.click('#theme-toggle');assert.equal(await page.$eval('html',n=>n.dataset.theme),'dark');
+ await verifyLanguageSelector(page,language,'dark');
  for(const width of [1440,390,320]){
   await page.setViewport({width,height:900});
   assert.ok(await page.$eval('#clock-time',n=>n.getBoundingClientRect().width>0),'The time is visible on desktop and mobile');
   assert.ok(await page.$eval('#language',n=>n.getBoundingClientRect().width>0));
+  assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits on desktop and mobile');
   await page.click('#help-toggle');
   const rect=await page.$eval('#help-menu',n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right};});
   assert.ok(rect.left>=0&&rect.right<=width,'The tutorial menu stays inside the viewport');
@@ -193,7 +226,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  }
  await page.setViewport({width:1440,height:1000});
  assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Header, themes and tutorials do not change data or start a QR browser');
- console.log('Workspace header PASS: '+role+' / '+language+' / Malaysia midnight, escaping, theme persistence, keyboard menus, role-specific guides, reading stability and 320px layout; no writes');
+ console.log('Workspace header PASS: '+role+' / '+language+' / Malaysia midnight, escaping, theme persistence, readable native language options, language switching, keyboard menus, role-specific guides, reading stability and 320px layout; no writes');
 }
 
 async function verifyAccountIdentity(page,fixture,role,language){
@@ -651,7 +684,7 @@ async function runCase(browser,base,role,language){
  page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:1440,height:1000});
  await page.evaluateOnNewDocument(lang=>{
-  localStorage.setItem('wa_language',lang);if(!sessionStorage.getItem('wa_page'))sessionStorage.setItem('wa_page','shared');
+  if(!localStorage.getItem('wa_language'))localStorage.setItem('wa_language',lang);if(!sessionStorage.getItem('wa_page'))sessionStorage.setItem('wa_page','shared');
   window.open=(...args)=>{window.fixturePopup=args;return null;};
  },language);
  await page.goto(base,{waitUntil:'networkidle0'});await waitReady(page);
@@ -756,6 +789,7 @@ async function runCase(browser,base,role,language){
   await page.click('#close-modal');
  }
  await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#login').hidden===false);
+ await verifyLanguageSelector(page,language,'dark');
  assert.equal(await page.$$eval('#nav button',n=>n.length),0);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_nav_expanded')),null);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_account_groups')),null);

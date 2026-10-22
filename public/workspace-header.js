@@ -111,7 +111,6 @@ window.WorkspaceHeader = (() => {
     $('account-role').textContent = user?.role === 'owner' ? 'Owner' : 'USER ID';
     $('account-toggle').setAttribute('aria-label',text('账号菜单','Account menu')+(user?' · '+user.username:''));
     $('header-password').hidden = user?.role !== 'owner';
-    $('language-code').textContent = window.WA_LANG === 'en' ? 'EN' : 'CN';
     $('language').value = window.WA_LANG;
     $('language').setAttribute('aria-label',text('选择语言','Choose language'));
     $('help-toggle').setAttribute('aria-label',text('使用教学','Usage guides'));

@@ -1,3 +1,10 @@
+# Language selector readability and shared-07 volume inspection (2026-10-22 MY, current)
+
+- Keep the native language selector and exact option names CN 中文简体 / EN English in the header and login screen. Give its expanded options an explicit opaque theme surface and readable text; the control's color-scheme follows the app's saved dark/light choice rather than the operating-system theme. Do not repeat the language prefix in a separate badge. Keep clock/date, theme, account menus and both guides intact.
+- Extend the existing real Owner/USER zh/en browser cases with option contrast, saved theme, actual language switching, opposite OS theme and unclipped mobile labels. Release only API public assets after checks; retain all50 fixed c4ab5dc worker deployments, existing private volumes, PostgreSQL, money and phone links.
+- Prepare this requested correction and its CI on a separate branch while the user's deployment pause remains active. Do not merge watched main or submit a new Railway build until the official platform incident is Resolved and affected API/build/deployment functions are normal. The earlier queued API deployment can finish on its own; do not roll it back to enforce the pause.
+- Read-only inspection found whatsapp-shared-07-data (bf3c04d9-b9c7-4702-bc01-3b30b95e2cf6) unmounted. The live worker uses whatsapp-shared-07-data-v2 (645fafe2-1bac-4468-9ce7-26b3bb1a12cc) at /data, deployment746ed114-b902-4370-b97e-2cd5ffd3679d, about0.34GB/10GB used. Preserve both; an unused old volume is not evidence of a failed current mount. Do not delete, attach or replace either volume as a repair without an actual diagnosed fault.
+
 # Comprehensive release recovery and concurrent password reset (2026-10-21 MY, current)
 
 - Continue from fda8927. Preserve the reference-style header, both role-specific bilingual guides and all existing behavior. API source follows main; only release a tested API commit after Railway accepts builds. A platform-wide build pause cannot be repaired by deleting data, changing capacity, rotating credentials or restarting linked workers. Report the actual active commit separately from GitHub/CI.
