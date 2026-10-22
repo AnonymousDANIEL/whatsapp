@@ -55,7 +55,7 @@ jobs:
       - name: Install Chinese fonts for browser screenshots
         run: |
           # The runner's Azure mirror stalled for 12 minutes; its official archive fallback took seconds.
-          for font_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+          for font_source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
             if [ -f "$font_source" ]; then
               sudo sed -i \
                 -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
