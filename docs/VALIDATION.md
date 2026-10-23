@@ -1,4 +1,10 @@
-## Scrolling workspace notice — 2026-10-23
+## Button-free jade/mint notice — 2026-10-23
+
+The requested revision removes the pause/resume button entirely from both USER notices and Owner previews. Dark mode uses a quiet jade/teal surface; light mode uses a pale mint surface, with matching badges, borders and readable text. Pointer hover still stops motion; keyboard focus exposes the complete notice and leaving it resumes scrolling. Reduced-motion preferences stay static. No notice content/settings, API, credentials, database, worker or Session changes are needed.
+
+Existing browser coverage is updated for button absence, keyboard focus/blur, hover, both themes, safe literal text, automatic refresh and320/390/1440px. The full exact-SHA CI and API-only production evidence are recorded in the release PR. Local syntax and113 non-database checks pass;15 database suites, Chrome and Docker remain unavailable locally and are verified through the existing isolated GitHub workflow before promotion.
+
+## Initial scrolling workspace notice — 2026-10-23
 
 The existing Owner-managed bilingual notice now scrolls continuously across the top of USER pages. The same Owner form, on/off setting, stored content, five-second refresh and English-to-Chinese fallback remain. Owner gets an animated preview. Notice text remains literal text; visual duplicates are hidden from assistive technology. Pause exposes the complete original multiline text, hover pauses motion, and reduced-motion preferences show a static wrapped notice. Unchanged background reads preserve the ticker element and pause state; sign-out clears its contents.
 

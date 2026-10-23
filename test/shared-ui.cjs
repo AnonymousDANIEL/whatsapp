@@ -777,12 +777,13 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  await page.evaluate(selector=>{window.fixtureNoticeTrack=document.querySelector(selector);},host+' .notice-track');
  await page.evaluate(()=>loadPage(true));
  assert.equal(await page.evaluate(selector=>window.fixtureNoticeTrack===document.querySelector(selector),host+' .notice-track'),true,'Unchanged background polling preserves the scrolling element and reading state');
- await page.click(host+' .notice-toggle');
- assert.equal(await page.$eval(host,n=>n.dataset.paused),'true');assert.equal(await page.$eval(host+' .notice-toggle',n=>n.getAttribute('aria-pressed')),'true');
+ assert.equal(await page.$(host+' button'),null,'The pause/resume control is removed from USER notices and Owner previews');
+ await page.focus(host+' .notice-viewport');
  assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'none');
- assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap','Pause exposes all original lines for reading');
+ assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap','Keyboard focus exposes all original lines without a button');
  assert.equal(await page.$eval(host+' .notice-copy+.notice-copy',n=>getComputedStyle(n).display),'none');
- await page.click(host+' .notice-toggle');assert.equal(await page.$eval(host,n=>n.dataset.paused),'false');
+ await page.keyboard.press('Tab');
+ assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'notice-scroll','Leaving the notice resumes normal scrolling');
  await page.hover(host+' .notice-viewport');
  assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationPlayState),'paused','Hover pauses the moving text');
  await page.mouse.move(0,0);
@@ -802,20 +803,20 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  }
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
  assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'none');
- assert.equal(await page.$eval(host+' .notice-toggle',n=>getComputedStyle(n).display),'none');
+ assert.equal(await page.$(host+' button'),null);
  assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap');
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'no-preference'}]);
  if(role==='user'){
   fixture.notice={enabled:true,content_zh:'长公告 '+('通知😀 '.repeat(1100)),content_en:'',updated_at:new Date().toISOString()};
   await page.waitForFunction(text=>document.querySelector('#workspace-notice .notice-copy')?.textContent===text,{},fixture.notice.content_zh);
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'English falls back to the existing Chinese notice');
-  await page.setViewport({width:320,height:900});await page.click(host+' .notice-toggle');
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long paused notices wrap without page overflow');
+  await page.setViewport({width:320,height:900});await page.focus(host+' .notice-viewport');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long focused notices wrap without page overflow');
   await page.click('#nav [data-page=overview]');await page.waitForFunction(()=>!loading&&document.querySelector('#page-title').textContent!=='Shared WhatsApp');
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'Notice remains above other USER pages');
   fixture.notice={...fixture.notice,enabled:false};
   await page.waitForFunction(()=>document.querySelector('#workspace-notice').hidden&&document.querySelector('#workspace-notice').childElementCount===0);
-  assert.equal(fixture.requests.slice(start).some(r=>r.method!=='GET'),false,'Viewing, pausing and resizing notices never write to the server');
+  assert.equal(fixture.requests.slice(start).some(r=>r.method!=='GET'),false,'Viewing, hovering, focusing and resizing notices never write to the server');
  }else{
   await page.$eval('#notice-form',f=>{const n=f.elements.namedItem('content_zh');n.value='Unsaved Owner draft';n.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('#notice-form [name=content_zh]',n=>n.value),'Unsaved Owner draft','Quiet polling preserves unsaved Owner edits');
