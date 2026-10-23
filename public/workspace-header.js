@@ -33,6 +33,8 @@ window.WorkspaceHeader = (() => {
     $('clock').dateTime = now.toISOString();
     $('clock').title = text('马来西亚时间 UTC+8','Malaysia time UTC+8');
     $('clock').setAttribute('aria-label', $('clock-time').textContent+' · '+$('clock-date').textContent+' · UTC+8');
+    const noticeClock=$('notice-ticker-clock');
+    if(noticeClock)noticeClock.textContent=dateFormat.format(now)+' '+timeFormat.format(now);
   }
   function personalGuide() {
     // This guide describes USER controls, including when an administrator is needed.
