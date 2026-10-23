@@ -71,7 +71,7 @@ window.WorkspaceHeader = (() => {
     const appearanceParent = user ? $('header-appearance-slot') : $('login-tools');
     if ($('appearance-controls').parentElement !== appearanceParent) appearanceParent.append($('appearance-controls'));
     $('login-tools').hidden = !!user || $('login').hidden;
-    $('account-greeting').textContent = text('你好，','Hi,');
+    $('account-greeting').textContent = user?.username ? text('你好，','Hi, ') + user.username : '';
     $('language').value = window.WA_LANG;
     $('language').setAttribute('aria-label',text('选择语言','Choose language'));
     $('help-toggle').setAttribute('aria-label',text('使用教学','Usage guides'));

@@ -1,3 +1,7 @@
+## Current username in the greeting — 2026-10-23
+
+The header now displays the authenticated current username as plain text after the localized greeting, without restoring an account dropdown. Long names wrap rather than pushing controls off narrow screens; signing out clears the name. Existing Owner/USER Chinese/English browser cases cover literal HTML-like identity text, maximum-length names at1440/390/320px, restored language changes and synthetic sign-out/sign-in. Exact CI and API-only production release evidence belongs in the release PR and PR44 after verification. No production login, message, balance, Session, worker or volume mutation is a test.
+
 ## Header / USER tutorial / login simplification — 2026-10-22
 
 The requested change removes the header account dropdown and refresh button, opens a single numbered USER account guide directly, and presents the reference two-column login. Session restoration uses the background and a thin status line instead of the logo card; genuine authentication failures and temporary connection failures remain distinct. The shared sending feature, sidebar sign-out and Owner password controls are retained. Existing USER controls were checked against app.js: initial pacing is configurable; existing task edits/resume/delete are Owner-only; USER Scan QR opens a separate page; unknown holds refund automatically without resending.

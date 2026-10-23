@@ -190,7 +190,8 @@ async function verifySessionRefresh(page,fixture,role,language){
 }
 async function verifyWorkspaceHeader(page,fixture,role,language){
  const writes=fixture.requests.filter(r=>r.method!=='GET').length;
- assert.equal(await page.$eval('#account-greeting',n=>n.textContent),language==='en'?'Hi,':'你好，');
+ const greeting=name=>(language==='en'?'Hi, ':'你好，')+name;
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting('fixture-'+role));
  assert.equal(await page.$eval('#account-greeting',n=>n.tagName),'SPAN');
  assert.equal(await page.$('#account-toggle,#account-name,#account-menu,#header-logout,#header-password,#refresh,#help-menu'),null,'Removed controls are absent, not a hidden menu');
  assert.equal(await page.$eval('#clock',n=>n.getAttribute('title')),language==='en'?'Malaysia time UTC+8':'马来西亚时间 UTC+8');
@@ -203,7 +204,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  assert.match(await page.$eval('#clock-time',n=>n.textContent),/^00:00:0[5-9]$/);
  assert.match(await page.$eval('#clock-date',n=>n.textContent),language==='en'?/22 October 2026/:/2026年10月22日/);
  await page.evaluate(originalOffset=>{clockOffset=originalOffset;WorkspaceHeader.update({...me,username:'<img src=x onerror=alert(1)>'},clockOffset);},originalOffset);
- assert.equal(await page.$eval('#account-greeting',n=>n.textContent),language==='en'?'Hi,':'你好，','Identity data is not injected into the greeting');
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting('<img src=x onerror=alert(1)>'),'The current username is rendered as literal text');
  assert.equal(await page.$eval('.header-right',n=>n.querySelectorAll('img,script').length),0);
  await page.evaluate(()=>WorkspaceHeader.update(me,clockOffset));
  await page.focus('#help-toggle');await page.keyboard.press('Enter');
@@ -235,6 +236,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
   await Promise.all([page.waitForNavigation({waitUntil:'networkidle0'}),page.select('#language',nextLanguage)]);await waitReady(page);
   assert.equal(await page.evaluate(()=>localStorage.getItem('wa_language')),nextLanguage);
   assert.equal(await page.$eval('html',n=>n.lang),nextLanguage==='en'?'en':'zh-CN');
+  assert.equal(await page.$eval('#account-greeting',n=>n.textContent),(nextLanguage==='en'?'Hi, ':'你好，')+'fixture-'+role,'The restored current username follows the selected language');
   await verifyLanguageSelector(page,nextLanguage,'light');
  }
  await page.click('#theme-toggle');assert.equal(await page.$eval('html',n=>n.dataset.theme),'dark');
@@ -243,6 +245,12 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
   await page.setViewport({width,height:900});
   assert.ok(await page.$eval('#clock-time',n=>n.getBoundingClientRect().width>0),'The time is visible on desktop and mobile');
   assert.ok(await page.$eval('#account-greeting',n=>n.getBoundingClientRect().width>0),'Greeting stays visible despite the legacy mobile span rule');
+  await page.evaluate(()=>WorkspaceHeader.update({...me,username:'W'.repeat(40)},clockOffset));
+  assert.equal(await page.$eval('#account-greeting',n=>n.textContent),greeting('W'.repeat(40)),'The complete maximum-length username remains visible');
+  assert.ok(await page.$eval('#account-greeting',n=>{const r=n.getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth+1&&n.scrollWidth<=n.clientWidth+1;}),'Long usernames wrap inside the desktop/mobile header');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long usernames do not add horizontal page scrolling');
+  if(width===390)await uiScreenshot(page,'header-long-name-mobile',role,language);
+  await page.evaluate(()=>WorkspaceHeader.update(me,clockOffset));
   assert.ok(await page.$eval('#language',n=>{const s=getComputedStyle(n),canvas=document.createElement('canvas'),c=canvas.getContext('2d');c.font=s.font;return c.measureText(n.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=n.clientWidth;}),'The full language label fits');
   await page.click('#help-toggle');await page.waitForFunction(()=>document.querySelector('#guide-dialog').open);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
@@ -255,7 +263,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  }
  await page.setViewport({width:1440,height:1000});
  assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'Header, themes and guides never start a QR browser or mutate data');
- console.log('Workspace header PASS: '+role+' / '+language+' / greeting only, no refresh/account dropdown, direct keyboard USER guide, Malaysia midnight, themes/languages and 320px layout; no writes');
+ console.log('Workspace header PASS: '+role+' / '+language+' / current username as safe text, 40-character mobile wrapping, no refresh/account dropdown, direct keyboard USER guide, Malaysia midnight, themes/languages and 320px layout; no writes');
 }
 async function verifyLoginPage(page,fixture,role,language){
  await page.reload({waitUntil:'networkidle0'});
@@ -285,6 +293,7 @@ async function verifyLoginPage(page,fixture,role,language){
  await page.waitForFunction(()=>document.querySelector('#login-error').textContent.includes('Synthetic incorrect')&&!document.querySelector('#login-form button').disabled);
  assert.equal(await page.$eval('#shell',n=>n.hidden),true);
  await page.click('#login-form button[type=submit]');await waitReady(page);
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),(language==='en'?'Hi, ':'你好，')+'fixture-'+role,'Successful synthetic sign-in restores only the current account name');
  assert.equal(await page.$eval('#login-form input[name=password]',n=>n.value),'','Successful synthetic sign-in clears the password field');
  assert.deepEqual(fixture.requests.filter(r=>r.path==='/login').map(r=>({method:r.method,body:r.body})),[1,2].map(()=>({method:'POST',body:{username:'synthetic-user',password:'synthetic-ui-password'}})));
  console.log('Reference login PASS: '+role+' / '+language+' / actual 401, dark/light, desktop/390/320, validation, synthetic failed/successful sign-in; no production account');
@@ -857,6 +866,7 @@ async function runCase(browser,base,role,language){
   await page.click('#close-modal');
  }
  await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#login').hidden===false);
+ assert.equal(await page.$eval('#account-greeting',n=>n.textContent),'','Signing out clears the previous username');
  await verifyLanguageSelector(page,language,'dark');
  assert.equal(await page.$$eval('#nav button',n=>n.length),0);
  assert.equal(await page.evaluate(()=>sessionStorage.getItem('wa_nav_expanded')),null);
