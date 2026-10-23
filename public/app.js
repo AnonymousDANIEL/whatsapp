@@ -197,8 +197,24 @@ function renderNotice(){
  const signature=JSON.stringify([noticeData,WA_LANG,me?.role]);if(signature===noticeSignature)return;noticeSignature=signature;
  const banner=$('#workspace-notice'),content=noticeText();banner.hidden=me?.role==='owner'||!noticeData.enabled||!content;
  if(banner.hidden){banner.replaceChildren();return;}
- banner.innerHTML=`<div class="notice-heading"><strong>${T('系统公告','System notice')}</strong><small>${T('更新于','Updated')} ${date(noticeData.updated_at)} · UTC+8</small></div><div class="notice-body"></div>`;
- banner.querySelector('.notice-body').textContent=content;
+ banner.setAttribute('aria-label',T('系统公告','System notice'));
+ banner.innerHTML='<div class="notice-ticker"><div class="notice-ticker-track"><time id="notice-ticker-clock" class="notice-ticker-clock" aria-hidden="true"></time><span class="notice-ticker-separator" aria-hidden="true">—</span><span class="notice-ticker-text"></span></div></div>';
+ const track=banner.querySelector('.notice-ticker-track'),output=banner.querySelector('.notice-ticker-text');
+ const line=content.replace(/\s*\r?\n\s*/g,'  •  ');
+ track.style.setProperty('--notice-duration',Math.min(180,Math.max(24,Math.ceil(line.length*.17)+16))+'s');
+ // Only explicit Markdown links are clickable. All other owner-authored text stays plain text.
+ const linkPattern=/\[([^\]\n]{1,80})\]\((https?:\/\/[^\s)<>]+)\)/g;
+ let last=0;
+ for(const match of line.matchAll(linkPattern)){
+  output.append(document.createTextNode(line.slice(last,match.index)));
+  try{
+   const url=new URL(match[2]);if(url.protocol!=='http:'&&url.protocol!=='https:')throw new Error('Unsupported link');
+   const link=document.createElement('a');link.href=url.href;link.textContent=match[1];link.target='_blank';link.rel='noopener noreferrer';output.append(link);
+  }catch{output.append(document.createTextNode(match[0]));}
+  last=match.index+match[0].length;
+ }
+ output.append(document.createTextNode(line.slice(last)));
+ window.WorkspaceHeader?.tick();
 }
 function noticePage(){
  $('#content').innerHTML=`<section class="panel"><h2>${T('公告管理','Notices')}</h2><p class="muted">${T('开启后，公告显示在所有 USER 页面顶部，约 5 秒内更新。填写英文内容后，English 页面会显示对应英文；留空则显示中文内容。','When enabled, the notice appears at the top of every USER page and updates within about 5 seconds. English pages use the English text when provided, otherwise the Chinese text.')}</p><form id="notice-form"><label class="check-row"><input name="enabled" type="checkbox" ${noticeData.enabled?'checked':''}>${T('向全部 USER 显示公告','Show notice to all USERs')}</label><label>${T('中文公告','Chinese notice')}<textarea name="content_zh" rows="7" maxlength="6000">${esc(noticeData.content_zh)}</textarea></label><label>${T('英文公告（选填）','English notice (optional)')}<textarea name="content_en" rows="7" maxlength="6000">${esc(noticeData.content_en)}</textarea></label><p class="muted">${T('最近保存','Last saved')}: ${date(noticeData.updated_at)} · UTC+8</p>${submit()}</form></section><section class="panel"><h3>${T('当前公告预览','Current notice preview')} · ${noticeData.enabled?T('已开启','On'):T('已关闭','Off')}</h3><div class="notice-body">${esc(noticeText()||T('暂无公告','No notice'))}</div></section>`;
