@@ -68,7 +68,12 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/send-records')result=personalRecords(s);
    else if(p==='/banks')result={enabled:!s.banksOff,banks:s.banksOff?[]:[{id:'fixture-bank',bank_name:'Fixture bank',account_name:'Fixture account',status:s.bankMaintenance?'maintenance':'active'}]};
    else if(p==='/bank-deposits')result={rows:[],page:1,total:0};
-   else if(p==='/notice')result={enabled:false};
+   else if(p==='/notice'){
+    if(req.method==='PUT'){
+     if(s.role!=='owner'){res.statusCode=403;result={error:'Owner only'};}
+     else{s.notice={...body,updated_at:new Date().toISOString()};result=s.notice;}
+    }else result=s.notice||{enabled:false};
+   }
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
    else if(p==='/billing/automatic-refunds')result={rows:[{id:'900',user_id:'ui-owner',username:'Synthetic <img src=x onerror=alert(1)>',recipient_id:'11',amount_units:'1061',reason:'AUTO_REFUND_UNCONFIRMED',service:'personal',message_status:'unknown',created_at:'2026-10-20T02:54:43Z'}],next_cursor:url.searchParams.has('before')?null:'800'};
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
@@ -747,6 +752,76 @@ async function verifySharedQr(page,fixture,language){
  assert.equal(fixture.requests.slice(start).some(r=>r.path==='/health'),false);
  fixture.sharedCapacityRows=null;await page.evaluate(()=>loadPage());
 }
+async function verifyNoticeMarquee(page,fixture,role,language){
+ const start=fixture.requests.length,zh='系统更新通知 📢 <img src=x onerror=alert(1)>\n请查看使用教学。',en='Workspace update 📢 <script>alert(1)</script>\nPlease read the usage guide.';
+ fixture.notice={enabled:true,content_zh:zh,content_en:en,updated_at:new Date().toISOString()};
+ let host='#workspace-notice';
+ if(role==='owner'){
+  await page.click('#nav [data-page=notices]');await page.waitForSelector('#notice-preview .notice-track');host='#notice-preview';
+  assert.equal(await page.$eval('#workspace-notice',n=>n.hidden),true,'Owner retains the management preview without a duplicate USER banner');
+  await page.$eval('#notice-form',f=>{f.elements.namedItem('content_zh').value+=' Saved';f.elements.namedItem('content_en').value+=' Saved';f.requestSubmit();});
+  await page.waitForFunction(()=>!document.querySelector('#notice-form').dataset.busy&&document.querySelector('#notice-preview .notice-copy')?.textContent.endsWith(' Saved'));
+  const saved=fixture.requests.findLast(r=>r.path==='/notice'&&r.method==='PUT');assert.equal(saved.csrf,'fake-ui-csrf');assert.equal(saved.body.enabled,true);
+ }else{
+  await page.waitForFunction(()=>document.querySelector('#workspace-notice .notice-track')&&!document.querySelector('#workspace-notice').hidden);
+  assert.equal(await page.$('#notice-form'),null);
+ }
+ const expected=(language==='en'?en:zh)+(role==='owner'?' Saved':'');
+ assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),expected);
+ assert.equal(await page.$eval(host+' [role=status]',n=>n.textContent),expected,'Assistive text contains the original notice once');
+ assert.equal(await page.$$eval(host+' img,'+host+' script',n=>n.length),0,'Notice text is never interpreted as HTML');
+ assert.equal(await page.$eval(host+' .notice-track',n=>n.getAttribute('aria-hidden')),'true');
+ await page.mouse.move(0,0);
+ const moving=await page.$eval(host+' .notice-track',n=>getComputedStyle(n).transform);
+ await page.waitForFunction((selector,before)=>{const n=document.querySelector(selector);return getComputedStyle(n).animationName==='notice-scroll'&&getComputedStyle(n).transform!==before;},{},host+' .notice-track',moving);
+ await page.evaluate(selector=>{window.fixtureNoticeTrack=document.querySelector(selector);},host+' .notice-track');
+ await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.evaluate(selector=>window.fixtureNoticeTrack===document.querySelector(selector),host+' .notice-track'),true,'Unchanged background polling preserves the scrolling element and reading state');
+ await page.click(host+' .notice-toggle');
+ assert.equal(await page.$eval(host,n=>n.dataset.paused),'true');assert.equal(await page.$eval(host+' .notice-toggle',n=>n.getAttribute('aria-pressed')),'true');
+ assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'none');
+ assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap','Pause exposes all original lines for reading');
+ assert.equal(await page.$eval(host+' .notice-copy+.notice-copy',n=>getComputedStyle(n).display),'none');
+ await page.click(host+' .notice-toggle');assert.equal(await page.$eval(host,n=>n.dataset.paused),'false');
+ await page.hover(host+' .notice-viewport');
+ assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationPlayState),'paused','Hover pauses the moving text');
+ await page.mouse.move(0,0);
+ for(const theme of ['dark','light']){
+  if(await page.$eval('html',n=>n.dataset.theme)!==theme)await page.click('#theme-toggle');
+  const colors=await page.$eval(host,n=>({background:getComputedStyle(n).backgroundColor,text:getComputedStyle(n.querySelector('.notice-copy')).color,label:getComputedStyle(n.querySelector('.notice-label')).color}));
+  const lum=value=>value.match(/[\d.]+/g).slice(0,3).map(Number).map(c=>{c/=255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+  for(const color of [colors.text,colors.label]){const a=lum(color),b=lum(colors.background);assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,'Notice stays readable in '+theme+' mode');}
+  await uiScreenshot(page,'notice-'+theme,role,language);
+ }
+ if(await page.$eval('html',n=>n.dataset.theme)!=='dark')await page.click('#theme-toggle');
+ for(const width of [320,390,1440]){
+  await page.setViewport({width,height:1000});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Scrolling text stays inside the mobile/desktop page');
+  assert.ok(await page.$eval(host+' .notice-viewport',n=>n.clientWidth>30));
+  await uiScreenshot(page,'notice-'+width,role,language);
+ }
+ await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+ assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'none');
+ assert.equal(await page.$eval(host+' .notice-toggle',n=>getComputedStyle(n).display),'none');
+ assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap');
+ await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'no-preference'}]);
+ if(role==='user'){
+  fixture.notice={enabled:true,content_zh:'长公告 '+('通知😀 '.repeat(1100)),content_en:'',updated_at:new Date().toISOString()};
+  await page.waitForFunction(text=>document.querySelector('#workspace-notice .notice-copy')?.textContent===text,{},fixture.notice.content_zh);
+  assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'English falls back to the existing Chinese notice');
+  await page.setViewport({width:320,height:900});await page.click(host+' .notice-toggle');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long paused notices wrap without page overflow');
+  await page.click('#nav [data-page=overview]');await page.waitForFunction(()=>!loading&&document.querySelector('#page-title').textContent!=='Shared WhatsApp');
+  assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'Notice remains above other USER pages');
+  fixture.notice={...fixture.notice,enabled:false};
+  await page.waitForFunction(()=>document.querySelector('#workspace-notice').hidden&&document.querySelector('#workspace-notice').childElementCount===0);
+  assert.equal(fixture.requests.slice(start).some(r=>r.method!=='GET'),false,'Viewing, pausing and resizing notices never write to the server');
+ }else{
+  await page.$eval('#notice-form',f=>{const n=f.elements.namedItem('content_zh');n.value='Unsaved Owner draft';n.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('#notice-form [name=content_zh]',n=>n.value),'Unsaved Owner draft','Quiet polling preserves unsaved Owner edits');
+ }
+ fixture.notice={enabled:false};await page.setViewport({width:1440,height:1000});await page.click('#nav [data-page=shared]');await waitReady(page);
+}
 async function runCase(browser,base,role,language){
  current={role,language,enabled:true,available:2,requests:[],sends:[],failNext:false};
  current.loginDates={'ui-owner':new Date(Date.now()-600000).toISOString(),'active-user':new Date(Date.now()-2*86400000).toISOString(),'locked-user':new Date(Date.now()-8*86400000).toISOString()};
@@ -773,6 +848,7 @@ async function runCase(browser,base,role,language){
  await verifySessionRefresh(page,fixture,role,language);
  await verifyWorkspaceHeader(page,fixture,role,language);
  await verifySidebar(page,fixture,role,language);
+ await verifyNoticeMarquee(page,fixture,role,language);
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);
   assert.equal(await page.$('[data-shared-login]'),null);
@@ -865,7 +941,9 @@ async function runCase(browser,base,role,language){
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Hourly settings fit a mobile viewport');
   await page.click('#close-modal');
  }
+ fixture.notice={enabled:true,content_zh:'Private sign-out notice',content_en:'Private sign-out notice',updated_at:new Date().toISOString()};await page.evaluate(()=>loadPage(true));
  await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#login').hidden===false);
+ assert.equal(await page.$eval('#workspace-notice',n=>n.textContent),'','Sign-out clears the previous notice from the DOM');
  assert.equal(await page.$eval('#account-greeting',n=>n.textContent),'','Signing out clears the previous username');
  await verifyLanguageSelector(page,language,'dark');
  assert.equal(await page.$$eval('#nav button',n=>n.length),0);

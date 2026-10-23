@@ -1,0 +1,25 @@
+/* A compact, continuous ticker; pausing exposes the complete original notice. */
+.workspace-notice.notice-marquee{display:flex;align-items:center;gap:14px;min-width:0;padding:12px 16px;margin:0 0 20px;color:var(--text)}
+.notice-marquee .notice-label{display:flex;align-items:center;gap:8px;flex:none;color:#a9cfff;font-size:13px;white-space:nowrap}
+.notice-label>svg{width:19px;height:19px;flex:none}
+.notice-viewport{flex:1;min-width:0;overflow:hidden;line-height:1.8}
+.notice-track{display:flex;width:max-content;animation:notice-scroll var(--notice-duration,30s) linear infinite}
+.notice-copy{display:block;flex:0 0 auto;min-width:var(--notice-width,200px);padding-inline-end:64px;white-space:nowrap;unicode-bidi:plaintext}
+.notice-viewport:hover .notice-track{animation-play-state:paused}
+.notice-marquee .notice-toggle{display:flex;align-items:center;justify-content:center;gap:5px;flex:none;padding:6px 8px;font-size:12px;line-height:1.4;color:var(--text);background:transparent}
+.notice-toggle-icon{display:flex;align-items:center}.notice-toggle-icon>svg{width:13px;height:13px}
+.notice-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.notice-marquee[data-paused=true]{align-items:flex-start}
+.notice-marquee[data-paused=true] .notice-track{width:100%;animation:none;transform:none}
+.notice-marquee[data-paused=true] .notice-copy{min-width:0;width:100%;padding:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.notice-marquee[data-paused=true] .notice-copy+.notice-copy{display:none}
+[data-theme=light] .notice-marquee .notice-label{color:#235faa}
+.panel>.notice-marquee{margin:0}
+@keyframes notice-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media(max-width:480px){.workspace-notice.notice-marquee{gap:8px;padding:10px}.notice-marquee .notice-label{font-size:12px;gap:5px}.notice-label>svg{width:17px;height:17px}.notice-marquee .notice-toggle{padding:6px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){
+ .notice-marquee{align-items:flex-start}
+ .notice-marquee .notice-track{width:100%;animation:none;transform:none}
+ .notice-marquee .notice-copy{min-width:0;width:100%;padding:0;white-space:pre-wrap;overflow-wrap:anywhere}
+ .notice-marquee .notice-copy+.notice-copy,.notice-marquee .notice-toggle{display:none}
+}

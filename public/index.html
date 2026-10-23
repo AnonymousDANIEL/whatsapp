@@ -5,8 +5,10 @@
 <title>mywasap</title><meta name="application-name" content="mywasap">
 <link rel="icon" type="image/svg+xml" href="/mywasap.svg?v=brand2">
 <link rel="stylesheet" href="/style.css?v=shared11"><link rel="stylesheet" href="/workspace-header.css?v=header4">
+<link rel="stylesheet" href="/notice-marquee.css?v=notice1">
 <script defer src="/i18n.js?v=qr-demand1"></script><script defer src="/workspace-header.js?v=header4"></script>
-<script defer src="/banks.js?v=billing4"></script><script defer src="/shared.js?v=refund1"></script><script defer src="/app.js?v=header3"></script>
+<script defer src="/notice-marquee.js?v=notice1"></script>
+<script defer src="/banks.js?v=billing4"></script><script defer src="/shared.js?v=refund1"></script><script defer src="/app.js?v=notice1"></script>
 </head>
 <body>
 <div id="toast" role="status"></div>
@@ -31,7 +33,7 @@
 <div id="shell" hidden>
 <aside><div class="brand"><img src="/mywasap.svg?v=brand2#logo" alt="mywasap" width="810" height="682" decoding="async"></div><nav id="nav"></nav><div class="aside-footer"><strong id="identity"></strong><small id="role"></small><button id="password-btn" class="ghost" hidden data-zh="修改密码" data-en="Change password"></button><button id="logout" class="ghost" data-zh="退出登录" data-en="Sign out"></button></div></aside>
 <main>
-<section id="workspace-notice" class="workspace-notice" role="status" hidden></section>
+<section id="workspace-notice" class="workspace-notice" role="region" hidden></section>
 <header><div><p class="eyebrow">PRIVATE WORKSPACE</p><h1 id="page-title"></h1></div>
 <div class="header-right">
   <time id="clock" class="clock-badge">
