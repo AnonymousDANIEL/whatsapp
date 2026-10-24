@@ -4,7 +4,7 @@
   "private": true,
   "description": "Private, scoped WhatsApp Web workspace with sharded browser workers",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "start": "node src/main.js",
@@ -26,7 +26,10 @@
   },
   "overrides": {
     "extract-zip": "file:vendor/disabled-extract-zip",
-    "basic-ftp": "6.2.1"
+    "basic-ftp": "6.2.1",
+    "body-parser": "2.4.0",
+    "ip-address": "10.7.4",
+    "puppeteer": "25.16.0"
   }
 }
 

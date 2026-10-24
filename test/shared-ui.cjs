@@ -803,7 +803,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  assert.ok(Math.abs((await snapshot()).time-keyboardHeld.time)<1);
  await page.keyboard.press('Tab');
  await page.waitForFunction((selector,time)=>document.querySelector(selector).getAnimations()[0]?.currentTime>time+20,{},track,keyboardHeld.time);
- const touch=await page.target().createCDPSession();
+ const touch=await page.createCDPSession();
  try{
   await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
   await page.$eval(viewport,n=>n.scrollIntoView({block:'center'}));
