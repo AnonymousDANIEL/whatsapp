@@ -778,15 +778,47 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  await page.evaluate(()=>loadPage(true));
  assert.equal(await page.evaluate(selector=>window.fixtureNoticeTrack===document.querySelector(selector),host+' .notice-track'),true,'Unchanged background polling preserves the scrolling element and reading state');
  assert.equal(await page.$(host+' button'),null,'The pause/resume control is removed from USER notices and Owner previews');
- await page.focus(host+' .notice-viewport');
- assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'none');
- assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap','Keyboard focus exposes all original lines without a button');
- assert.equal(await page.$eval(host+' .notice-copy+.notice-copy',n=>getComputedStyle(n).display),'none');
- await page.keyboard.press('Tab');
- assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationName),'notice-scroll','Leaving the notice resumes normal scrolling');
+ const track=host+' .notice-track',viewport=host+' .notice-viewport';
+ const snapshot=()=>page.$eval(track,async n=>{
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const style=getComputedStyle(n);return {time:n.getAnimations()[0]?.currentTime,transform:style.transform,state:style.animationPlayState,name:style.animationName,whiteSpace:getComputedStyle(n.firstElementChild).whiteSpace};
+ });
+ await page.$eval(track,n=>{window.fixtureNoticeAnimation=n.getAnimations()[0];window.fixtureNoticeAnimation.currentTime=4000;});
  await page.hover(host+' .notice-viewport');
- assert.equal(await page.$eval(host+' .notice-track',n=>getComputedStyle(n).animationPlayState),'paused','Hover pauses the moving text');
+ const held=await snapshot();assert.equal(held.state,'paused');assert.ok(held.time>=4000,'Exercise a scrolled position away from the start');
+ await page.click(viewport);
+ const clicked=await snapshot();
+ assert.equal(clicked.name,'notice-scroll','Clicking keeps the existing scrolling animation');
+ assert.equal(clicked.whiteSpace,'nowrap','Clicking never switches to full-text layout');
+ assert.equal(clicked.transform,held.transform,'A real mouse click does not jump back to the start');
+ assert.ok(Math.abs(clicked.time-held.time)<1,'Hover/click freezes the same animation time');
+ assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Clicking must not replace the animation');
+ await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Quiet polling also preserves the paused animation');
  await page.mouse.move(0,0);
+ await page.waitForFunction((selector,time)=>document.querySelector(selector).getAnimations()[0]?.currentTime>time+20,{},track,held.time);
+ await page.keyboard.press('Tab');await page.focus(viewport);
+ const keyboardHeld=await snapshot();assert.equal(keyboardHeld.state,'paused');assert.equal(keyboardHeld.name,'notice-scroll');assert.equal(keyboardHeld.whiteSpace,'nowrap');
+ assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Keyboard focus pauses in place without restarting');
+ assert.ok(Math.abs((await snapshot()).time-keyboardHeld.time)<1);
+ await page.keyboard.press('Tab');
+ await page.waitForFunction((selector,time)=>document.querySelector(selector).getAnimations()[0]?.currentTime>time+20,{},track,keyboardHeld.time);
+ const touch=await page.target().createCDPSession();
+ try{
+  await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+  await page.$eval(viewport,n=>n.scrollIntoView({block:'center'}));
+  const box=await (await page.$(viewport)).boundingBox();
+  for(const type of ['touchEnd','touchCancel']){
+   const before=await snapshot();
+   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width/2,y:box.y+box.height/2,id:1,radiusX:2,radiusY:2,force:1}]});
+   const touched=await snapshot();assert.equal(touched.state,'paused','Real touch contact pauses in place');assert.equal(touched.name,'notice-scroll');assert.ok(touched.time>=before.time,'Touch never resets elapsed animation time');
+   assert.ok(Math.abs((await snapshot()).time-touched.time)<1,'Holding a finger freezes motion');
+   assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true);
+   await touch.send('Input.dispatchTouchEvent',{type,touchPoints:[]});
+   await page.waitForFunction((selector,time)=>{const n=document.querySelector(selector);return getComputedStyle(n).animationPlayState==='running'&&n.getAnimations()[0]?.currentTime>time+20;},{},track,touched.time);
+   assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Touch release/cancel resumes the same animation without sticky hover');
+  }
+ }finally{await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await touch.detach();}
  for(const theme of ['dark','light']){
   if(await page.$eval('html',n=>n.dataset.theme)!==theme)await page.click('#theme-toggle');
   const colors=await page.$eval(host,n=>({background:getComputedStyle(n).backgroundColor,text:getComputedStyle(n.querySelector('.notice-copy')).color,label:getComputedStyle(n.querySelector('.notice-label')).color}));
@@ -811,7 +843,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   await page.waitForFunction(text=>document.querySelector('#workspace-notice .notice-copy')?.textContent===text,{},fixture.notice.content_zh);
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'English falls back to the existing Chinese notice');
   await page.setViewport({width:320,height:900});await page.focus(host+' .notice-viewport');
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long focused notices wrap without page overflow');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long notices stay clipped to the viewport without page overflow');
   await page.click('#nav [data-page=overview]');await page.waitForFunction(()=>!loading&&document.querySelector('#page-title').textContent!=='Shared WhatsApp');
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'Notice remains above other USER pages');
   fixture.notice={...fixture.notice,enabled:false};
@@ -821,6 +853,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   await page.$eval('#notice-form',f=>{const n=f.elements.namedItem('content_zh');n.value='Unsaved Owner draft';n.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('#notice-form [name=content_zh]',n=>n.value),'Unsaved Owner draft','Quiet polling preserves unsaved Owner edits');
  }
+ console.log('Notice motion PASS: '+role+' / '+language+' / actual click keeps position; hover, keyboard and real touch hold/end/cancel resume the same animation; both themes and mobile');
  fixture.notice={enabled:false};await page.setViewport({width:1440,height:1000});await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 async function runCase(browser,base,role,language){

@@ -1,4 +1,12 @@
-## Button-free jade/mint notice — 2026-10-23
+## Pointer pause without restart — 2026-10-24
+
+The prior focus styles removed the CSS animation, reset its transform and expanded the notice into full text. A real pointer click could therefore jump back to the start. Focus now keeps the original animation and layout; hover, keyboard focus and active touch only pause its play state. Native pointer capture and release/cancel cleanup prevent touch from leaving sticky hover state. No click handler, restart, full-text toggle or Pause button is added. Reduced-motion remains static and accessible original text remains available.
+
+The borderless notice now uses muted slate blue/gray surfaces in both themes while retaining the regular sidebar-green speaker. Existing browser cases exercise a nonzero animation time with a real mouse click and native CDP touch start/end/cancel, verify the same animation identity/time/position, and check resume, polling, keyboard, text safety, both theme contrast ratios and mobile layout. These are isolated fixtures, never production account interactions. Exact-SHA CI, API deployment and public read-only verification are recorded in the release PR. Keep all50 fixed QR workers, existing mounts, linked phones, money and database unchanged.
+
+Local syntax and113 non-database checks pass with0 failures;15 PostgreSQL suites are skipped because no disposable PostgreSQL server is available here. Chrome and Docker are also unavailable locally. The existing complete GitHub workflow must verify all native/PostgreSQL, actual browser/touch, QR/media and three-image checks before promotion; local skips are not production verification.
+
+## Historical button-free jade/mint notice — 2026-10-23
 
 The requested revision removes the pause/resume button entirely from both USER notices and Owner previews. Dark mode uses a quiet jade/teal surface; light mode uses a pale mint surface, with matching badges, borders and readable text. Pointer hover still stops motion; keyboard focus exposes the complete notice and leaving it resumes scrolling. Reduced-motion preferences stay static. No notice content/settings, API, credentials, database, worker or Session changes are needed.
 

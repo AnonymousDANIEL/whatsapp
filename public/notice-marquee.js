@@ -8,7 +8,7 @@
   const viewport=host.querySelector('.notice-viewport'),track=host.querySelector('.notice-track');
   if(!viewport?.clientWidth||!track)return;
   viewport.style.setProperty('--notice-width',viewport.clientWidth+'px');
-  if(!motion.matches&&document.activeElement!==viewport){
+  if(!motion.matches){
    const distance=track.firstElementChild.getBoundingClientRect().width;
    track.style.setProperty('--notice-duration',Math.max(16,distance/45)+'s');
   }
@@ -23,7 +23,15 @@
   track.append(make('span','notice-copy',content),make('span','notice-copy',content));viewport.append(track);
   const accessible=make('span','sr-only',content);accessible.id=host.id+'-text';accessible.setAttribute('role','status');accessible.setAttribute('aria-atomic','true');
   viewport.tabIndex=0;viewport.setAttribute('role','group');viewport.setAttribute('aria-label',labels.content);viewport.setAttribute('aria-describedby',accessible.id);
-  viewport.onblur=()=>measure(host);
+  const hover=e=>{if(e.pointerType==='mouse'||e.pointerType==='pen')viewport.dataset.hover='';};
+  const release=e=>{delete viewport.dataset.pressed;if(e.pointerType!=='mouse')delete viewport.dataset.hover;};
+  viewport.onpointerenter=hover;viewport.onpointermove=hover;
+  viewport.onpointerleave=()=>{delete viewport.dataset.hover;};
+  viewport.onpointerdown=e=>{
+   if(e.pointerType==='mouse'||!e.isPrimary||e.button!==0)return;
+   delete viewport.dataset.hover;viewport.dataset.pressed='';viewport.setPointerCapture(e.pointerId);
+  };
+  viewport.onpointerup=release;viewport.onpointercancel=release;viewport.onlostpointercapture=release;
   host.append(label,viewport,accessible);measure(host);
  }
  let frame;
