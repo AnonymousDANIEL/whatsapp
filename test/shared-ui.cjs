@@ -782,6 +782,7 @@ async function verifyNoticeEditor(page,fixture,language){
  const received=page.waitForResponse(r=>r.url().endsWith('/api/notice')&&r.request().method()==='PUT');
  try{
   await page.click('#notice-form button[type=submit]');await page.waitForFunction(()=>document.querySelector('#notice-form').dataset.busy==='1');
+  await page.$eval(field,n=>n.setSelectionRange(0,1));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert.equal(await page.$$eval('#notice-form input,#notice-form textarea,#notice-form button',nodes=>nodes.every(n=>n.disabled)),true);
   await page.click('#nav [data-page=shared]');await waitReady(page);
  }finally{release();fixture.noticeSaveGate=null;}
