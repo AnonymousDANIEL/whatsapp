@@ -1,16 +1,18 @@
-/* Muted slate surfaces. Interaction pauses the existing animation in place. */
-.workspace-notice.notice-marquee{display:flex;align-items:center;gap:14px;min-width:0;padding:12px 16px;margin:0 0 20px;border:0;background:#192635;color:#dce6f1;box-shadow:none}
-.notice-marquee .notice-label{display:flex;align-items:center;gap:7px;flex:none;padding:3px 8px;border-radius:999px;background:#23374a;color:#c6d5e5;font-size:13px;white-space:nowrap}
-.notice-label>svg{width:19px;height:19px;flex:none;color:#23d277}
+/* Reference palette: deep navy, soft white and emerald. */
+.workspace-notice.notice-marquee{display:flex;align-items:center;gap:14px;min-width:0;padding:12px 16px;margin:0 0 20px;border:0;background:#121e2e;color:#f0eee8;box-shadow:none}
+.notice-marquee .notice-label{display:flex;align-items:center;gap:7px;flex:none;padding:3px 8px;border-radius:999px;background:transparent;color:#42cda3;font-size:13px;white-space:nowrap}
+.notice-label>svg{width:19px;height:19px;flex:none;color:#42cda3}
+.notice-highlight{background:transparent;color:#42cda3;font-weight:700}
 .notice-viewport{flex:1;min-width:0;overflow:hidden;line-height:1.8}
 .notice-track{display:flex;width:max-content;animation:notice-scroll var(--notice-duration,30s) linear infinite}
 .notice-copy{display:block;flex:0 0 auto;min-width:var(--notice-width,200px);padding-inline-end:64px;white-space:nowrap;unicode-bidi:plaintext}
 .notice-viewport[data-hover] .notice-track,.notice-viewport[data-pressed] .notice-track,.notice-viewport:focus-visible .notice-track{animation-play-state:paused}
-.notice-viewport:focus-visible{outline:2px solid #829bb5;outline-offset:3px;border-radius:3px}
-[data-theme=light] .workspace-notice.notice-marquee{background:#edf1f6;color:#33485f}
-[data-theme=light] .notice-marquee .notice-label{background:#e9eff5;color:#445d77}
-[data-theme=light] .notice-label>svg{color:#119b58}
-[data-theme=light] .notice-viewport:focus-visible{outline-color:#647e99}
+.notice-viewport:focus-visible{outline:2px solid #42cda3;outline-offset:3px;border-radius:3px}
+.notice-format-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 18px}
+.notice-format-tools button{font-size:12px;padding:6px 10px}
+.notice-format-tools button[aria-pressed=true]{background:#164536;border-color:#42cda3;color:#c4f3e4}
+.notice-format-tools .notice-format-status{font-size:12px;color:var(--muted)}
+.notice-preview-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .panel>.notice-marquee{margin:0}
 @keyframes notice-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media(max-width:480px){.workspace-notice.notice-marquee{gap:10px;padding:10px}.notice-marquee .notice-label{font-size:12px;gap:5px;padding:3px 7px}.notice-label>svg{width:17px;height:17px}}

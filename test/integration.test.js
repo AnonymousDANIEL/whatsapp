@@ -666,6 +666,32 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/notice','GET',null,user)).data.content_en,'');
   assert.equal((await db.pool.query("SELECT count(*)::int n FROM audit WHERE action='notice.update'")).rows[0].n,3);
  });
+ await t.test('Owner notice emphasis persists without schema changes; legacy text and disabled privacy remain',async()=>{
+  const zh=' \n欢迎 😀 0.57 <script>literal</script> \n',en='Welcome back 0.57';
+  const at=zh.indexOf('0.57'),emo=zh.indexOf('😀'),price=en.indexOf('0.57');
+  const body={enabled:true,content_zh:zh,content_en:en,highlights_zh:[[at,at+4],[emo,emo+2]],highlights_en:[[price,price+4]]};
+  assert.equal((await request('/notice','PUT',body,user2)).status,403);
+  assert.equal((await request('/notice','PUT',body,{...owner,csrf:'wrong'})).status,403);
+  const made=await request('/notice','PUT',body,owner);assert.equal(made.status,200);
+  for(const session of [owner,user,user2]){
+   const value=(await request('/notice','GET',null,session)).data;
+   assert.equal(value.content_zh,zh.trim());assert.equal(value.content_en,en);
+   assert.deepEqual(value.highlights_en,[[price,price+4]]);
+   assert.deepEqual(value.highlights_zh,[[zh.trim().indexOf('😀'),zh.trim().indexOf('😀')+2],[zh.trim().indexOf('0.57'),zh.trim().indexOf('0.57')+4]]);
+  }
+  const before=(await db.pool.query('SELECT * FROM workspace_notice WHERE id=1')).rows[0];
+  assert.ok(before.content_zh.startsWith('MYWASAP_NOTICE_V1:'));
+  for(const ranges of [null,[[at,999]],[[emo+1,emo+2]],Array.from({length:129},()=>[at,at+4])])assert.equal((await request('/notice','PUT',{...body,highlights_zh:ranges},owner)).status,400);
+  assert.equal((await request('/notice','PUT',{...body,content_zh:'x'.repeat(6000),highlights_zh:[[0,1]]},owner)).status,400);
+  assert.deepEqual((await db.pool.query('SELECT * FROM workspace_notice WHERE id=1')).rows[0],before,'Invalid formats cannot partially overwrite the notice');
+  assert.equal((await request('/notice','PUT',{...body,enabled:false},owner)).status,200);
+  assert.deepEqual((await request('/notice','GET',null,user2)).data,{enabled:false,content_zh:'',content_en:'',updated_at:null});
+  assert.equal((await request('/notice','GET',null,owner)).data.highlights_en.length,1);
+  const legacy={enabled:false,content_zh:'Legacy plain text',content_en:''};
+  assert.equal((await request('/notice','PUT',legacy,owner)).status,200);
+  assert.deepEqual((await request('/notice','GET',null,owner)).data.highlights_zh,[]);
+  assert.equal((await db.pool.query('SELECT content_zh FROM workspace_notice WHERE id=1')).rows[0].content_zh,legacy.content_zh);
+ });
  await t.test('message and audit pagination are bounded at 100 rows without leaking other USER accounts',async()=>{
   await db.pool.query("INSERT INTO message_history(account_id,message_id,recipient,body,status,ack,sent_at) SELECT $1,'pagination-scope-'||n,'60123456789','Synthetic pagination record','submitted',1,timestamptz '2050-01-01'+n*interval '1 second' FROM generate_series(1,205) n",[a]);
   const first=(await request('/send-records?page=1','GET',null,user)).data,second=(await request('/send-records?page=2','GET',null,user)).data,third=(await request('/send-records?page=3','GET',null,user)).data;

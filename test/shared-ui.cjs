@@ -71,6 +71,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/notice'){
     if(req.method==='PUT'){
      if(s.role!=='owner'){res.statusCode=403;result={error:'Owner only'};}
+     else if(s.noticeSaveFailure){s.noticeSaveFailure=false;res.statusCode=503;result={error:'Synthetic notice unavailable'};}
      else{s.notice={...body,updated_at:new Date().toISOString()};result=s.notice;}
     }else result=s.notice||{enabled:false};
    }
@@ -752,9 +753,36 @@ async function verifySharedQr(page,fixture,language){
  assert.equal(fixture.requests.slice(start).some(r=>r.path==='/health'),false);
  fixture.sharedCapacityRows=null;await page.evaluate(()=>loadPage());
 }
+async function verifyNoticeEditor(page,fixture,language){
+ const key=language==='en'?'en':'zh',field='#notice-form [name=content_'+key+']',mark='[data-notice-highlight="content_'+key+'"]',clear='[data-notice-clear="content_'+key+'"]',marks='#notice-preview .notice-copy:first-child .notice-highlight';
+ const select=async text=>{await page.$eval(field,(n,text)=>{const at=n.value.indexOf(text);if(at<0)throw Error('Fixture selection missing');n.focus();n.setSelectionRange(at,at+text.length);},text);};
+ const original=await page.$eval(field,n=>n.value);
+ await select('0.57');await page.click(mark);assert.equal(await page.$$(marks).then(v=>v.length),0,'Selecting marked text toggles it off');
+ await select('0.57');await page.click(mark);assert.equal(await page.$eval(marks,n=>n.textContent),'0.57');
+ const literal=language==='en'?'<script>alert(1)</script>':'<img src=x onerror=alert(1)>';
+ await select(literal);await page.click(mark);
+ assert.deepEqual(await page.$$eval(marks,nodes=>nodes.map(n=>n.textContent)),[literal,'0.57']);
+ assert.equal(await page.$eval(field,n=>n.value),original,'Formatting does not insert markup into the editor text');
+ assert.equal(await page.$$eval('#notice-preview img,#notice-preview script',nodes=>nodes.length),0);
+ await page.click(clear);assert.equal(await page.$$(marks).then(v=>v.length),0);
+ await select('0.57');await page.click(mark);
+ await page.$eval(field,n=>{n.focus();n.setSelectionRange(0,0);});await page.type(field,'Draft ');
+ const draft=await page.$eval(field,n=>n.value);assert.ok(draft.startsWith('Draft '));assert.equal(await page.$eval(marks,n=>n.textContent),'0.57','Typing before emphasis keeps the same selected words');
+ await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval(field,n=>n.value),draft);assert.equal(await page.$eval(marks,n=>n.textContent),'0.57');
+ fixture.noticeSaveFailure=true;await page.click('#notice-form button[type=submit]');
+ await page.waitForFunction(()=>!document.querySelector('#notice-form').dataset.busy&&document.querySelector('#toast').textContent.includes('Synthetic notice unavailable'));
+ assert.equal(await page.$eval('#notice-form',n=>n.dataset.dirty),'1');assert.equal(await page.$eval(field,n=>n.value),draft);assert.equal(await page.$eval(marks,n=>n.textContent),'0.57');
+ await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval(marks,n=>n.textContent),'0.57');
+ await page.click('#notice-form button[type=submit]');await page.waitForFunction(()=>!document.querySelector('#notice-form').dataset.dirty&&!document.querySelector('#notice-form').dataset.busy);
+ const saved=fixture.requests.findLast(r=>r.path==='/notice'&&r.method==='PUT');assert.equal(saved.csrf,'fake-ui-csrf');assert.equal(saved.body['content_'+key],draft);assert.deepEqual(saved.body['highlights_'+key],[[draft.indexOf('0.57'),draft.indexOf('0.57')+4]]);
+ await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#notice-form');
+ assert.equal(await page.$eval(field,n=>n.value),draft);assert.equal(await page.$eval(marks,n=>n.textContent),'0.57','Saved emphasis survives an actual page reload');
+ await uiScreenshot(page,'notice-editor-saved','owner',language);
+ console.log('Notice editor PASS: owner / '+language+' / native selection, toggle/clear, literal HTML, edited offsets, polling, failed save/retry and real reload');
+}
 async function verifyNoticeMarquee(page,fixture,role,language){
- const start=fixture.requests.length,zh='系统更新通知 📢 <img src=x onerror=alert(1)>\n请查看使用教学。',en='Workspace update 📢 <script>alert(1)</script>\nPlease read the usage guide.';
- fixture.notice={enabled:true,content_zh:zh,content_en:en,updated_at:new Date().toISOString()};
+ const start=fixture.requests.length,zh='系统更新通知 📢 <img src=x onerror=alert(1)>\n请查看使用教学。 0.57',en='Workspace update 📢 <script>alert(1)</script>\nPlease read the usage guide. 0.57';
+ fixture.notice={enabled:true,content_zh:zh,content_en:en,highlights_zh:[[zh.indexOf('0.57'),zh.indexOf('0.57')+4]],highlights_en:[[en.indexOf('0.57'),en.indexOf('0.57')+4]],updated_at:new Date().toISOString()};
  let host='#workspace-notice';
  if(role==='owner'){
   await page.click('#nav [data-page=notices]');await page.waitForSelector('#notice-preview .notice-track');host='#notice-preview';
@@ -771,6 +799,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  assert.equal(await page.$eval(host+' [role=status]',n=>n.textContent),expected,'Assistive text contains the original notice once');
  assert.equal(await page.$$eval(host+' img,'+host+' script',n=>n.length),0,'Notice text is never interpreted as HTML');
  assert.equal(await page.$eval(host+' .notice-track',n=>n.getAttribute('aria-hidden')),'true');
+ assert.equal(await page.$eval(host+' .notice-copy:first-child .notice-highlight',n=>n.textContent),'0.57','Locale-specific saved ranges emphasize only the selected words');
  await page.mouse.move(0,0);
  const moving=await page.$eval(host+' .notice-track',n=>getComputedStyle(n).transform);
  await page.waitForFunction((selector,before)=>{const n=document.querySelector(selector);return getComputedStyle(n).animationName==='notice-scroll'&&getComputedStyle(n).transform!==before;},{},host+' .notice-track',moving);
@@ -821,9 +850,9 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  }finally{await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await touch.detach();}
  for(const theme of ['dark','light']){
   if(await page.$eval('html',n=>n.dataset.theme)!==theme)await page.click('#theme-toggle');
-  const colors=await page.$eval(host,n=>({background:getComputedStyle(n).backgroundColor,text:getComputedStyle(n.querySelector('.notice-copy')).color,label:getComputedStyle(n.querySelector('.notice-label')).color}));
+  const colors=await page.$eval(host,n=>({background:getComputedStyle(n).backgroundColor,text:getComputedStyle(n.querySelector('.notice-copy')).color,label:getComputedStyle(n.querySelector('.notice-label')).color,highlight:getComputedStyle(n.querySelector('.notice-highlight')).color}));
   const lum=value=>value.match(/[\d.]+/g).slice(0,3).map(Number).map(c=>{c/=255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
-  for(const color of [colors.text,colors.label]){const a=lum(color),b=lum(colors.background);assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,'Notice stays readable in '+theme+' mode');}
+  for(const color of [colors.text,colors.label,colors.highlight]){const a=lum(color),b=lum(colors.background);assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,'Notice and emphasis stay readable in '+theme+' mode');}
   await uiScreenshot(page,'notice-'+theme,role,language);
  }
  if(await page.$eval('html',n=>n.dataset.theme)!=='dark')await page.click('#theme-toggle');
@@ -839,6 +868,9 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  assert.equal(await page.$eval(host+' .notice-copy',n=>getComputedStyle(n).whiteSpace),'pre-wrap');
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'no-preference'}]);
  if(role==='user'){
+  fixture.notice={enabled:true,content_zh:'备用中文 0.57',content_en:'',highlights_zh:[[5,9]],highlights_en:[],updated_at:new Date().toISOString()};
+  await page.waitForFunction(()=>document.querySelector('#workspace-notice .notice-copy')?.textContent==='备用中文 0.57');
+  assert.equal(await page.$eval(host+' .notice-highlight',n=>n.textContent),'0.57','Empty English falls back to both Chinese text and Chinese emphasis');
   fixture.notice={enabled:true,content_zh:'长公告 '+('通知😀 '.repeat(1100)),content_en:'',updated_at:new Date().toISOString()};
   await page.waitForFunction(text=>document.querySelector('#workspace-notice .notice-copy')?.textContent===text,{},fixture.notice.content_zh);
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'English falls back to the existing Chinese notice');
@@ -850,6 +882,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   await page.waitForFunction(()=>document.querySelector('#workspace-notice').hidden&&document.querySelector('#workspace-notice').childElementCount===0);
   assert.equal(fixture.requests.slice(start).some(r=>r.method!=='GET'),false,'Viewing, hovering, focusing and resizing notices never write to the server');
  }else{
+  await verifyNoticeEditor(page,fixture,language);
   await page.$eval('#notice-form',f=>{const n=f.elements.namedItem('content_zh');n.value='Unsaved Owner draft';n.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('#notice-form [name=content_zh]',n=>n.value),'Unsaved Owner draft','Quiet polling preserves unsaved Owner edits');
  }

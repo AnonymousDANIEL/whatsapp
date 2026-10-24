@@ -16,11 +16,13 @@
  function clear(host){
   host.replaceChildren();host.classList.remove('notice-marquee');host.removeAttribute('aria-label');
  }
- function render(host,content,labels){
+ function render(host,content,labels,highlights=[]){
   clear(host);host.classList.add('notice-marquee');host.setAttribute('aria-label',labels.title);
   const label=make('strong','notice-label');label.innerHTML=speaker;label.append(make('span','',labels.title));label.title=labels.updated||labels.title;
   const viewport=make('div','notice-viewport'),track=make('div','notice-track');track.setAttribute('aria-hidden','true');
-  track.append(make('span','notice-copy',content),make('span','notice-copy',content));viewport.append(track);
+  let parts;try{parts=window.NoticeFormat.parts(content,highlights);}catch{parts=[{text:content,highlight:false}];}
+  const copy=()=>{const node=make('span','notice-copy');for(const part of parts)node.append(make(part.highlight?'mark':'span',part.highlight?'notice-highlight':'',part.text));return node;};
+  track.append(copy(),copy());viewport.append(track);
   const accessible=make('span','sr-only',content);accessible.id=host.id+'-text';accessible.setAttribute('role','status');accessible.setAttribute('aria-atomic','true');
   viewport.tabIndex=0;viewport.setAttribute('role','group');viewport.setAttribute('aria-label',labels.content);viewport.setAttribute('aria-describedby',accessible.id);
   const hover=e=>{if(e.pointerType==='mouse'||e.pointerType==='pen')viewport.dataset.hover='';};

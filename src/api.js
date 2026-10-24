@@ -26,6 +26,7 @@ const { createWorkerConnection } = require('./connection');
 const security = require('./http-security');
 const requestBody = require('./request-body');
 const loginHistory = require('./login-history');
+const noticeFormat = require('../public/notice-format');
 
 const SESSION_HOURS = 168;
 const {routes,sharedGroups}=require('./shared-routing').routingConfiguration(process.env);
@@ -199,19 +200,27 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   sharedAccounts.routes(app,route,poolRoutes,workerCommand);
   ownerHistory.routes(app,route);
   shared.routes(app,route,uuid,poolRoutes,workerCommand);
+  const noticeView=row=>{
+    const zh=noticeFormat.decode(row.content_zh),en=noticeFormat.decode(row.content_en);
+    return {...row,content_zh:zh.text,content_en:en.text,highlights_zh:zh.highlights,highlights_en:en.highlights};
+  };
   app.get('/api/notice',route(async(req,res)=>{
     const notice=(await pool.query('SELECT enabled,content_zh,content_en,updated_at FROM workspace_notice WHERE id=1')).rows[0];
-    res.json(req.user.role==='owner'||notice.enabled?notice:{enabled:false,content_zh:'',content_en:'',updated_at:null});
+    res.json(req.user.role==='owner'||notice.enabled?noticeView(notice):{enabled:false,content_zh:'',content_en:'',updated_at:null});
   }));
   app.put('/api/notice',route(async(req,res)=>{
     assert(req.user.role==='owner','只有 Owner 可以管理公告',403);
     const b=req.body;
     assert(typeof b.enabled==='boolean'&&typeof b.content_zh==='string'&&typeof b.content_en==='string'&&b.content_zh.length<=6000&&b.content_en.length<=6000,'公告内容无效');
-    const zh=b.content_zh.trim(),en=b.content_en.trim();assert(!b.enabled||zh||en,'请填写公告内容');
+    assert(!b.enabled||b.content_zh.trim()||b.content_en.trim(),'请填写公告内容');
+    let zh,en;try{
+      zh=noticeFormat.encode(b.content_zh,b.highlights_zh===undefined?[]:b.highlights_zh);
+      en=noticeFormat.encode(b.content_en,b.highlights_en===undefined?[]:b.highlights_en);
+    }catch{assert(false,'公告内容或高亮无效，请减少内容或重新选择重点');}
     const notice=await transaction(async db=>{
       const row=(await db.query('UPDATE workspace_notice SET enabled=$1,content_zh=$2,content_en=$3,updated_at=now() WHERE id=1 RETURNING enabled,content_zh,content_en,updated_at',[b.enabled,zh,en])).rows[0];
       await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'notice.update',$2)",[req.user.id,{enabled:b.enabled}]);return row;
-    });res.json(notice);
+    });res.json(noticeView(notice));
   }));
   app.get('/api/accounts', route(async (req, res) => res.json(await visibleAccounts(req.user))));
   app.post('/api/accounts', route(async (req, res) => {
