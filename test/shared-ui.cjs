@@ -72,7 +72,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='PUT'){
      if(s.role!=='owner'){res.statusCode=403;result={error:'Owner only'};}
      else if(s.noticeSaveFailure){s.noticeSaveFailure=false;res.statusCode=503;result={error:'Synthetic notice unavailable'};}
-     else{s.notice={...body,updated_at:new Date().toISOString()};result=s.notice;}
+     else{s.notice={...body,updated_at:new Date().toISOString()};result=s.notice;if(s.noticeSaveGate)await s.noticeSaveGate;}
     }else result=s.notice||{enabled:false};
    }
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
@@ -778,7 +778,17 @@ async function verifyNoticeEditor(page,fixture,language){
  await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('#notice-form');
  assert.equal(await page.$eval(field,n=>n.value),draft);assert.equal(await page.$eval(marks,n=>n.textContent),'0.57','Saved emphasis survives an actual page reload');
  await uiScreenshot(page,'notice-editor-saved','owner',language);
- console.log('Notice editor PASS: owner / '+language+' / native selection, toggle/clear, literal HTML, edited offsets, polling, failed save/retry and real reload');
+ let release;fixture.noticeSaveGate=new Promise(resolve=>{release=resolve;});
+ const received=page.waitForResponse(r=>r.url().endsWith('/api/notice')&&r.request().method()==='PUT');
+ try{
+  await page.click('#notice-form button[type=submit]');await page.waitForFunction(()=>document.querySelector('#notice-form').dataset.busy==='1');
+  assert.equal(await page.$$eval('#notice-form input,#notice-form textarea,#notice-form button',nodes=>nodes.every(n=>n.disabled)),true);
+  await page.click('#nav [data-page=shared]');await waitReady(page);
+ }finally{release();fixture.noticeSaveGate=null;}
+ await (await received).text();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ assert.equal(await page.$('#notice-form'),null,'A late save response cannot replace the newly selected page');
+ await page.click('#nav [data-page=notices]');await page.waitForSelector('#notice-form');
+ console.log('Notice editor PASS: owner / '+language+' / native selection, toggle/clear, literal HTML, edited offsets, polling, failed save/retry, real reload and late-response navigation guard');
 }
 async function verifyNoticeMarquee(page,fixture,role,language){
  const start=fixture.requests.length,zh='系统更新通知 📢 <img src=x onerror=alert(1)>\n请查看使用教学。 0.57',en='Workspace update 📢 <script>alert(1)</script>\nPlease read the usage guide. 0.57';
