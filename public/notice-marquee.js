@@ -9,7 +9,7 @@
   if(!viewport?.clientWidth||!track)return;
   viewport.style.setProperty('--notice-width',viewport.clientWidth+'px');
   if(!motion.matches){
-   const distance=track.firstElementChild.getBoundingClientRect().width;
+   const distance=viewport.clientWidth+track.firstElementChild.getBoundingClientRect().width;
    track.style.setProperty('--notice-duration',Math.max(16,distance/45)+'s');
   }
  }
@@ -22,7 +22,7 @@
   const viewport=make('div','notice-viewport'),track=make('div','notice-track');track.setAttribute('aria-hidden','true');
   let parts;try{parts=window.NoticeFormat.parts(content,highlights);}catch{parts=[{text:content,highlight:false}];}
   const copy=()=>{const node=make('span','notice-copy');for(const part of parts)node.append(make(part.highlight?'mark':'span',part.highlight?'notice-highlight':'',part.text));return node;};
-  track.append(copy(),copy());viewport.append(track);
+  track.append(copy());viewport.append(track);
   const accessible=make('span','sr-only',content);accessible.id=host.id+'-text';accessible.setAttribute('role','status');accessible.setAttribute('aria-atomic','true');
   viewport.tabIndex=0;viewport.setAttribute('role','group');viewport.setAttribute('aria-label',labels.content);viewport.setAttribute('aria-describedby',accessible.id);
   const hover=e=>{if(e.pointerType==='mouse'||e.pointerType==='pen')viewport.dataset.hover='';};

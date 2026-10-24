@@ -791,6 +791,27 @@ async function verifyNoticeEditor(page,fixture,language){
  await page.click('#nav [data-page=notices]');await page.waitForSelector('#notice-form');
  console.log('Notice editor PASS: owner / '+language+' / native selection, toggle/clear, literal HTML, edited offsets, polling, failed save/retry, real reload and late-response navigation guard');
 }
+async function verifyNoticeSequence(page,host){
+ await page.waitForFunction(selector=>{const v=document.querySelector(selector+' .notice-viewport');return Math.abs(parseFloat(v.style.getPropertyValue('--notice-width'))-v.clientWidth)<1;},{},host);
+ await page.hover(host+' .notice-viewport');
+ const cycle=await page.$eval(host,async host=>{
+  const viewport=host.querySelector('.notice-viewport'),track=host.querySelector('.notice-track'),copy=track.firstElementChild,animation=track.getAnimations()[0];
+  await animation.ready;
+  const originalTime=animation.currentTime,range=document.createRange();range.selectNodeContents(copy);
+  const duration=Number(animation.effect.getTiming().duration),bounds=viewport.getBoundingClientRect(),contentWidth=range.getBoundingClientRect().width,travel=viewport.clientWidth+copy.getBoundingClientRect().width,gap=parseFloat(getComputedStyle(copy).paddingInlineEnd);
+  const at=time=>{animation.currentTime=time;const r=range.getBoundingClientRect();return {left:r.left,right:r.right};};
+  try{return {copies:track.children.length,state:animation.playState,left:bounds.left,right:bounds.right,gap,duration,start:at(0),tail:at(duration*(viewport.clientWidth+contentWidth-8)/travel),blank:at(duration*(travel-gap/2)/travel),next:at(duration+duration*8/travel)};}
+  finally{animation.currentTime=originalTime;range.detach();}
+ });
+ await page.mouse.move(0,0);
+ assert.equal(cycle.copies,1,'Render the notice once, without a following visual duplicate');
+ assert.equal(cycle.state,'paused','Sample the real animation while pointer hover holds it in place');
+ assert.ok(cycle.gap>=48&&cycle.duration>0,'Each complete pass retains a readable blank interval');
+ assert.ok(cycle.start.left>=cycle.right-1,'A pass starts outside the right edge');
+ assert.ok(cycle.tail.right>cycle.left+4&&cycle.tail.right<cycle.left+12,'The final words remain visible until the pass actually leaves');
+ assert.ok(cycle.blank.right<cycle.left-1,'The entire notice is outside the viewport before the next pass');
+ assert.ok(cycle.next.left>cycle.right-12&&cycle.next.left<cycle.right-4,'Only after the blank interval does the next pass enter from the right');
+}
 async function verifyNoticeMarquee(page,fixture,role,language){
  const start=fixture.requests.length,zh='系统更新通知 📢 <img src=x onerror=alert(1)>\n请查看使用教学。 0.57',en='Workspace update 📢 <script>alert(1)</script>\nPlease read the usage guide. 0.57';
  fixture.notice={enabled:true,content_zh:zh,content_en:en,highlights_zh:[[zh.indexOf('0.57'),zh.indexOf('0.57')+4]],highlights_en:[[en.indexOf('0.57'),en.indexOf('0.57')+4]],updated_at:new Date().toISOString()};
@@ -818,6 +839,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  await page.evaluate(()=>loadPage(true));
  assert.equal(await page.evaluate(selector=>window.fixtureNoticeTrack===document.querySelector(selector),host+' .notice-track'),true,'Unchanged background polling preserves the scrolling element and reading state');
  assert.equal(await page.$(host+' button'),null,'The pause/resume control is removed from USER notices and Owner previews');
+ await verifyNoticeSequence(page,host);
  const track=host+' .notice-track',viewport=host+' .notice-viewport';
  const snapshot=()=>page.$eval(track,async n=>{
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -873,6 +895,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   await page.setViewport({width,height:1000});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Scrolling text stays inside the mobile/desktop page');
   assert.ok(await page.$eval(host+' .notice-viewport',n=>n.clientWidth>30));
+  await verifyNoticeSequence(page,host);
   await uiScreenshot(page,'notice-'+width,role,language);
  }
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
@@ -884,10 +907,11 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   fixture.notice={enabled:true,content_zh:'备用中文 0.57',content_en:'',highlights_zh:[[5,9]],highlights_en:[],updated_at:new Date().toISOString()};
   await page.waitForFunction(()=>document.querySelector('#workspace-notice .notice-copy')?.textContent==='备用中文 0.57');
   assert.equal(await page.$eval(host+' .notice-highlight',n=>n.textContent),'0.57','Empty English falls back to both Chinese text and Chinese emphasis');
+  await verifyNoticeSequence(page,host);
   fixture.notice={enabled:true,content_zh:'长公告 '+('通知😀 '.repeat(1100)),content_en:'',updated_at:new Date().toISOString()};
   await page.waitForFunction(text=>document.querySelector('#workspace-notice .notice-copy')?.textContent===text,{},fixture.notice.content_zh);
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'English falls back to the existing Chinese notice');
-  await page.setViewport({width:320,height:900});await page.focus(host+' .notice-viewport');
+  await page.setViewport({width:320,height:900});await verifyNoticeSequence(page,host);await page.focus(host+' .notice-viewport');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Long notices stay clipped to the viewport without page overflow');
   await page.click('#nav [data-page=overview]');await page.waitForFunction(()=>!loading&&document.querySelector('#page-title').textContent!=='Shared WhatsApp');
   assert.equal(await page.$eval(host+' .notice-copy',n=>n.textContent),fixture.notice.content_zh,'Notice remains above other USER pages');
@@ -899,7 +923,7 @@ async function verifyNoticeMarquee(page,fixture,role,language){
   await page.$eval('#notice-form',f=>{const n=f.elements.namedItem('content_zh');n.value='Unsaved Owner draft';n.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.evaluate(()=>loadPage(true));assert.equal(await page.$eval('#notice-form [name=content_zh]',n=>n.value),'Unsaved Owner draft','Quiet polling preserves unsaved Owner edits');
  }
- console.log('Notice motion PASS: '+role+' / '+language+' / actual click keeps position; hover, keyboard and real touch hold/end/cancel resume the same animation; both themes and mobile');
+ console.log('Notice motion PASS: '+role+' / '+language+' / one complete pass then a blank interval, no duplicate; actual click keeps position; hover, keyboard and real touch hold/end/cancel resume the same animation; both themes and mobile');
  fixture.notice={enabled:false};await page.setViewport({width:1440,height:1000});await page.click('#nav [data-page=shared]');await waitReady(page);
 }
 async function runCase(browser,base,role,language){
