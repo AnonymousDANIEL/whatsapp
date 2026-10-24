@@ -837,11 +837,13 @@ async function verifyNoticeMarquee(page,fixture,role,language){
  assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Quiet polling also preserves the paused animation');
  await page.mouse.move(0,0);
  await page.waitForFunction((selector,time)=>document.querySelector(selector).getAnimations()[0]?.currentTime>time+20,{},track,held.time);
- await page.keyboard.press('Tab');await page.focus(viewport);
+ await page.$eval(viewport,n=>{const nodes=[...document.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(e=>e.tabIndex>=0&&!e.disabled&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&!e.closest('[inert]'));const at=nodes.indexOf(n);if(at<1)throw Error('No preceding keyboard control');nodes[at-1].focus({preventScroll:true});});
+ await page.keyboard.press('Tab');
+ await page.waitForFunction(selector=>document.activeElement===document.querySelector(selector)&&document.activeElement.matches(':focus-visible'),{},viewport);
  const keyboardHeld=await snapshot();assert.equal(keyboardHeld.state,'paused');assert.equal(keyboardHeld.name,'notice-scroll');assert.equal(keyboardHeld.whiteSpace,'nowrap');
  assert.equal(await page.$eval(track,n=>n.getAnimations()[0]===window.fixtureNoticeAnimation),true,'Keyboard focus pauses in place without restarting');
  assert.ok(Math.abs((await snapshot()).time-keyboardHeld.time)<1);
- await page.keyboard.press('Tab');
+ await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
  await page.waitForFunction((selector,time)=>document.querySelector(selector).getAnimations()[0]?.currentTime>time+20,{},track,keyboardHeld.time);
  const touch=await page.createCDPSession();
  try{
