@@ -52,7 +52,8 @@ body .clock-badge>svg{color:var(--green)}
 body .language-control{background:transparent;border-color:var(--line)}
 body .language-control select,[data-theme=light] .language-control select{background:transparent;color:var(--text)}
 body .language-control option{background:var(--panel);color:var(--text)}
-.login-layout{box-shadow:0 12px 40px #02081212}
+.login{grid-template-columns:minmax(0,1fr)}
+.login-layout{min-width:0;box-shadow:0 12px 40px #02081212}
 .login-brand .login-notice{flex:none;width:100%;margin:20px 0 0;min-width:0;text-align:left}
 .login-notice .notice-content{min-width:0}
 body .cards.balance-only.billing-user-summary{max-width:none;grid-template-columns:1.2fr 1fr 1fr}
