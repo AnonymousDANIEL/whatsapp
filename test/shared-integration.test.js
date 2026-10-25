@@ -238,5 +238,47 @@ await t.test('Personal numbers never enter shared dispatch, and shared pages omi
    assert.equal((await db.pool.query('SELECT count(*)::int n FROM accounts WHERE id=ANY($1::uuid[]) AND shared_checked_at IS NOT NULL',[seeds.map(s=>s.id)])).rows[0].n,0);
   }finally{await db.pool.query('DELETE FROM accounts WHERE id=ANY($1::uuid[])',[[...seeds.map(s=>s.id),...(created?[created]:[])]]);}
  });
+ await t.test('new USERs without account grants share the Owner pool, charge separately and retain private results',async()=>{
+  await quiet();await request('/shared/settings','PUT',pricing,owner);
+  await db.pool.query('UPDATE accounts SET enabled=false WHERE shared_pool AND id<>$1',[a1]);
+  await db.pool.query("UPDATE accounts SET enabled=true,status='ready',shared_state='connected',shared_checked_at=now(),next_send_at=now() WHERE id=$1",[a1]);
+  await db.pool.query('UPDATE worker_health SET heartbeat_at=now()');
+  const ownerBalance=(await request('/billing','GET',null,owner)).data.user.credit_units,actors=[];
+  for(const username of ['pool_user_a','pool_user_b']){
+   const created=await request('/users','POST',{username,password:'shared-pool-disposable-password'},owner);assert.equal(created.status,201);
+   const actor={id:created.data.id,session:await login(username,'shared-pool-disposable-password')};actors.push(actor);
+   await credit(actor.id,'10');
+   assert.equal((await db.pool.query('SELECT count(*)::int n FROM account_grants WHERE user_id=$1',[actor.id])).rows[0].n,0);
+   assert.deepEqual((await request('/accounts','GET',null,actor.session)).data,[]);
+   const status=(await request('/shared/status?layout=2','GET',null,actor.session)).data;
+   assert.equal(status.enabled,true);assert.equal(status.configured,true);assert.deepEqual(status.summary,{available:1});
+   for(const key of ['settings','groups','workers','balance_units'])assert.equal(status[key],undefined);
+  }
+  const lease=await db.pool.query('INSERT INTO control_leases(account_id,session_hash,expires_at) SELECT $1,token_hash,now()+interval \'1 minute\' FROM sessions WHERE user_id=$2 LIMIT 1 RETURNING account_id',[a1,(await db.pool.query("SELECT id FROM users WHERE role='owner'")).rows[0].id]);assert.equal(lease.rowCount,1);
+  try{
+   assert.deepEqual((await request('/shared/status?layout=2','GET',null,actors[0].session)).data.summary,{available:0});
+   const rejectedId=randomUUID();assert.equal((await request('/shared/send','POST',{...template,title:undefined,request_id:rejectedId},actors[0].session)).status,503);
+   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE shared_request_id=$1',[rejectedId])).rowCount,0);
+  }finally{await db.pool.query('DELETE FROM control_leases WHERE account_id=$1',[a1]);}
+  for(const actor of actors){
+   const body={...template,title:undefined,request_id:randomUUID()},created=await request('/shared/send','POST',body,actor.session);assert.equal(created.status,201,JSON.stringify(created));actor.task=created.data.id;
+   const campaign=(await db.pool.query('SELECT * FROM campaigns WHERE id=$1',[actor.task])).rows[0];
+   assert.equal(campaign.account_id,a1);assert.equal(campaign.created_by,actor.id);assert.equal(campaign.shared_pool,true);
+   await db.pool.query('UPDATE accounts SET next_send_at=now() WHERE id=$1',[a1]);const entry=fakeEntry(a1);
+   await worker.dispatch({id:a1},entry);assert.equal(entry.count(),1);
+   assert.equal((await db.pool.query('SELECT status FROM recipients WHERE campaign_id=$1',[actor.task])).rows[0].status,'submitted');
+   assert.equal(Number((await request('/billing','GET',null,actor.session)).data.user.credit_units),100000-12500);
+   assert.equal((await request('/shared/send','POST',body,actor.session)).data.id,actor.task);assert.equal(entry.count(),1);
+  }
+  for(const actor of actors){
+   const other=actors.find(a=>a!==actor);
+   assert.deepEqual((await request('/shared/tasks','GET',null,actor.session)).data.rows.map(c=>c.id),[actor.task]);
+   assert.deepEqual((await request('/shared/records','GET',null,actor.session)).data.rows.map(r=>r.campaign_id),[actor.task]);
+   assert.equal((await request('/campaigns/'+other.task+'/results','GET',null,actor.session)).status,403);
+   assert.equal((await db.pool.query('SELECT count(*)::int n FROM account_grants WHERE user_id=$1',[actor.id])).rows[0].n,0);
+  }
+  assert.equal((await request('/billing','GET',null,owner)).data.user.credit_units,ownerBalance);
+  assert.equal((await request('/shared/tasks','GET',null,owner)).data.rows.filter(c=>actors.some(a=>a.task===c.id)).length,2);
+ });
 });
 

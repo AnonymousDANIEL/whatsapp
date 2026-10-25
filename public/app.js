@@ -195,7 +195,7 @@ async function loadPage(quiet=false){
   if(data.billing)billingData=data.billing;
   if(requested==='messages')updateHistorySync();
   if(quiet&&requested==='notices'&&$('#notice-form')?.dataset.dirty)return;
-  if(quiet&&requested==='shared'&&($('#shared-send-form')?.dataset.dirty||document.activeElement?.matches('#content input,#content textarea,#content select'))){syncSharedPhotoPolicy(data.sharedStatus);return;}
+  if(quiet&&requested==='shared'&&($('#shared-send-form')?.dataset.dirty||document.activeElement?.matches('#content input,#content textarea,#content select'))){syncSharedSendPolicy(data.sharedStatus);return;}
   const signature=visiblePageSignature(data);if(quiet&&lastRenderedPage===requested&&signature===lastRenderSignature)return;
   const scrollX=window.scrollX,scrollY=window.scrollY,tableScroll=[...document.querySelectorAll('#content .table-wrap')].map(n=>n.scrollLeft);
   if(['banks','bank-deposits','bank-transactions'].includes(requested))renderBankPage(requested,data);

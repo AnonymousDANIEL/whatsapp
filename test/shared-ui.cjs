@@ -88,7 +88,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/billing/automatic-refunds')result={rows:[{id:'900',user_id:'ui-owner',username:'Synthetic <img src=x onerror=alert(1)>',recipient_id:'11',amount_units:'1061',reason:'AUTO_REFUND_UNCONFIRMED',service:'personal',message_status:'unknown',created_at:'2026-10-20T02:54:43Z'}],next_cursor:url.searchParams.has('before')?null:'800'};
    else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},rates:{personal_units:6818,shared_units:s.rateUnconfigured?null:(s.sharedRate??12500),shared_enabled:s.enabled},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
-    result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',pacing:{interval_ms:10000,batch_size:1},summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
+    result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:!s.rateUnconfigured,balance_units:'10000000',pacing:{interval_ms:10000,batch_size:1},summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:(s.sharedCapacityRows||capacityRows(s)).map(w=>w.worker_group),workers:s.sharedCapacityRows||capacityRows(s)});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:sharedAccountId,label:s.sharedLabel||'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:s.sharedPhone||'60123456789',worker_group:'fixture-group',enabled:s.sharedEnabled!==false,status:s.sharedStatus||'ready',last_error:s.sharedStatus==='scan_required'?'QR_SCAN_IDLE':null,shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:s.sharedEnabled!==false&&(s.sharedStatus||'ready')==='ready'}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
@@ -389,6 +389,43 @@ async function verifySenderGroups(page,fixture,kind,language){
  for(const width of [390,1440]){await page.setViewport({width,height:width===390?844:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
  assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes);
  console.log('Owner per-ID '+kind+' PASS: '+language+' / collapsed lazy groups, independent pages, partial failure, saved state, read-only and mobile');
+}
+async function verifySharedSendRecovery(page,fixture,role,language){
+ const available=fixture.available,writes=fixture.sends.length;
+ fixture.available=0;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),true);
+ await page.evaluate(()=>{
+  const f=document.querySelector('#shared-send-form');window.recoveryDraftForm=f;
+  f.elements.namedItem('body').value='Retained recovery draft';
+  f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('opt_in').checked=true;
+  f.elements.namedItem('body').dispatchEvent(new Event('input',{bubbles:true}));
+  f.dataset.requestId='66666666-6666-4666-8666-666666666666';
+  f.elements.namedItem('body').focus();f.elements.namedItem('body').setSelectionRange(3,9);
+ });
+ fixture.available=1;await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),false,'A recovered shared phone enables Send while the draft stays focused');
+ const snapshot=()=>page.evaluate(()=>{
+  const f=document.querySelector('#shared-send-form'),body=f.elements.namedItem('body');
+  return {same:f===window.recoveryDraftForm,body:body.value,recipients:f.elements.namedItem('recipients').value,optIn:f.elements.namedItem('opt_in').checked,requestId:f.dataset.requestId,focused:document.activeElement===body,selection:[body.selectionStart,body.selectionEnd]};
+ });
+ const expected={same:true,body:'Retained recovery draft',recipients:'+60123456789',optIn:true,requestId:'66666666-6666-4666-8666-666666666666',focused:true,selection:[3,9]};
+ assert.deepEqual(await snapshot(),expected);
+ fixture.available=0;await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),true,'Loss of the eligible shared phone also updates the focused form');
+ await page.$eval('#shared-send-form',f=>f.requestSubmit());
+ assert.equal(fixture.sends.length,writes,'A programmatic submit cannot bypass unavailable shared status');assert.deepEqual(await snapshot(),expected);
+ fixture.available=1;fixture.rateUnconfigured=true;await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),role!=='owner','USERs still require a configured rate');
+ fixture.rateUnconfigured=false;await page.evaluate(()=>loadPage(true));
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),false);
+ await page.evaluate(()=>{
+  const f=document.querySelector('#shared-send-form');f.dataset.busy='1';
+  syncSharedSendPolicy({enabled:true,configured:true,images_enabled:true,summary:{available:1}});
+ });
+ assert.equal(await page.$eval('#shared-send-form button[type=submit]',n=>n.disabled),true,'A live status update never unlocks an in-flight send');
+ await page.$eval('#shared-send-form',f=>{delete f.dataset.busy;f.reset();delete f.dataset.dirty;delete f.dataset.requestId;document.activeElement.blur();});
+ fixture.available=available;await page.evaluate(()=>loadPage());
+ console.log('Shared send recovery PASS: '+role+' / '+language+' / 0→1→0 availability, live pricing, focused draft/caret/consent/retry identity retained, no unauthorized submit or duplicate');
 }
 async function verifySharedPhotos(page,fixture,role,language){
  assert.equal(await page.$('#shared-send-form input[name=title]'),null);
@@ -1105,6 +1142,7 @@ async function runCase(browser,base,role,language){
  if(role==='owner')await verifySharedAccountActions(page,fixture,language);
  await verifyPersonalPages(page,fixture,role,language);
  await verifyPersonalNewTask(page,fixture,role,language);
+ await verifySharedSendRecovery(page,fixture,role,language);
  await verifySharedPhotos(page,fixture,role,language);
  await verifySharedAvailability(page,fixture,role,language);
  await page.evaluate(()=>{

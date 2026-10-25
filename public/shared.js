@@ -41,16 +41,24 @@ function bindSharedAvailability(){
  const button=$('#shared-availability');if(!button)return;
  button.onclick=async()=>{button.disabled=true;try{await api('/shared/availability',{method:'PATCH',body:JSON.stringify({enabled:button.getAttribute('aria-pressed')!=='true'})});await loadPage();toast(T('共享服务开关已保存','Shared availability saved'));}catch(e){toast(e.message,true);}finally{button.disabled=false;}};
 }
+function sharedSendAllowed(data){return data?.enabled===true&&(me.role==='owner'||data.configured===true)&&Number(data.summary?.available)>0;}
+function syncSharedSendPolicy(data){
+ syncSharedPhotoPolicy(data);
+ const form=$('#shared-send-form');if(!form)return;
+ form.dataset.sendAllowed=sharedSendAllowed(data)?'1':'0';
+ form.querySelector('button[type=submit]').disabled=Boolean(form.dataset.busy)||form.dataset.sendAllowed!=='1';
+}
 function sharedSendMarkup(data){
- const allowed=data.enabled&&(me.role==='owner'||data.configured)&&data.summary.available>0;
+ const allowed=sharedSendAllowed(data);
  return `<section class="panel"><h2>${T('共享发送','Shared sending')}</h2>${ownerHint('系统只选择 Owner 独立新增并连接的共享账号，普通 WhatsApp 账号不会加入共享派发。确认成功后结算，失败或号码无效退回；未确认费用自动退回，等待回执和结果未确认的消息不会重复发送。','The system selects only separate shared accounts added and linked by the Owner. Personal WhatsApp accounts are excluded. Confirmed sends are charged; failures and invalid numbers are refunded. Unconfirmed credit is refunded automatically. Messages awaiting receipts or with unconfirmed results are not resent.','muted','p')}${!data.enabled?`<div class="note">${me.role==='owner'?T('共享服务暂未开启','Shared service is currently closed'):'Coming soon'}</div>`:!data.configured&&me.role!=='owner'?`<div class="note">${T('共享价格尚未设置','Shared pricing is not set yet')}</div>`:!data.summary.available?`${ownerHint('暂时没有可用的共享账号','No shared accounts are available yet')}`:''}<form id="shared-send-form"><div class="form-grid"><label class="full">${T('消息内容','Message')}<textarea name="body" maxlength="4000" rows="4"></textarea></label><label class="full">${T('收件号码（每行一个）','Recipient numbers (one per line)')}<textarea name="recipients" required maxlength="500000" rows="5"></textarea></label>${me.role==='owner'||data.images_enabled===true?sharedPhotoField():''}<label class="full check-row"><input name="opt_in" type="checkbox" required>${T('这些联系人已同意接收此消息','These contacts agreed to receive this message')}</label></div><div class="form-actions"><button type="submit" class="primary" ${allowed?'':'disabled'}>${T('立刻发送','Send now')}</button></div></form></section>`;
 }
 function bindSharedSend(){
  const form=$('#shared-send-form');if(!form)return;
+ form.dataset.sendAllowed=form.querySelector('button[type=submit]').disabled?'0':'1';
  const actor=me.id;bindSharedPhotoPreview();
  form.oninput=form.onchange=()=>{form.dataset.dirty='1';delete form.dataset.requestId;};
  form.onsubmit=async e=>{
-  e.preventDefault();if(form.dataset.busy)return;form.dataset.busy='1';const button=form.querySelector('button[type=submit]');button.disabled=true;
+  e.preventDefault();if(form.dataset.busy||form.dataset.sendAllowed!=='1')return;form.dataset.busy='1';const button=form.querySelector('button[type=submit]');button.disabled=true;
   try{
    form.dataset.requestId||=crypto.randomUUID();const requestId=form.dataset.requestId,body=form.elements.namedItem('body').value,recipients=form.elements.namedItem('recipients').value,opt_in_confirmed=form.elements.namedItem('opt_in').checked,file=form.elements.namedItem('photo')?.files[0];let media=null;
    if(file){if(file.size>5*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error(T('请上传 JPEG / PNG / WebP 照片，最大 5 MB','Choose a JPEG / PNG / WebP photo up to 5 MB'));media={data:(await readPhoto(file)).split(',')[1],mimetype:file.type};}
@@ -59,7 +67,7 @@ function bindSharedSend(){
    if(!form.isConnected||me?.id!==actor||form.dataset.requestId!==requestId||me.role!=='owner'&&!workspaceFeatures.shared_enabled)return;
    delete form.dataset.dirty;form.reset();delete form.dataset.requestId;sharedUI.tasksPage=1;page='shared-tasks';sessionStorage.setItem('wa_page',page);navOpen.add('shared');saveMenuState();syncMenuState();await loadPage();
    toast(T(`已加入共享发送：${result.count} 个号码，去重 ${result.duplicates} 个`,`Shared send queued: ${result.count} recipients, ${result.duplicates} duplicates removed.`));
-  }catch(err){if(err.code==='SHARED_DISABLED'&&me?.role!=='owner'){applyWorkspaceFeatures({shared_enabled:false});await loadPage();}if(me?.id===actor)toast(err.message,true);}finally{delete form.dataset.busy;button.disabled=false;}
+  }catch(err){if(err.code==='SHARED_DISABLED'&&me?.role!=='owner'){applyWorkspaceFeatures({shared_enabled:false});await loadPage();}if(me?.id===actor)toast(err.message,true);}finally{delete form.dataset.busy;button.disabled=form.dataset.sendAllowed!=='1';}
  };
 }
 function sharedPager(kind,count,size,total=null){
