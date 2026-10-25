@@ -106,7 +106,8 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
   assert.equal((await request('/billing/adjust','POST',{...adjustment,request_id:randomUUID(),amount:'101',direction:'subtract'},owner)).status,400);
   for(const session of [user,user2]){
    const mine=(await request('/billing?user_id='+uid,'GET',null,session)).data;
-   assert.deepEqual(Object.keys(mine).sort(),['currency','ledger','scale','user']);assert.equal(mine.currency,'MYR');assert.equal(mine.scale,10000);
+   assert.deepEqual(Object.keys(mine).sort(),['currency','ledger','rates','scale','user']);assert.equal(mine.currency,'MYR');assert.equal(mine.scale,10000);
+   assert.deepEqual(Object.keys(mine.rates).sort(),['personal_units','shared_enabled','shared_units']);assert.equal(Number(mine.rates.personal_units),1000);assert.equal(mine.rates.shared_units,null);assert.equal(mine.rates.shared_enabled,false);
    assert.equal(mine.user.id,session===user?uid:uid2);assert.deepEqual(Object.keys(mine.user).sort(),['credit_units','id','role','username']);
    assert.equal(mine.ledger.length,session===user?1:0);for(const row of mine.ledger){assert.deepEqual(Object.keys(row).sort(),['balance_units','created_at','delta_units','id','kind','recipient_id']);assert.equal(row.note,undefined);assert.equal(row.actor_id,undefined);}
   }
