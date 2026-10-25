@@ -6,6 +6,7 @@ const path=require('node:path');
 const puppeteer=require('puppeteer');
 const root=path.resolve(__dirname,'../public');
 const accountId='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-4222-8222-222222222222';
+const sharedAccountId='33333333-3333-4333-8333-333333333333';
 let current;
 const ledgerNote='Synthetic transfer remark <img src=x onerror=alert(1)>\nSecond line';
 function capacityRows(s){return s.capacityRows||[{worker_group:'fixture-group',accounts_running:2,max_accounts:10,assigned_accounts:3,slots_used:3,slots_available:7,slots_unavailable:0,can_start_more:true,capacity_state:'available',heartbeat_at:new Date().toISOString()}];}
@@ -64,6 +65,12 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/shared/options'){
     if(req.method==='PUT')s.imagesEnabled=body.images_enabled;result={images_enabled:s.imagesEnabled!==false};
    }
+   else if(p==='/accounts/'+sharedAccountId+'/connection')result={ok:true,code:'SCREEN_READY',connected:true,status:'ready',can_start:true};
+   else if(p==='/accounts/'+sharedAccountId&&req.method==='PATCH'){
+    if(body.label!==undefined)s.sharedLabel=body.label;
+    if(body.enabled!==undefined){s.sharedEnabled=body.enabled;s.sharedStatus=body.enabled?'ready':'disabled';}result={ok:true};
+   }
+   else if(p==='/accounts/'+sharedAccountId+'/restart'||p==='/shared/accounts/'+sharedAccountId+'/connect'){s.sharedEnabled=true;s.sharedStatus='ready';result={starting:true};}
    else if(p==='/campaigns'&&req.method==='POST')result={id:taskId,count:1,duplicates:0};
    else if(p==='/campaigns')result=s.taskReview?[personalTask(s)]:[];
    else if(p==='/overview')result=s.role==='owner'&&url.searchParams.get('layout')==='2'?groupedOverview(s):{counts:{submitted:1,failed:1,unknown:1},days:Array.from({length:7},(_,i)=>({date:'2026-10-'+String(i+9).padStart(2,'0'),counts:{submitted:i===6?1:0}}))};
@@ -83,7 +90,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/shared/status'){
     result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',pacing:{interval_ms:10000,batch_size:1},summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:(s.sharedCapacityRows||capacityRows(s)).map(w=>w.worker_group),workers:s.sharedCapacityRows||capacityRows(s)});
-   }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
+   }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:sharedAccountId,label:s.sharedLabel||'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:s.sharedPhone||'60123456789',worker_group:'fixture-group',enabled:s.sharedEnabled!==false,status:s.sharedStatus||'ready',last_error:s.sharedStatus==='scan_required'?'QR_SCAN_IDLE':null,shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:s.sharedEnabled!==false&&(s.sharedStatus||'ready')==='ready'}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
    else if(p==='/shared/settings')result={ok:true};
    else if(p==='/shared/accounts/scan'&&req.method==='POST'){if(s.scanFailNext){s.scanFailNext=false;res.statusCode=503;result={error:'Synthetic add retry'};}else result={id:body.request_id,started:true};}
@@ -385,6 +392,8 @@ async function verifySenderGroups(page,fixture,kind,language){
 }
 async function verifySharedPhotos(page,fixture,role,language){
  assert.equal(await page.$('#shared-send-form input[name=title]'),null);
+ assert.equal(await page.$('#shared-send-form input[name=recipient_file],#shared-send-form input[name=interval_value],#shared-send-form select[name=interval_unit],#shared-send-form input[name=batch_size]'),null,'Shared sends use Owner defaults without import or pacing controls');
+ assert.doesNotMatch(await page.$eval('#shared-send-form',n=>n.textContent),/导入号码|Import numbers|每批按号码顺序|Each batch sends sequentially/);
  if(role==='owner'){
   assert.equal(await page.$eval('[data-owner-shared-send]',n=>!!n.querySelector('form')&&!n.closest('details')),true);
   assert.ok(await page.$('#shared-send-form input[name=photo]'));
@@ -407,6 +416,48 @@ async function verifySharedPhotos(page,fixture,role,language){
   assert.equal(fixture.requests.some(r=>r.path==='/shared/options'&&r.method==='PUT'),false);
  }
  console.log('Shared photos PASS: '+role+' / '+language+' / Owner toggle, USER visibility, draft and request ID retained; task title omitted');
+}
+
+async function verifySharedAccountActions(page,fixture,language){
+ const row='tr:has([data-start="'+sharedAccountId+'"])';
+ const controls=await page.$$eval(row+' .actions button',nodes=>nodes.map(n=>n.hasAttribute('data-view')?'view:'+n.dataset.mode:['start','rename','check','enabled','delete-account'].find(k=>n.hasAttribute('data-'+k))));
+ assert.deepEqual(controls,['view:view','view:operate','start','rename','check','enabled','delete-account']);
+ for(const mode of ['view','operate']){await page.click(row+' [data-view][data-mode='+mode+']');assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+sharedAccountId+'&mode='+mode,'_blank','noopener']);}
+ await page.click(row+' [data-check]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+ assert.equal(fixture.requests.findLast(r=>r.path.endsWith('/connection')).path,'/accounts/'+sharedAccountId+'/connection');await page.click('#close-modal');
+ await page.click(row+' [data-rename]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+ const name='Shared renamed <script>';await page.$eval('#modal input[name=label]',(n,value)=>n.value=value,name);
+ await page.click('#modal button[type=submit]');await page.waitForFunction((id,name)=>!document.querySelector('#modal').open&&!loading&&document.querySelector('tr:has([data-start="'+id+'"]) strong')?.textContent===name,{},sharedAccountId,name);
+ assert.equal(await page.$eval(row+' strong',n=>n.textContent),name);assert.equal(await page.$(row+' script'),null);
+ assert.deepEqual(fixture.requests.findLast(r=>r.method==='PATCH').body,{label:name});
+ await page.click(row+' [data-enabled]');await page.waitForFunction(id=>!loading&&document.querySelector('[data-enabled="'+id+'"]').textContent.match(/Activate|启用/),{},sharedAccountId);
+ assert.equal(fixture.sharedEnabled,false);
+ await page.click(row+' [data-start]');await page.waitForFunction(id=>!loading&&document.querySelector('[data-enabled="'+id+'"]').textContent.match(/Deactivate|停用/),{},sharedAccountId);
+ assert.equal(fixture.requests.findLast(r=>r.method==='POST').path,'/shared/accounts/'+sharedAccountId+'/connect');
+ await page.click(row+' [data-start]');await page.waitForFunction(id=>!loading&&!document.querySelector('[data-start="'+id+'"]').disabled,{},sharedAccountId);
+ assert.equal(fixture.requests.findLast(r=>r.method==='POST').path,'/accounts/'+sharedAccountId+'/restart');
+ fixture.sharedStatus='scan_required';await page.evaluate(()=>loadPage());
+ assert.doesNotMatch(await page.$eval(row+' td:first-child',n=>n.textContent),/60123456789/);
+ assert.match(await page.$eval(row+' td:nth-child(2)',n=>n.textContent),/QR_SCAN_IDLE/);
+ const deletes=fixture.requests.filter(r=>r.method==='DELETE').length;page.once('dialog',dialog=>dialog.dismiss());await page.click(row+' [data-delete-account]');
+ assert.equal(fixture.requests.filter(r=>r.method==='DELETE').length,deletes,'Cancelling delete preserves the account');
+ delete fixture.sharedLabel;delete fixture.sharedStatus;await page.evaluate(()=>loadPage());
+ assert.match(await page.$eval(row+' td:first-child',n=>n.textContent),/\+60123456789/);
+ console.log('Shared account controls PASS: '+language+' / common Owner actions, separate account ID, safe viewer modes, check/rename/reconnect/enable, stale phone hidden and delete cancel; USER privileges unchanged');
+}
+
+async function verifyPersonalNewTask(page,fixture,role,language){
+ if(await page.$eval('#nav [data-nav-toggle=accounts]',n=>n.getAttribute('aria-expanded'))!=='true')await page.click('#nav [data-nav-toggle=accounts]');
+ await page.click('#nav [data-page=tasks]');await page.waitForSelector('#add-task');await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
+ assert.equal(await page.$('#contact-file,#modal input[accept=".txt,.csv"]'),null);
+ assert.doesNotMatch(await page.$eval('#modal',n=>n.textContent),/导入号码文件|Import phone numbers|每批按号码顺序|Each batch sends sequentially/);
+ assert.ok(await page.$('#photo-file'));assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal select[name=interval_unit]'));assert.ok(await page.$('#modal input[name=batch_size]'));
+ await uiScreenshot(page,'personal-new-task',role,language);
+ await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Consented synthetic task';f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('batch_size').value='2';f.elements.namedItem('opt_in').checked=true;});
+ await page.click('#modal button[type=submit]');await page.waitForFunction(()=>!document.querySelector('#modal').open&&!loading);
+ const sent=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(sent.body.interval_ms,60000);assert.equal(sent.body.batch_size,2);assert.equal(sent.body.send_now,true);assert.equal(sent.body.require_connected,true);assert.equal(sent.body.opt_in_confirmed,true);
+ await page.click('#nav [data-page=shared]');await waitReady(page);
+ console.log('Personal new task PASS: '+role+' / '+language+' / removed import/help, retained photo/pacing and immediate synthetic submit');
 }
 
 async function verifySharedAvailability(page,fixture,role,language){
@@ -1015,7 +1066,7 @@ async function runCase(browser,base,role,language){
  await verifyNoticeMarquee(page,fixture,role,language);
  if(role==='user'){
   assert.equal(await page.$('#shared-add'),null);assert.equal(await page.$('#shared-settings'),null);
-  assert.equal(await page.$('[data-shared-login]'),null);
+  assert.equal(await page.$('[data-view],[data-start],[data-check],[data-enabled],[data-delete-account]'),null);
   assert.equal(await page.$('[data-capacity]'),null);
   assert.equal(await page.$('#nav [data-page=users]'),null);
   assert.equal(await page.$('.last-login'),null);assert.equal(fixture.requests.some(r=>r.path==='/users'),false);
@@ -1033,9 +1084,9 @@ async function runCase(browser,base,role,language){
   await verifyOwnerBilling(page,language);
   await verifyOwnerLoginActivity(page,fixture,language);
   await verifySharedQr(page,fixture,language);
-  assert.equal(await page.$eval('[data-shared-login]',n=>n.closest('tr').querySelector('strong').textContent),'<img src=x onerror=alert(1)>');
-  await page.click('[data-shared-login]');
-  assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+accountId+'&mode=operate','_blank','noopener']);
+  assert.equal(await page.$eval('[data-view][data-mode=operate]',n=>n.closest('tr').querySelector('strong').textContent),'<img src=x onerror=alert(1)>');
+  await page.click('[data-view][data-mode=operate]');
+  assert.deepEqual(await page.evaluate(()=>window.fixturePopup),['/viewer.html?id='+sharedAccountId+'&mode=operate','_blank','noopener']);
   await page.click('#shared-settings');
   await page.waitForFunction(()=>document.querySelector('#modal').open);
   assert.equal(await page.$$eval('#modal input[name^="hour_"]',n=>n.length),24);
@@ -1051,18 +1102,16 @@ async function runCase(browser,base,role,language){
   assert.equal(await page.$('#shared-register'),null,'Bulk shared-number registration is removed');
   assert.equal(fixture.requests.some(r=>r.path==='/shared/accounts'&&r.method==='POST'),false);
  }
+ if(role==='owner')await verifySharedAccountActions(page,fixture,language);
  await verifyPersonalPages(page,fixture,role,language);
+ await verifyPersonalNewTask(page,fixture,role,language);
  await verifySharedPhotos(page,fixture,role,language);
  await verifySharedAvailability(page,fixture,role,language);
- await page.$eval('#shared-send-form input[name=recipient_file]',input=>{const files=new DataTransfer();files.items.add(new File(['phone\n"+60123456789"\n+60123456788'],'recipients.csv',{type:'text/csv'}));input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
- await page.waitForFunction(()=>document.querySelector('#shared-send-form textarea[name=recipients]').value==='+60123456789\n+60123456788');
- assert.equal(await page.$eval('#shared-send-form input[name=recipient_file]',n=>n.value),'','Imported files clear for same-file re-selection');
  await page.evaluate(()=>{
   const f=document.querySelector('#shared-send-form');
   for(const [name,value]of Object.entries({body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
    f.elements.namedItem(name).value=value;f.elements.namedItem(name).dispatchEvent(new Event('input',{bubbles:true}));
   }
-  f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('batch_size').value='3';
   f.elements.namedItem('opt_in').checked=true;
   const bytes=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0));
   const dt=new DataTransfer();dt.items.add(new File([bytes],'fixture.png',{type:'image/png'}));f.elements.namedItem('photo').files=dt.files;
@@ -1077,7 +1126,7 @@ async function runCase(browser,base,role,language){
  assert.equal(fixture.sends.length,1);
  await page.click('#shared-send-form button[type=submit]');await waitReady(page,'shared-tasks');
  assert.equal(fixture.sends.length,2);assert.equal(fixture.sends[1].title,undefined);assert.equal(fixture.sends[0].request_id,fixture.sends[1].request_id);
- assert.equal(fixture.sends[1].pacing,true);assert.equal(fixture.sends[1].interval_ms,60000);assert.equal(fixture.sends[1].batch_size,3);
+ for(const key of ['pacing','interval_ms','batch_size'])assert.equal(Object.hasOwn(fixture.sends[1],key),false,'Shared form uses Owner-configured defaults');
  assert.equal(fixture.sends[1].opt_in_confirmed,true);assert.equal(fixture.sends[1].media.mimetype,'image/png');assert.ok(fixture.sends[1].media.data);
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script').length),0);
  if(role==='user')assert.equal(await page.$('[data-pause],[data-schedule],[data-delete-task]'),null);

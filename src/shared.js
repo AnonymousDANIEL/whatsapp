@@ -139,7 +139,7 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
  app.get('/api/shared/accounts',route(async(req,res)=>{
   owner(req);const page=pageNumber(req.query.page),search=String(req.query.search||'').slice(0,80);
   const where="a.shared_pool AND a.deleted_at IS NULL AND ($1='' OR a.label ILIKE '%'||$1||'%' OR a.registration_phone ILIKE '%'||$1||'%')";
-  const rows=(await pool.query(`SELECT a.id,a.label,a.registration_phone,a.phone,a.worker_group,a.enabled,a.status,a.shared_state,a.shared_checked_at,a.created_at,
+  const rows=(await pool.query(`SELECT a.id,a.label,a.registration_phone,a.phone,a.worker_group,a.enabled,a.status,a.last_error,a.shared_state,a.shared_checked_at,a.created_at,
    (${connectedSQL}) AS connected,(${personalPhoneSQL}) AS phone_in_personal,h.heartbeat_at AS worker_heartbeat_at FROM accounts a LEFT JOIN worker_health h ON h.worker_group=a.worker_group
    WHERE ${where} ORDER BY a.created_at,a.id LIMIT $2 OFFSET $3`,[search,PAGE,(page-1)*PAGE])).rows;
   const total=(await pool.query(`SELECT count(*)::int n FROM accounts a WHERE ${where}`,[search])).rows[0].n;res.json({rows,total,page,size:PAGE});
