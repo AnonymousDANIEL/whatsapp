@@ -39,13 +39,13 @@ body .badge{background:var(--surface);color:var(--muted)}
 body .badge.green,body .account-user-state.active{background:#123d32;color:#83e4bb}
 body .badge.red,body .account-user-state.inactive{background:#482635;color:#ffb2bb}
 body .badge.blue{background:#1c3551;color:#acd0ff}
-body .badge.orange{background:#45351d;color:#f4ce8b}
-body .badge.neutral,body .account-user-state.locked{background:#293344;color:#bac4d2}
+body .badge.orange,body .badge.last-login.orange{background:#45351d;color:#f4ce8b}
+body .badge.neutral,body .badge.last-login.neutral,body .account-user-state.locked{background:#293344;color:#bac4d2}
 [data-theme=light] .badge.green,[data-theme=light] .account-user-state.active{background:#e5f4ed;color:#08744d}
 [data-theme=light] .badge.red,[data-theme=light] .account-user-state.inactive{background:#fcecef;color:#ad2942}
 [data-theme=light] .badge.blue{background:#eaf1fb;color:#245c9b}
-[data-theme=light] .badge.orange{background:#fff2df;color:#88500d}
-[data-theme=light] .badge.neutral,[data-theme=light] .account-user-state.locked{background:#edf0f4;color:#5c6878}
+[data-theme=light] .badge.orange,[data-theme=light] .badge.last-login.orange{background:#fff2df;color:#88500d}
+[data-theme=light] .badge.neutral,[data-theme=light] .badge.last-login.neutral,[data-theme=light] .account-user-state.locked{background:#edf0f4;color:#5c6878}
 .appearance-controls .header-icon-button,body .header-menu-trigger{background:transparent;color:var(--text)}
 body .clock-badge{background:transparent;border:1px solid var(--line)}
 body .clock-badge>svg{color:var(--green)}
