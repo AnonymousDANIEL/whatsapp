@@ -21,6 +21,7 @@ body aside,[data-theme=light] aside{background:var(--panel)}
 #nav .nav-entry.active,[data-theme=light] #nav .nav-entry.active{background:var(--accent-soft);border-color:transparent;color:var(--green)}
 #nav .nav-entry.ancestor,[data-theme=light] #nav .nav-entry.ancestor{background:transparent;color:var(--text)}
 #nav .nav-icon,[data-theme=light] #nav .nav-icon{color:var(--green)}
+#nav .nav-entry.active .nav-icon,[data-theme=light] #nav .nav-entry.active .nav-icon{color:var(--green)}
 #nav .nav-entry:focus-visible,#nav .nav-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .panel,.card,.login-card,dialog{background:var(--panel);border-color:var(--line);box-shadow:var(--shadow)}
 .panel{border-radius:12px}.card{border-radius:10px}

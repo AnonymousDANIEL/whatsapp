@@ -575,7 +575,7 @@ async function verifyAccountGroups(page,fixture){
  assert.equal(await page.$eval('[data-account-user="owner"] .table-wrap',n=>n.checkVisibility()),true);
  assert.equal(await page.$eval('[data-account-user="owner"]',n=>n.tagName),'SECTION');
  const writes=fixture.requests.filter(r=>r.method!=='GET').length;
- const colors={active:'rgb(103, 216, 177)',inactive:'rgb(255, 142, 150)',locked:'rgb(181, 188, 199)'};
+ const colors={active:'rgb(131, 228, 187)',inactive:'rgb(255, 178, 187)',locked:'rgb(186, 196, 210)'};
  for(const [status,color]of Object.entries(colors)){
   const selector='[data-account-user="'+status+'-user"]';
   assert.equal(await page.$eval(selector+' [data-user-status]',n=>n.dataset.userStatus),status);
@@ -662,17 +662,17 @@ async function verifyOwnerLoginActivity(page,fixture,language){
  await page.click('[data-login-history="ui-owner"]');await page.waitForSelector('#login-history-refresh');assert.equal(await page.$('#modal tbody tr'),null);await page.keyboard.press('Escape');
  const active='tr:has([data-remark="active-user"]) .last-login';
  assert.equal(await page.$$eval('.last-login',nodes=>nodes.map(n=>n.dataset.loginRecency).sort().join(',')),'green,orange');
- assert.equal(await page.$eval('.last-login.green',n=>getComputedStyle(n).color),'rgb(103, 216, 177)');
- assert.equal(await page.$eval(active,n=>getComputedStyle(n).color),'rgb(255, 184, 103)');
+ assert.equal(await page.$eval('.last-login.green',n=>getComputedStyle(n).color),'rgb(131, 228, 187)');
+ assert.equal(await page.$eval(active,n=>getComputedStyle(n).color),'rgb(244, 206, 139)');
  const expected=await page.evaluate(value=>new Date(value).toLocaleString(document.documentElement.lang==='en'?'en-GB':'zh-CN',{timeZone:'Asia/Kuala_Lumpur',hourCycle:'h23'}),fixture.loginDates['active-user']);
  assert.equal(await page.$eval(active,n=>n.textContent),expected);
  assert.match(await page.$eval(active,n=>n.getAttribute('aria-label')),language==='en'?/at least 1 day/:/满 1 天/);
  await page.select('#user-status-filter','locked');
- assert.equal(await page.$eval('.last-login',n=>n.dataset.loginRecency),'red');assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(255, 142, 150)');
+ assert.equal(await page.$eval('.last-login',n=>n.dataset.loginRecency),'red');assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(255, 178, 187)');
  await page.select('#user-status-filter','inactive');
  assert.equal(await page.$eval('.last-login',n=>n.dataset.loginRecency),'neutral');
  assert.equal(await page.$eval('.last-login',n=>n.textContent),language==='en'?'No sign-in record':'暂无登入记录');
- assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(181, 188, 199)');
+ assert.equal(await page.$eval('.last-login',n=>getComputedStyle(n).color),'rgb(186, 196, 210)');
  await page.select('#user-status-filter','active');
  const boundaries=await page.evaluate(()=>{const now=Date.parse('2030-01-08T00:00:00Z');return [0,86400000-1,86400000,7*86400000-1,7*86400000].map(age=>loginRecency(new Date(now-age).toISOString(),now)).concat([loginRecency(null,now),loginRecency('invalid',now)]);});
  assert.deepEqual(boundaries,['green','green','orange','orange','red','neutral','neutral']);
@@ -1054,6 +1054,9 @@ async function runCase(browser,base,role,language){
  await verifyPersonalPages(page,fixture,role,language);
  await verifySharedPhotos(page,fixture,role,language);
  await verifySharedAvailability(page,fixture,role,language);
+ await page.$eval('#shared-send-form input[name=recipient_file]',input=>{const files=new DataTransfer();files.items.add(new File(['phone\n"+60123456789"\n+60123456788'],'recipients.csv',{type:'text/csv'}));input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
+ await page.waitForFunction(()=>document.querySelector('#shared-send-form textarea[name=recipients]').value==='+60123456789\n+60123456788');
+ assert.equal(await page.$eval('#shared-send-form input[name=recipient_file]',n=>n.value),'','Imported files clear for same-file re-selection');
  await page.evaluate(()=>{
   const f=document.querySelector('#shared-send-form');
   for(const [name,value]of Object.entries({body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
@@ -1066,6 +1069,8 @@ async function runCase(browser,base,role,language){
   f.elements.namedItem('photo').dispatchEvent(new Event('change',{bubbles:true}));document.activeElement?.blur();
  });
  fixture.available=1;await page.evaluate(()=>loadPage(true));
+ await page.waitForFunction(()=>!document.querySelector('[data-shared-photo] .photo-preview').hidden);
+ assert.equal(await page.$eval('[data-shared-photo] .photo-preview span',n=>n.textContent),'fixture.png');
  assert.equal(await page.$('#shared-send-form input[name=title]'),null);assert.equal(await page.$eval('#shared-send-form textarea[name=body]',n=>n.value),'fake UI message');
  fixture.failNext=true;await page.click('#shared-send-form button[type=submit]');
  await page.waitForFunction(()=>document.querySelector('#toast').textContent==='Fixture retry'&&!document.querySelector('#shared-send-form').dataset.busy);
