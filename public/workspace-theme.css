@@ -1,0 +1,66 @@
+/* Shared surface tokens keep controls calm and legible in either theme. */
+:root{--bg:#0d1625;--panel:#121e2e;--surface:#182639;--surface-hover:#203249;--input:#0f1b2b;--line:#2a3b52;--text:#e7eef7;--muted:#a5b4c8;--blue:#70aaff;--green:#42cda3;--red:#ffa0a8;--accent:#42cda3;--accent-ink:#0c2720;--accent-soft:#163d35;--focus:#70aaff;--shadow:0 6px 24px #0208121a}
+:root[data-theme=light]{--bg:#f5f7fa;--panel:#fff;--surface:#f5f7f9;--surface-hover:#eaf0f3;--input:#fff;--line:#dce3e9;--text:#253446;--muted:#5c6d80;--blue:#2869b3;--green:#087a5b;--red:#b52c45;--accent:#087a5b;--accent-ink:#fff;--accent-soft:#e7f4ee;--focus:#2869b3;--shadow:0 6px 24px #24344608}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+body button,body button.secondary,[data-theme=light] button{background:var(--surface);color:var(--text);border-color:var(--line);box-shadow:none}
+body button:hover{background:var(--surface-hover);filter:none}
+body button.primary,[data-theme=light] button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+body button.primary:hover{filter:brightness(.96)}
+body button.ghost,[data-theme=light] button.ghost{background:transparent}
+body button.danger{color:var(--red)}
+body button:disabled{cursor:not-allowed}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+body input,body textarea,body select,[data-theme=light] input,[data-theme=light] textarea,[data-theme=light] select{background:var(--input);color:var(--text);border-color:var(--line)}
+body input:focus,body textarea:focus,body select:focus{outline:2px solid var(--focus);outline-offset:1px}
+body input::placeholder,body textarea::placeholder{color:var(--muted);opacity:1}
+body label,[data-theme=light] label{color:var(--muted)}
+body input[type=checkbox]{accent-color:var(--accent)}
+body aside,[data-theme=light] aside{background:var(--panel)}
+#nav .nav-entry,#nav .nav-toggle,[data-theme=light] #nav .nav-entry,[data-theme=light] #nav .nav-toggle{background:transparent;color:var(--muted);border-color:transparent;box-shadow:none}
+#nav .nav-entry:hover,#nav .nav-toggle:hover{background:var(--surface);color:var(--text)}
+#nav .nav-entry.active,[data-theme=light] #nav .nav-entry.active{background:var(--accent-soft);border-color:transparent;color:var(--green)}
+#nav .nav-entry.ancestor,[data-theme=light] #nav .nav-entry.ancestor{background:transparent;color:var(--text)}
+#nav .nav-icon,[data-theme=light] #nav .nav-icon{color:var(--green)}
+#nav .nav-entry:focus-visible,#nav .nav-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.panel,.card,.login-card,dialog{background:var(--panel);border-color:var(--line);box-shadow:var(--shadow)}
+.panel{border-radius:12px}.card{border-radius:10px}
+body .note,[data-theme=light] .note{background:var(--surface);color:var(--muted);border-color:var(--line)}
+body .section-label,body .summary-line strong{color:var(--text)}
+body .overview-week>div,body .bank-payment,[data-theme=light] .overview-week>div,[data-theme=light] .bank-payment{background:var(--surface)}
+body .overview-week span,body .overview-week small,body .code{color:var(--muted)}
+body .overview-track,[data-theme=light] .overview-track{background:var(--line)}
+body .overview-chart text{fill:var(--muted)}
+body .overview-chart line{stroke:var(--line)}
+body td,body th{border-color:var(--line)}
+tbody tr:hover{background:color-mix(in srgb,var(--surface) 65%,transparent)}
+.table-wrap{border-color:var(--line)}
+body .badge{background:var(--surface);color:var(--muted)}
+body .badge.green,body .account-user-state.active{background:#123d32;color:#83e4bb}
+body .badge.red,body .account-user-state.inactive{background:#482635;color:#ffb2bb}
+body .badge.blue{background:#1c3551;color:#acd0ff}
+body .badge.orange{background:#45351d;color:#f4ce8b}
+body .badge.neutral,body .account-user-state.locked{background:#293344;color:#bac4d2}
+[data-theme=light] .badge.green,[data-theme=light] .account-user-state.active{background:#e5f4ed;color:#08744d}
+[data-theme=light] .badge.red,[data-theme=light] .account-user-state.inactive{background:#fcecef;color:#ad2942}
+[data-theme=light] .badge.blue{background:#eaf1fb;color:#245c9b}
+[data-theme=light] .badge.orange{background:#fff2df;color:#88500d}
+[data-theme=light] .badge.neutral,[data-theme=light] .account-user-state.locked{background:#edf0f4;color:#5c6878}
+.appearance-controls .header-icon-button,body .header-menu-trigger{background:transparent;color:var(--text)}
+body .clock-badge{background:transparent;border:1px solid var(--line)}
+body .clock-badge>svg{color:var(--green)}
+body .language-control{background:transparent;border-color:var(--line)}
+body .language-control select,[data-theme=light] .language-control select{background:transparent;color:var(--text)}
+body .language-control option{background:var(--panel);color:var(--text)}
+.login-layout{box-shadow:0 12px 40px #02081212}
+.login-brand .login-notice{flex:none;width:100%;margin:20px 0 0;min-width:0;text-align:left}
+.login-notice .notice-content{min-width:0}
+body .cards.balance-only.billing-user-summary{max-width:none;grid-template-columns:1.2fr 1fr 1fr}
+.billing-user-summary .service-rate .value{font-size:24px;margin-top:12px;font-variant-numeric:tabular-nums}
+.billing-user-summary .card>span{font-size:13px;color:var(--muted)}
+.photo-preview{display:flex;align-items:center;gap:12px;margin:12px 0;flex-wrap:wrap;min-width:0}
+.photo-preview img{display:block;max-width:min(180px,100%);max-height:150px;object-fit:contain;border-radius:8px}
+.photo-preview span{overflow-wrap:anywhere;min-width:0;max-width:100%;color:var(--muted);font-size:12px}
+.photo-preview[hidden]{display:none}
+@media(max-width:1000px){body .cards.balance-only.billing-user-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.billing-user-summary>.card:first-child{grid-column:1/-1}}
+@media(max-width:520px){body .cards.balance-only.billing-user-summary{grid-template-columns:minmax(0,1fr)}.billing-user-summary>.card:first-child{grid-column:auto}.login-brand .login-notice{margin-top:14px}}
+@media(prefers-reduced-motion:reduce){button{transition:none}}

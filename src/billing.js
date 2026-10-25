@@ -87,7 +87,12 @@ function routes(app,route,uuid){
  app.get('/api/billing',route(async(req,res)=>{
   const id=req.user.role==='owner'&&req.query.user_id?uuid(req.query.user_id):req.user.id;
   const u=(await pool.query('SELECT id,username,role,credit_units FROM users WHERE id=$1',[id])).rows[0];assert(u,'账号不存在',404);
-  if(req.user.role!=='owner'){const ledger=(await pool.query('SELECT id,kind,delta_units,balance_units,recipient_id,created_at FROM credit_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT 100',[id])).rows;return res.json({currency:'MYR',scale:SCALE,user:u,ledger});}
+  if(req.user.role!=='owner'){
+   const ledger=(await pool.query('SELECT id,kind,delta_units,balance_units,recipient_id,created_at FROM credit_ledger WHERE user_id=$1 ORDER BY id DESC LIMIT 100',[id])).rows;
+   const row=(await pool.query(`SELECT b.price_units AS personal_units,${priceSQL} AS shared_units,s.enabled AS shared_enabled FROM billing_settings b CROSS JOIN shared_settings s WHERE b.id=1 AND s.id=1`)).rows[0];
+   const rates={personal_units:row?.personal_units??null,shared_units:row?.shared_units??null,shared_enabled:row?.shared_enabled===true};
+   return res.json({currency:'MYR',scale:SCALE,user:u,ledger,rates});
+  }
   const settings=(await pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0];
   const ledger=(await pool.query('SELECT l.*,u.username actor FROM credit_ledger l LEFT JOIN users u ON u.id=l.actor_id WHERE l.user_id=$1 ORDER BY l.id DESC LIMIT 100',[id])).rows;
   const held=(await pool.query("SELECT m.*,COALESCE(r.status,'unknown') AS status FROM message_charges m LEFT JOIN recipients r ON r.id=m.recipient_id WHERE m.user_id=$1 AND m.state='held' ORDER BY m.created_at DESC LIMIT 100",[id])).rows;

@@ -42,6 +42,8 @@ const server=http.createServer(async(req,res)=>{
     if(s.loginRejectedNext){s.loginRejectedNext=false;res.statusCode=401;result={error:'Synthetic incorrect credentials'};}
     else{s.signedOut=false;result={ok:true};}
    }
+   else if(p==='/workspace/features'){if(s.featuresFail){res.statusCode=503;result={error:'Synthetic policy read unavailable'};}else result={shared_enabled:s.enabled};}
+   else if(p==='/shared/availability'&&req.method==='PATCH'){s.enabled=body.enabled;result={enabled:s.enabled};}
    else if(p==='/payments/settings')result={enabled:!!s.fpxEnabled,configured:!!s.fpxEnabled,sandbox:false};
    else if(p==='/payments/orders')result=s.paymentPending?[{id:'fixture-order',username:'fixture-'+s.role,amount_cents:5000,state:'pending',sandbox:false,payment_url:'https://example.invalid/fixture-payment',created_at:'2026-10-15T06:00:00Z'}]:[];
    else if(p==='/payments/orders/fixture-order/check')result={ok:true};
@@ -77,9 +79,9 @@ const server=http.createServer(async(req,res)=>{
    }
    else if(p==='/health'){if(s.capacityFailure)res.statusCode=503;result=s.capacityFailure?{error:'Fixture capacity temporarily unavailable'}:capacityRows(s);}
    else if(p==='/billing/automatic-refunds')result={rows:[{id:'900',user_id:'ui-owner',username:'Synthetic <img src=x onerror=alert(1)>',recipient_id:'11',amount_units:'1061',reason:'AUTO_REFUND_UNCONFIRMED',service:'personal',message_status:'unknown',created_at:'2026-10-20T02:54:43Z'}],next_cursor:url.searchParams.has('before')?null:'800'};
-   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
+   else if(p==='/billing')result={user:{id:'ui-'+s.role,username:'fixture-'+s.role,role:s.role,credit_units:'10000000'},rates:{personal_units:6818,shared_units:s.rateUnconfigured?null:(s.sharedRate??12500),shared_enabled:s.enabled},held:[],held_units:0,price_units:1000,ledger:[{kind:'adjustment',delta_units:'10000000',balance_units:'10000000',note:ledgerNote,created_at:'2026-10-15T06:00:00Z'}]};
    else if(p==='/shared/status'){
-    result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
+    result={enabled:s.enabled,images_enabled:s.imagesEnabled!==false,configured:true,balance_units:'10000000',pacing:{interval_ms:10000,batch_size:1},summary:{total:120,connected:2,available:s.available,waiting:118,offline:0,unknown:0},timezone:'Asia/Kuala_Lumpur'};
     if(s.role==='owner')Object.assign(result,{settings:{enabled:s.enabled,price_units:1000,current_price_units:12500,interval_ms:10000,batch_size:1},hours:[{hour:0,price_units:12500}],groups:(s.sharedCapacityRows||capacityRows(s)).map(w=>w.worker_group),workers:s.sharedCapacityRows||capacityRows(s)});
    }else if(p==='/shared/accounts'&&req.method==='GET')result={rows:[{id:accountId,label:'<img src=x onerror=alert(1)>',registration_phone:'+60123456789',phone:'60123456789',worker_group:'fixture-group',enabled:true,status:'ready',shared_state:'connected',shared_checked_at:new Date().toISOString(),connected:true}],total:120,page:Number(url.searchParams.get('page')||1),size:50};
    else if(p==='/shared/hourly')result=[{hour_start:'2026-10-14T14:00:00Z',total:120,connected:2,waiting:118,offline:0,unknown:0,groups:1,checked_at:'2026-10-14T14:10:00Z'}];
@@ -89,7 +91,7 @@ const server=http.createServer(async(req,res)=>{
    else if(p==='/shared/send'){
     s.sends.push(body);
     if(s.failNext){s.failNext=false;res.statusCode=503;result={error:'Fixture retry'};}else result={id:taskId,count:2,duplicates:1};
-   }else if(p==='/shared/tasks')result={rows:[{id:taskId,title:'<script>fixture</script>',body:'fake UI message',created_at:'2026-10-14T14:00:00Z',enabled:true,creator:'fixture-'+s.role,counts:{pending:1,submitted:1}}],page:1,size:100};
+   }else if(p==='/shared/tasks')result={rows:[{id:taskId,title:'<script>fixture</script>',body:'fake UI message',created_at:'2026-10-14T14:00:00Z',interval_ms:60000,batch_size:3,shared_pool:true,created_by:'ui-'+s.role,enabled:true,creator:'fixture-'+s.role,counts:{pending:1,submitted:1}}],page:1,size:100};
    else if(p==='/shared/records')result={rows:[{id:1,title:'fixture task',body:'fake UI message',creator:'fixture-'+s.role,phone:'+60123456789',status:'submitted',updated_at:'2026-10-14T14:00:00Z'}],page:1,size:100};
    else if(p==='/campaigns/'+taskId+'/results')result={rows:[{phone:'+60123456789',status:s.taskReview?'unknown':'submitted',updated_at:'2026-10-14T14:00:00Z'}],total:1};
    else if(p==='/logout'){s.signedOut=true;result={ok:true};}
@@ -162,6 +164,17 @@ async function verifyLanguageSelector(page,language,theme){
  }
 }
 
+async function verifyThemeSurfaces(page,theme){
+ const colors=await page.evaluate(()=>{
+  const css=selector=>{const n=document.querySelector(selector),s=getComputedStyle(n);return{foreground:s.color,background:s.backgroundColor};};
+  return{idle:css('#nav [data-page=overview]'),active:css('#nav [aria-current=page]'),primary:css('#content button.primary'),panel:css('#content .panel')};
+ });
+ assert.equal(colors.idle.background,'rgba(0, 0, 0, 0)','Idle sidebar rows have no filled blocks in '+theme);
+ assert.notEqual(colors.active.background,colors.idle.background,'The selected page retains a clear accent');
+ const luminance=value=>value.match(/[\d.]+/g).slice(0,3).map(Number).map(c=>{c/=255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4;}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+ for(const [kind,item]of Object.entries(colors).filter(([kind])=>kind==='primary'||kind==='panel')){const a=luminance(item.foreground),b=luminance(item.background);assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,kind+' text meets 4.5:1 contrast in '+theme);}
+}
+
 async function uiScreenshot(page,name,role,language){
  if(!process.env.UI_SCREENSHOT_DIR||language!=='zh')return;
  await fs.mkdir(process.env.UI_SCREENSHOT_DIR,{recursive:true});
@@ -204,6 +217,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  assert.equal(await page.$eval('#password-btn',n=>n.hidden),role!=='owner','Owner password control stays in the sidebar');
  await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'light'}]);
  await verifyLanguageSelector(page,language,'dark');
+ await verifyThemeSurfaces(page,'dark');
  await uiScreenshot(page,'header-dark',role,language);
  const originalOffset=await page.evaluate(()=>clockOffset);
  await page.evaluate(()=>{clockOffset=Date.UTC(2026,9,21,16,0,5)-Date.now();WorkspaceHeader.update(me,clockOffset);});
@@ -234,6 +248,7 @@ async function verifyWorkspaceHeader(page,fixture,role,language){
  assert.equal(await page.$eval('html',n=>n.dataset.theme),'light');
  await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
  await verifyLanguageSelector(page,language,'light');
+ await verifyThemeSurfaces(page,'light');
  await uiScreenshot(page,'header-light',role,language);
  assert.equal(await page.evaluate(()=>localStorage.getItem('wa_theme')),'light');
  await page.reload({waitUntil:'networkidle0'});await waitReady(page);
@@ -277,7 +292,10 @@ async function verifyLoginPage(page,fixture,role,language){
  assert.equal(await page.$eval('#shell',n=>n.hidden),true);
  assert.equal(await page.$eval('#session-loading',n=>n.hidden),true,'A real 401 reveals login after verification');
  assert.equal(await page.$eval('#login-tools',n=>n.hidden),false);
- assert.match(await page.$eval('.login-access',n=>n.textContent),language==='en'?/Ask your administrator/:/请联系管理员/);
+ assert.equal(await page.$('.login-access'),null);
+ assert.match(await page.$eval('#login-notice',n=>n.textContent),language==='en'?/Welcome to mywasap/:/欢迎使用 mywasap/);
+ assert.doesNotMatch(await page.$eval('#login',n=>n.textContent),/Private sign-out notice|Ask your administrator|Don.t have an account/);
+ await verifyNoticeSequence(page,'#login-notice');
  assert.equal(await page.$eval('#login-form input[name=password]',n=>n.type),'password');
  assert.equal(await page.$eval('#login-form input[name=password]',n=>n.autocomplete),'current-password');
  for(const theme of ['dark','light']){
@@ -391,6 +409,40 @@ async function verifySharedPhotos(page,fixture,role,language){
  console.log('Shared photos PASS: '+role+' / '+language+' / Owner toggle, USER visibility, draft and request ID retained; task title omitted');
 }
 
+async function verifySharedAvailability(page,fixture,role,language){
+ const writes=fixture.requests.filter(r=>r.method!=='GET').length;
+ if(role==='owner'){
+  assert.equal(await page.$('#shared-register'),null);
+  for(const enabled of [false,true]){
+   await page.click('#shared-availability');
+   await page.waitForFunction(enabled=>document.querySelector('#shared-availability')?.getAttribute('aria-pressed')===String(enabled),{},enabled);
+   assert.equal(fixture.enabled,enabled);assert.ok(await page.$('#shared-add'));
+   assert.ok(await page.$('#nav [data-page=shared]'),'Owner keeps account/QR management when closed');
+   assert.deepEqual(fixture.requests.findLast(r=>r.path==='/shared/availability').body,{enabled});
+  }
+ }else{
+  assert.equal(await page.$('#shared-availability'),null);
+  fixture.featuresFail=true;await page.evaluate(()=>loadPage(true));
+  assert.ok(await page.$('#nav [data-page=shared]'),'A temporary policy read failure preserves the last confirmed state');fixture.featuresFail=false;
+  await page.focus('#shared-send-form textarea[name=body]');fixture.enabled=false;
+  await page.waitForFunction(()=>page==='overview'&&!loading&&!document.querySelector('#nav [data-page=shared]'),{timeout:9000});
+  assert.equal(await page.$('#shared-send-form'),null,'Closing removes a focused stale sending form');
+  assert.equal(await page.$('#nav [data-page=shared-tasks],#nav [data-page=shared-records]'),null);
+  await page.evaluate(()=>sessionStorage.setItem('wa_page','shared-tasks'));
+  const start=fixture.requests.length;await page.reload({waitUntil:'networkidle0'});
+  await page.waitForFunction(()=>page==='overview'&&!loading&&lastRenderedPage==='overview');
+  assert.equal(fixture.requests.slice(start).some(r=>['/shared/tasks','/shared/records','/shared/accounts'].includes(r.path)),false,'Closed saved routes never request shared data');
+  fixture.enabled=true;await page.evaluate(()=>loadPage(true));
+  await page.click('#nav [data-nav-toggle=shared]');await page.click('#nav [data-page=shared-tasks]');await waitReady(page,'shared-tasks');
+  await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);fixture.enabled=false;
+  await page.waitForFunction(()=>page==='overview'&&!loading&&!document.querySelector('#modal').open&&!document.querySelector('#nav [data-page=shared]'),{timeout:9000});
+  fixture.enabled=true;await page.evaluate(()=>loadPage(true));
+  await page.click('#nav [data-page=shared]');await waitReady(page);
+  assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'USER observes the switch without writing');
+ }
+ console.log('Shared availability PASS: '+role+' / '+language+' / Owner-only isolated toggle; closed USER navigation, focused drafts and stored routes removed; transient read retains last policy');
+}
+
 async function verifyPersonalPages(page,fixture,role,language){
  const pages=[
   ['accounts','#add-account',/画面断开不代表|A disconnected screen does not mean/],
@@ -471,6 +523,14 @@ async function verifyUserBilling(page,fixture,language){
   assert.match(await page.$eval('.balance-only',n=>n.textContent),/10000000/);
  }
  await sections();
+ assert.equal(await page.$eval('[data-service-rate=personal] .value',n=>n.textContent),'RM 0.68');
+ assert.equal(await page.$eval('[data-service-rate=shared] .value',n=>n.textContent),'RM 1.25');
+ fixture.sharedRate=100;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('[data-service-rate=shared] .value',n=>n.textContent),'RM 0.01');
+ fixture.rateUnconfigured=true;await page.evaluate(()=>loadPage());
+ assert.equal(await page.$eval('[data-service-rate=shared] .value',n=>n.textContent),language==='en'?'Not configured':'未设置');
+ fixture.rateUnconfigured=false;fixture.sharedRate=12500;await page.evaluate(()=>loadPage());
+ for(const theme of ['light','dark']){if(await page.$eval('html',n=>n.dataset.theme)!==theme)await page.click('#theme-toggle');await uiScreenshot(page,'billing-'+theme,'user',language);}
  assert.equal(await page.$eval('#online-fpx .service-coming-soon',n=>n.textContent),'Coming soon');
  assert.equal(await page.$('#online-topup'),null);assert.ok(await page.$('#deposit-create'));
  fixture.fpxEnabled=true;await page.evaluate(()=>loadPage());
@@ -988,23 +1048,18 @@ async function runCase(browser,base,role,language){
   await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
   const update=fixture.requests.findLast(r=>r.path==='/shared/settings'&&r.method==='PUT');
   assert.equal(update.body.hours.length,24);assert.equal(update.body.price,'0.2');assert.equal(update.body.hours[8].price,'0.3');assert.equal(update.csrf,'fake-ui-csrf');
-  await page.click('#shared-register');
-  await page.waitForFunction(()=>document.querySelector('#modal').open);
-  assert.match(await page.$eval('#modal',n=>n.textContent),language==='en'?/does not create a phone number or register WhatsApp/:/不会自动产生手机号或完成 WhatsApp 注册/);
-  await page.evaluate(()=>{
-   document.querySelector('#modal textarea[name=phones]').value='+60123456789\n+60123456788';
-   document.querySelector('#modal form').requestSubmit();
-  });
-  await page.waitForFunction(()=>!document.querySelector('#modal').open);await waitReady(page);
-  assert.equal(fixture.requests.findLast(r=>r.path==='/shared/accounts'&&r.method==='POST').body.groups[0],'fixture-group');
+  assert.equal(await page.$('#shared-register'),null,'Bulk shared-number registration is removed');
+  assert.equal(fixture.requests.some(r=>r.path==='/shared/accounts'&&r.method==='POST'),false);
  }
  await verifyPersonalPages(page,fixture,role,language);
  await verifySharedPhotos(page,fixture,role,language);
+ await verifySharedAvailability(page,fixture,role,language);
  await page.evaluate(()=>{
   const f=document.querySelector('#shared-send-form');
   for(const [name,value]of Object.entries({body:'fake UI message',recipients:'+60123456789\n+60123456788\n+60123456789'})){
    f.elements.namedItem(name).value=value;f.elements.namedItem(name).dispatchEvent(new Event('input',{bubbles:true}));
   }
+  f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('batch_size').value='3';
   f.elements.namedItem('opt_in').checked=true;
   const bytes=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0));
   const dt=new DataTransfer();dt.items.add(new File([bytes],'fixture.png',{type:'image/png'}));f.elements.namedItem('photo').files=dt.files;
@@ -1017,9 +1072,10 @@ async function runCase(browser,base,role,language){
  assert.equal(fixture.sends.length,1);
  await page.click('#shared-send-form button[type=submit]');await waitReady(page,'shared-tasks');
  assert.equal(fixture.sends.length,2);assert.equal(fixture.sends[1].title,undefined);assert.equal(fixture.sends[0].request_id,fixture.sends[1].request_id);
+ assert.equal(fixture.sends[1].pacing,true);assert.equal(fixture.sends[1].interval_ms,60000);assert.equal(fixture.sends[1].batch_size,3);
  assert.equal(fixture.sends[1].opt_in_confirmed,true);assert.equal(fixture.sends[1].media.mimetype,'image/png');assert.ok(fixture.sends[1].media.data);
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script').length),0);
- if(role==='user')assert.equal(await page.$('[data-shared-pause]'),null);
+ if(role==='user')assert.equal(await page.$('[data-pause],[data-schedule],[data-delete-task]'),null);
  await page.click('[data-results]');
  await page.waitForFunction(()=>document.querySelector('#modal').open);
  assert.match(await page.$eval('#modal',n=>n.textContent),/\+60123456789/);
@@ -1028,11 +1084,7 @@ async function runCase(browser,base,role,language){
  await page.waitForFunction(()=>document.querySelector('#content .badge.submitted, #content .badge.green'));
  assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Sent successfully/:/发送成功/);
  await page.click('#nav [data-page=shared]');
- await waitReady(page);fixture.enabled=false;await page.evaluate(()=>loadPage());
- await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
- if(role==='user')assert.match(await page.$eval('#content',n=>n.textContent),/Coming soon/);
- else assert.match(await page.$eval('#content',n=>n.textContent),language==='en'?/Shared service is currently closed/:/共享服务暂未开启/);
- fixture.enabled=true;fixture.available=0;await page.evaluate(()=>loadPage());
+ await waitReady(page);fixture.available=0;await page.evaluate(()=>loadPage());
  await page.waitForFunction(()=>document.querySelector('#shared-send-form button[type=submit]').disabled);
  const unavailableText=await page.$eval('#content',n=>n.textContent);
  if(role==='owner')assert.match(unavailableText,language==='en'?/No shared accounts are available yet/:/暂时没有可用的共享账号/);

@@ -12,6 +12,7 @@ let userStatusFilter=sessionStorage.getItem('wa_user_status_filter')||'active';i
 const userState=u=>!u.active?'inactive':u.locked?'locked':'active';
 let billingData=null,billingUser='',paymentSettings={},paymentOrders=[],noticeData={enabled:false};
 let billingRefundBefore=null,billingRefundTrail=[];
+let workspaceFeatures={shared_enabled:false},workspaceFeatureRequest=null,workspaceFeatureGeneration=0;
 const returnOrder=new URLSearchParams(location.search).get('topup');if(returnOrder)page='fpx';
 const money=n=>'RM '+(Number(n||0)/10000).toFixed(4);
 const credits=n=>BigInt(n??0).toString();
@@ -34,9 +35,24 @@ const num=n=>Number(n||0).toLocaleString('en-US');
 const badge=s=>`<span class="badge ${['ready','delivered','read','submitted'].includes(s)?'green':['failed','invalid','error','worker_offline'].includes(s)?'red':'blue'}">${esc(state(s))}</span>`;
 const table=(headers,rows)=>`<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>${rows.length?'':`<div class="empty">${T('暂无记录','No records')}</div>`}</div>`;
 function toast(text,bad=false){$('#toast').textContent=text;$('#toast').className=bad?'bad':'';$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',6500);}
-async function api(path,options={}){const r=await fetch('/api'+path,{...options,signal:options.signal||AbortSignal.timeout(30000),headers:{'Content-Type':'application/json','X-CSRF-Token':csrf||'',...options.headers}});const data=await r.json().catch(()=>({error:T('服务返回异常','Invalid server response')}));if(!r.ok){if(r.status===401)showLogin();throw Object.assign(new Error(data.code?connectionText(data):translateError(data.error||'Request failed')),{status:r.status});}return data;}
+async function api(path,options={}){const r=await fetch('/api'+path,{...options,signal:options.signal||AbortSignal.timeout(30000),headers:{'Content-Type':'application/json','X-CSRF-Token':csrf||'',...options.headers}});const data=await r.json().catch(()=>({error:T('服务返回异常','Invalid server response')}));if(!r.ok){if(r.status===401)showLogin();throw Object.assign(new Error(data.code==='SHARED_DISABLED'?T('共享 WhatsApp 已关闭','Shared WhatsApp is closed'):data.code?connectionText(data):translateError(data.error||'Request failed')),{status:r.status,code:data.code});}return data;}
+function renderLoginNotice(){const banner=$('#login-notice');if(!banner)return;banner.hidden=false;window.NoticeMarquee.render(banner,T('欢迎使用 mywasap。请使用您的 USER ID 安全登录。','Welcome to mywasap. Sign in securely with your USER ID.'),{title:T('欢迎','Welcome'),content:T('欢迎信息','Welcome message')});}
+function applyWorkspaceFeatures(value){
+ if(!me||me.role==='owner')return;
+ workspaceFeatures={shared_enabled:value.shared_enabled===true};
+ const previous=page;navigation();
+ if(previous!==page){pageRequest?.abort();pageRequestVersion++;loading=false;$('#content').replaceChildren();$('#modal').close();lastRenderedPage='';lastRenderSignature='';}
+}
+async function refreshWorkspaceFeatures(){
+ if(!me||me.role==='owner')return;
+ if(workspaceFeatureRequest)return workspaceFeatureRequest;
+ const actor=me.id,generation=workspaceFeatureGeneration;
+ const pending=api('/workspace/features',{signal:AbortSignal.timeout(5000)}).then(value=>{if(me?.id===actor&&generation===workspaceFeatureGeneration)applyWorkspaceFeatures(value);}).catch(e=>{if(e.status===401)throw e;/* Keep the last confirmed policy during a transient read failure. */});
+ workspaceFeatureRequest=pending;
+ try{await pending;}finally{if(workspaceFeatureRequest===pending)workspaceFeatureRequest=null;}
+}
 function staticText(){document.documentElement.lang=WA_LANG==='en'?'en':'zh-CN';document.querySelectorAll('[data-zh]').forEach(n=>n.textContent=T(n.dataset.zh,n.dataset.en));$('#language').value=WA_LANG;$('#session-message').textContent=T('正在恢复登录状态…','Restoring your session…');window.WorkspaceHeader?.update(me,clockOffset);}
-function showLogin(){window.NoticeMarquee.clear($('#workspace-notice'));loginHistoryGeneration++;pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;window.WorkspaceHeader?.update(null,clockOffset);ownerSendData=null;sendPages={tasks:{},messages:{}};resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');accountGroupsOpen=new Set();accountGroupSession='';accountAccessUsers=[];sessionStorage.removeItem('wa_account_groups');dashboardOpen=new Set();dashboardSession='';sessionStorage.removeItem('wa_dashboard_open');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');users=[];accounts=[];campaigns=[];billingData=null;billingRefundBefore=null;billingRefundTrail=[];sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#login-tools').hidden=false;$('#modal').close();}
+function showLogin(){workspaceFeatureGeneration++;workspaceFeatures={shared_enabled:false};workspaceFeatureRequest=null;window.NoticeMarquee.clear($('#workspace-notice'));loginHistoryGeneration++;pageRequest?.abort();pageRequestVersion++;loading=false;lastRenderedPage='';lastRenderSignature='';noticeSignature='';me=null;window.WorkspaceHeader?.update(null,clockOffset);ownerSendData=null;sendPages={tasks:{},messages:{}};resetBankUI();resetSharedUI();navOpen=new Set();navStateUser='';sessionStorage.removeItem('wa_nav_expanded');accountGroupsOpen=new Set();accountGroupSession='';accountAccessUsers=[];sessionStorage.removeItem('wa_account_groups');dashboardOpen=new Set();dashboardSession='';sessionStorage.removeItem('wa_dashboard_open');$('#nav').replaceChildren();delete $('#nav').dataset.signature;userStatusFilter='active';sessionStorage.removeItem('wa_user_status_filter');users=[];accounts=[];campaigns=[];billingData=null;billingRefundBefore=null;billingRefundTrail=[];sessionStorage.removeItem('wa_billing_view');paymentSettings={};paymentOrders=[];noticeData={enabled:false};$('#content').replaceChildren();$('#modal-content').replaceChildren();$('#workspace-notice').hidden=true;$('#shell').hidden=true;$('#password-btn').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=false;$('#login-tools').hidden=false;$('#modal').close();renderLoginNotice();}
 function modal(title,html,callback){loginHistoryGeneration++;$('#modal-title').textContent=title;$('#modal-content').innerHTML=html;if(!$('#modal').open)$('#modal').showModal();const f=$('#modal form');if(f)f.onsubmit=async e=>{e.preventDefault();if(f.dataset.busy)return;f.dataset.busy='1';const bs=[...f.querySelectorAll('button[type=submit]')];bs.forEach(b=>b.disabled=true);try{await callback(f,e.submitter);$('#modal').close();await loadPage();}catch(err){toast(err.message,true);}finally{delete f.dataset.busy;bs.forEach(b=>b.disabled=false);}};}
 const submit=()=>`<div class="form-actions"><button type="submit" class="primary">${T('保存','Save')}</button></div>`;
 function fpxAvailable(){return paymentSettings.enabled&&paymentSettings.configured&&!paymentSettings.sandbox;}
@@ -63,7 +79,7 @@ function navIcon(target){
 function menuTree(){
  const node=(page,children=[])=>({page,children});
  const payments=me.role==='owner'?[node('fpx'),node('banks',[node('bank-deposits'),node('bank-transactions')])]:[];
- return [node('overview'),node('billing',payments),node('accounts',[node('tasks'),node('messages')]),node('shared',[node('shared-tasks'),node('shared-records')]),...(me.role==='owner'?[node('notices'),node('users',[node('audit'),node('system')])]:[])];
+ return [node('overview'),node('billing',payments),node('accounts',[node('tasks'),node('messages')]),...(me.role==='owner'||workspaceFeatures.shared_enabled?[node('shared',[node('shared-tasks'),node('shared-records')])]:[]),...(me.role==='owner'?[node('notices'),node('users',[node('audit'),node('system')])]:[])];
 }
 function menuPath(nodes,target,parents=[]){for(const n of nodes){if(n.page===target)return parents;const path=menuPath(n.children,target,[...parents,n.page]);if(path)return path;}return null;}
 function saveMenuState(){try{sessionStorage.setItem('wa_nav_expanded',JSON.stringify({user_id:me.id,role:me.role,open:[...navOpen]}));}catch{}}
@@ -110,8 +126,8 @@ async function boot(){
  $('#session-loading').classList.remove('session-failure');$('#session-loading').setAttribute('aria-busy','true');$('#session-message').classList.add('sr-only');$('#session-message').textContent=T('正在恢复登录状态…','Restoring your session…');$('#session-retry').hidden=true;
  try{
   const before=Date.now(),r=await api('/me');me=r.user;csrf=r.csrf;boot.groups=r.worker_groups;clockOffset=Date.parse(r.server_time)-(before+Date.now())/2;
-  if(me.role!=='owner'){paymentSettings=await api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false,unavailable:true};});if(!me)return;}
-  $('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();
+  if(me.role!=='owner'){[paymentSettings]=await Promise.all([api('/payments/settings',{signal:AbortSignal.timeout(5000)}).catch(e=>{if(e.status===401)throw e;return{enabled:false,unavailable:true};}),refreshWorkspaceFeatures()]);if(!me)return;}
+  window.NoticeMarquee.clear($('#login-notice'));$('#login-notice').hidden=true;$('#session-loading').hidden=true;$('#login').hidden=true;$('#shell').hidden=false;navigation();await loadPage();
   if(returnOrder&&!boot.checkedPayment){boot.checkedPayment=true;try{await api('/payments/orders/'+encodeURIComponent(returnOrder)+'/check',{method:'POST',body:'{}'});await loadPage();}catch(e){toast(e.message,true);}history.replaceState(null,'',location.pathname);}
  }catch(e){
   if(e.status===401)return;
@@ -129,6 +145,8 @@ function visiblePageSignature(data){
  return JSON.stringify([content,page==='users'?userStatusFilter:null,page==='users'?data.users?.map(u=>loginRecency(u.last_login_at)):null]);
 }
 async function loadPage(quiet=false){
+ if(!me)return;
+ await refreshWorkspaceFeatures();
  if(!me||quiet&&(loading||$('#modal').open||$('#content form[data-busy="1"]')||document.activeElement?.matches('#content input,#content textarea,#content select')&&page!=='shared'))return;
  pageRequest?.abort();const controller=new AbortController(),version=++pageRequestVersion;pageRequest=controller;loading=true;
  const requested=page;pageHeader();
@@ -189,6 +207,7 @@ async function loadPage(quiet=false){
  }catch(error){
   if(version!==pageRequestVersion||requested!==page)return;
   if(controller.signal.aborted&&controller.signal.reason==='timeout')throw new Error(T('连接超时，请刷新重试','Connection timed out. Refresh to retry.'));
+  if(error.code==='SHARED_DISABLED'&&me?.role!=='owner'){applyWorkspaceFeatures({shared_enabled:false});return await loadPage();}
   if(error.name!=='AbortError')throw error;
  }finally{clearTimeout(timeout);if(version===pageRequestVersion){loading=false;pageRequest=null;}}
 }
@@ -335,7 +354,7 @@ function bindOwnerSendLists(){
  });
  document.querySelectorAll('[data-send-page]').forEach(button=>button.onclick=()=>{const id=button.dataset.sendActor;sendPages[kind][id]=Math.max(1,(sendPages[kind][id]||1)+Number(button.dataset.sendPage));loadPage().catch(e=>toast(e.message,true));});
 }
-function taskTable(rows=campaigns){return table([T('任务 / 创建者','Task / creator'),T('时间安排','Schedule'),T('消息 / 结果','Message / results'),T('操作时间 UTC+8','Activity UTC+8'),T('操作','Actions')],rows.map(c=>`<tr><td><strong>${esc(c.title)}</strong><br>${esc(c.account_label)} · ${esc(c.creator)}${c.pause_reason==='credit'?`<br><span class="badge blue">${T('余额不足 · 充值足够后自动继续','Low credit · resumes with enough credit')}</span>`:c.pause_reason==='review'?`<br><span class="badge red">${T('已暂停 · 未确认费用自动退款','Paused · unconfirmed credit is refunded automatically')}</span>`:''}${c.deleted_at?`<br>${T('USER 已删除（保留记录）','Deleted by USER (retained)')}`:''}</td><td>${T('每批','Per batch')} ${c.batch_size||1} ${T('条，间隔','messages; interval')} ${c.interval_ms/1000} ${T('秒','seconds')}</td><td><div class="message-body">${esc(c.body)}</div>${c.has_image?`<img src="/api/campaigns/${c.id}/image" alt="${T('照片','Photo')}" loading="lazy" style="max-width:120px;max-height:100px">`:''}${Object.entries(c.counts||{}).map(([k,n])=>`${badge(k)} ${num(n)}`).join(' ')}</td><td>${T('创建','Created')}: ${date(c.created_at)}<br>${T('最近操作','Last action')}: ${date(c.operation_at||c.created_at)}</td><td><div class="actions"><button data-results="${c.id}">${T('明细','Details')}</button>${!c.deleted_at&&!c.cancelled&&(me.role==='owner'||c.created_by===me.id)?`${me.role==='owner'?`<button data-schedule="${c.id}">${T('修改间隔 / 数量','Edit interval / quantity')}</button>`:''}${taskSendControl(c)}${taskPauseControl(c)}`:''}${me.role==='owner'?`<button data-delete-task="${c.id}" class="danger">${T('永久删除','Permanently delete')}</button>`:''}</div></td></tr>`));}
+function taskTable(rows=campaigns){return table([T('任务 / 创建者','Task / creator'),T('时间安排','Schedule'),T('消息 / 结果','Message / results'),T('操作时间 UTC+8','Activity UTC+8'),T('操作','Actions')],rows.map(c=>`<tr><td><strong>${esc(c.title)}</strong><br>${c.shared_pool?T('共享 WhatsApp','Shared WhatsApp'):esc(c.account_label)} · ${esc(c.creator)}${c.pause_reason==='credit'?`<br><span class="badge blue">${T('余额不足 · 充值足够后自动继续','Low credit · resumes with enough credit')}</span>`:c.pause_reason==='review'?`<br><span class="badge red">${T('已暂停 · 未确认费用自动退款','Paused · unconfirmed credit is refunded automatically')}</span>`:''}${c.deleted_at?`<br>${T('USER 已删除（保留记录）','Deleted by USER (retained)')}`:''}</td><td>${T('每批','Per batch')} ${c.batch_size||1} ${T('条，间隔','messages; interval')} ${c.interval_ms/1000} ${T('秒','seconds')}</td><td><div class="message-body">${esc(c.body)}</div>${c.has_image?`<img src="/api/campaigns/${c.id}/image" alt="${T('照片','Photo')}" loading="lazy" style="max-width:120px;max-height:100px">`:''}${Object.entries(c.counts||{}).map(([k,n])=>`${badge(k)} ${num(n)}`).join(' ')}</td><td>${T('创建','Created')}: ${date(c.created_at)}<br>${T('最近操作','Last action')}: ${date(c.operation_at||c.created_at)}</td><td><div class="actions"><button data-results="${c.id}">${T('明细','Details')}</button>${!c.deleted_at&&!c.cancelled&&(me.role==='owner'||c.created_by===me.id)?`${me.role==='owner'?`<button data-schedule="${c.id}">${T('修改间隔 / 数量','Edit interval / quantity')}</button>`:''}${taskSendControl(c)}${taskPauseControl(c)}`:''}${me.role==='owner'?`<button data-delete-task="${c.id}" class="danger">${T('永久删除','Permanently delete')}</button>`:''}</div></td></tr>`));}
 
 function taskPage(){$('#content').innerHTML=`${ownerHint('USER 发送前须充值。每条按发送时的价格预扣，确认成功后结算；失败或结果未确认自动退回。余额不足的任务充值足够后自动继续；手动暂停或因未确认发送而暂停的任务仍由 Owner 恢复，不会重发未确认消息。','USERs need credit before sending. Each message reserves the current rate; confirmed sends are charged, while failures and unconfirmed results are refunded automatically. Low-credit tasks resume with enough credit. The Owner resumes manually stopped tasks and tasks paused for unconfirmed sends; unconfirmed messages are never resent.')}${ownerHint('按间隔和每批数量发送，不设日期或每日时段限制。时间显示为马来西亚 UTC+8；操作窗口打开时自动任务暂停。','Send by interval and batch size, without date or daily windows. Times use Malaysia UTC+8. Automatic tasks pause while a control window is open.')}<div class="panel"><div class="toolbar"><h2>${T('任务与结果','Tasks and results')}</h2><button id="add-task">${T('新建任务','New task')}</button></div>${me.role==='owner'?ownerSendLists('tasks'):taskTable()}</div>`;$('#add-task').onclick=()=>taskForm();bindTasks();if(me.role==='owner')bindOwnerSendLists();}
 const localDate=s=>s?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(s)).replace(' ','T'):'';
@@ -414,7 +433,7 @@ $('#language').onchange=e=>{localStorage.setItem('wa_language',e.target.value);l
 $('#login-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;$('#login-error').textContent='';try{await api('/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();await boot();}catch(err){$('#login-error').textContent=err.message;}finally{b.disabled=false;}};
 $('#logout').onclick=async()=>{try{await api('/logout',{method:'POST',body:'{}'});showLogin();}catch(e){toast(e.message,true);}};
 $('#password-btn').onclick=()=>{if(me?.role!=='owner')return;modal(T('修改密码','Change password'),`<form><label>${T('当前密码','Current password')}<input name="current_password" type="password" required autocomplete="current-password"></label><label>${T('新密码','New password')}<input name="password" type="password" minlength="12" required autocomplete="new-password"></label>${submit()}</form>`,async f=>{await api('/password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});showLogin();});};
-setInterval(()=>{if(me&&!$('#modal').open&&!document.hidden)loadPage(true).catch(()=>{});},5000);
+setInterval(()=>{if(me&&!document.hidden)loadPage(true).catch(()=>{});},5000);
 setInterval(()=>window.WorkspaceHeader?.tick(),1000);staticText();boot();
 
 function creditLedger(rows,format=money){
@@ -433,7 +452,8 @@ function billingPage(data){
  const balanceCard=`<div class="card"><div class="label">${T('可用余额','Available credit')} · ${esc(u.username)}</div><div class="value">${u.role==='owner'?T('无限','Unlimited'):credits(u.credit_units)}</div></div>`;
  if(!owner){
   bankData=data.banks;depositData=data.deposits;depositPage();
-  $('#content').insertAdjacentHTML('afterbegin',`<div class="cards balance-only">${balanceCard}</div>`);
+  const rateCards=[['personal',T('WhatsApp 每条价格','WhatsApp rate per message')],['shared',T('共享 WhatsApp 每条价格','Shared WhatsApp rate per message')]].map(([kind,label])=>{const value=b.rates?.[kind+'_units'];return `<div class="card service-rate" data-service-rate="${kind}"><span>${label}</span><div class="value">${value==null?T('未设置','Not configured'):'RM '+(Number(value)/10000).toFixed(2)}</div></div>`;}).join('');
+  $('#content').insertAdjacentHTML('afterbegin',`<div class="cards balance-only billing-user-summary">${balanceCard}${rateCards}</div>`);
   $('#bank-topup').insertAdjacentHTML('afterend',paymentPanel());
   bindPayments();return;
  }

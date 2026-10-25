@@ -3,7 +3,7 @@ const capacity=require('./capacity');
 const {randomUUID}=require('node:crypto');
 const {rateLimit}=require('express-rate-limit');
 const {pool,transaction}=require('./db');
-const {assert,hash,parseRecipients,permission}=require('./domain');
+const {assert,hash,parseRecipients,permission,validatePacing}=require('./domain');
 const {validateImage}=require('./media');
 const {priceSQL,personalPhoneSQL,connectedSQL,settings,registrationNumbers,inspectClient,linkedPhone}=require('./shared-domain');
 const PAGE=50;
@@ -33,7 +33,9 @@ async function createTask(user,body,groups){
  assert(typeof body.body==='string'&&(body.body.trim().length||media)&&body.body.length<=4000,'请输入消息或上传照片');
  assert(body.opt_in_confirmed===true,'请确认这些联系人同意接收消息');
  assert(/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(body.request_id||''),'请求 ID 无效');
- const parsed=parseRecipients(body.recipients),digest=hash(JSON.stringify({title:body.title.trim(),body:body.body,media,recipients:parsed.recipients}));
+ assert(body.pacing===undefined||body.pacing===true,'发送间隔设置无效');
+ const pacing=body.pacing===true||body.interval_ms!==undefined||body.batch_size!==undefined?validatePacing(body):null;
+ const parsed=parseRecipients(body.recipients),digest=hash(JSON.stringify({title:body.title.trim(),body:body.body,media,recipients:parsed.recipients,...(pacing?{pacing}:{})}));
  return transaction(async db=>{
   await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[user.id]);
   await db.query('SELECT pg_advisory_xact_lock(194812735)');
@@ -49,7 +51,7 @@ async function createTask(user,body,groups){
   const id=randomUUID();
   await db.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,interval_ms,opt_in_confirmed,duplicate_count,send_now,media,batch_size,shared_pool,shared_request_id,shared_request_hash)
    VALUES($1,$2,$3,$4,$5,'Asia/Kuala_Lumpur','00:00','00:00',ARRAY[1,2,3,4,5,6,7],now(),$6,true,$7,true,$8,$9,true,$10,$11)`,
-   [id,a.id,user.id,body.title.trim(),body.body,s.interval_ms,parsed.duplicates,media,s.batch_size,body.request_id,digest]);
+   [id,a.id,user.id,body.title.trim(),body.body,pacing?.interval_ms??s.interval_ms,parsed.duplicates,media,pacing?.batch_size??s.batch_size,body.request_id,digest]);
   await db.query(`INSERT INTO recipients(campaign_id,raw_phone,phone,status,error_code)
    SELECT $1,r.raw,r.phone,r.status,r.error FROM jsonb_to_recordset($2::jsonb) AS r(raw text,phone text,status text,error text)`,[id,JSON.stringify(parsed.recipients)]);
   await db.query('UPDATE accounts SET shared_assigned_at=now() WHERE id=$1',[a.id]);
@@ -174,13 +176,13 @@ function routes(app,route,uuid,workerRoutes,workerCommand){
  const limit=rateLimit({windowMs:60000,limit:30,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id,message:{error:'共享发送请求过于频繁，请稍后再试'}});
  app.post('/api/shared/send',limit,route(async(req,res)=>res.status(201).json(await createTask(req.user,req.body,Object.keys(workerRoutes)))));
  app.get('/api/shared/tasks',route(async(req,res)=>{
-  const page=pageNumber(req.query.page),rows=(await pool.query(`SELECT c.id,c.title,c.body,c.created_at,c.enabled,c.pause_reason,c.cancelled,(c.media IS NOT NULL) has_image,u.username creator,
+  const page=pageNumber(req.query.page),rows=(await pool.query(`SELECT c.id,c.title,c.body,c.created_at,c.enabled,c.pause_reason,c.cancelled,c.interval_ms,c.batch_size,c.operation_at,c.created_by,c.deleted_at,c.shared_pool,(c.media IS NOT NULL) has_image,u.username creator,
    (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::int n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) counts
    FROM campaigns c JOIN users u ON u.id=c.created_by WHERE c.shared_pool AND c.deleted_at IS NULL AND ($1='owner' OR c.created_by=$2)
    ORDER BY c.created_at DESC LIMIT 100 OFFSET $3`,[req.user.role,req.user.id,(page-1)*100])).rows;res.json({rows,page,size:100});
  }));
  app.get('/api/shared/records',route(async(req,res)=>{
-  const page=pageNumber(req.query.page),rows=(await pool.query(`SELECT r.id,r.phone,r.raw_phone,r.status,r.error_code,r.updated_at,c.id campaign_id,c.title,c.body,c.created_at,u.username creator
+  const page=pageNumber(req.query.page),rows=(await pool.query(`SELECT r.id,r.phone,r.raw_phone,r.status,r.error_code,r.updated_at,r.started_at,c.id campaign_id,c.title,c.body,c.created_at,u.username creator
    FROM recipients r JOIN campaigns c ON c.id=r.campaign_id JOIN users u ON u.id=c.created_by WHERE c.shared_pool AND c.deleted_at IS NULL AND ($1='owner' OR c.created_by=$2)
    ORDER BY r.updated_at DESC,r.id DESC LIMIT 100 OFFSET $3`,[req.user.role,req.user.id,(page-1)*100])).rows;res.json({rows,page,size:100});
  }));

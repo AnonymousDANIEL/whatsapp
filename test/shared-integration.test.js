@@ -53,6 +53,53 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
   await db.pool.query("UPDATE accounts SET shared_checked_at=now()-interval '2 hours' WHERE id=$1",[a1]);assert.equal((await request('/shared/status','GET',null,user1)).data.summary.available,1);await db.pool.query('UPDATE accounts SET shared_checked_at=now() WHERE id=$1',[a1]);
   assert.equal((await request('/shared/send','POST',{...template,request_id:randomUUID(),opt_in_confirmed:false},user1)).status,400);
  });
+ await t.test('Shared availability hides USER routes without changing prices, wallets, accounts or Sessions',async()=>{
+  const snapshot=async()=>(await db.pool.query(`SELECT jsonb_build_object('wallets',(SELECT jsonb_agg(jsonb_build_array(id,credit_units) ORDER BY id) FROM users),'personal',(SELECT to_jsonb(b) FROM billing_settings b),'pricing',(SELECT to_jsonb(s)-'enabled'-'updated_at' FROM shared_settings s),'hours',(SELECT jsonb_agg(h ORDER BY hour) FROM shared_hour_prices h),'accounts',(SELECT jsonb_agg(a ORDER BY id) FROM accounts a),'sessions',(SELECT count(*) FROM sessions),'ledger',(SELECT count(*) FROM credit_ledger)) value`)).rows[0].value;
+  assert.equal((await request('/workspace/features')).status,401);
+  assert.deepEqual((await request('/workspace/features','GET',null,user1)).data,{shared_enabled:true});
+  const before=await snapshot();
+  assert.equal((await request('/shared/availability','PATCH',{enabled:false},user1)).status,403);
+  assert.equal((await request('/shared/availability','PATCH',{enabled:false},{...owner,csrf:'bad'})).status,403);
+  assert.equal((await request('/shared/availability','PATCH',{enabled:'false'},owner)).status,400);
+  try{
+   assert.equal((await request('/shared/availability','PATCH',{enabled:false},owner)).status,200);
+   assert.deepEqual((await request('/workspace/features','GET',null,user2)).data,{shared_enabled:false});
+   for(const [path,method,body]of [['/shared/tasks','GET',null],['/shared/records','GET',null],['/shared/send','POST',{...template,request_id:randomUUID()}]]){
+    const r=await request(path,method,body,user1);assert.equal(r.status,503);assert.equal(r.data.code,'SHARED_DISABLED');
+   }
+   assert.equal((await request('/shared/tasks','GET',null,owner)).status,200);
+   assert.equal((await request('/shared/accounts','GET',null,owner)).status,200);
+   assert.equal((await request('/shared/status?layout=2','GET',null,user1)).data.summary.available,0);
+  }finally{assert.equal((await request('/shared/availability','PATCH',{enabled:true},owner)).status,200);}
+  assert.deepEqual(await snapshot(),before);
+ });
+ await t.test('USER billing exposes current personal/shared per-message rates without management fields or financial writes',async()=>{
+  const before=(await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows;
+  const b=(await request('/billing','GET',null,user1)).data,price=(await db.pool.query('SELECT price_units FROM billing_settings WHERE id=1')).rows[0].price_units;
+  assert.deepEqual(Object.keys(b.rates).sort(),['personal_units','shared_enabled','shared_units']);
+  assert.equal(b.rates.personal_units,price);assert.equal(Number(b.rates.shared_units),12500);assert.equal(b.rates.shared_enabled,true);
+  for(const name of ['price_units','held','held_units','hours','settings','users'])assert.equal(b[name],undefined);
+  assert.equal(b.user.id,u1);assert.ok(b.ledger.every(row=>row.actor===undefined&&row.note===undefined));
+  assert.deepEqual((await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows,before);
+ });
+ await t.test('Shared initial pacing persists per task, validates atomically and remains idempotent across legacy clients',async()=>{
+  await quiet();const requestId=randomUUID(),body={...template,request_id:requestId,pacing:true,interval_ms:60000,batch_size:3};
+  const before=(await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows;
+  const first=await request('/shared/send','POST',body,owner);assert.equal(first.status,201,JSON.stringify(first));
+  const row=(await db.pool.query('SELECT interval_ms,batch_size FROM campaigns WHERE id=$1',[first.data.id])).rows[0];assert.deepEqual(row,{interval_ms:60000,batch_size:3});
+  const replay=await request('/shared/send','POST',body,owner);assert.equal(replay.status,201);assert.equal(replay.data.id,first.data.id);
+  assert.equal((await request('/shared/send','POST',{...body,batch_size:4},owner)).status,409);
+  for(const changes of [{interval_ms:4999},{batch_size:101},{pacing:false}]){
+   const id=randomUUID();assert.equal((await request('/shared/send','POST',{...body,...changes,request_id:id},owner)).status,400);
+   assert.equal((await db.pool.query('SELECT 1 FROM campaigns WHERE shared_request_id=$1',[id])).rowCount,0);
+  }
+  const legacy={...template,request_id:randomUUID()},created=await request('/shared/send','POST',legacy,owner);assert.equal(created.status,201);
+  assert.deepEqual((await db.pool.query('SELECT interval_ms,batch_size FROM campaigns WHERE id=$1',[created.data.id])).rows[0],{interval_ms:5000,batch_size:1});
+  assert.equal((await request('/shared/send','POST',legacy,owner)).data.id,created.data.id);
+  const listed=(await request('/shared/tasks','GET',null,owner)).data.rows.find(c=>c.id===first.data.id);assert.equal(listed.interval_ms,60000);assert.equal(listed.batch_size,3);assert.equal(listed.shared_pool,true);
+  assert.equal((await request('/shared/records','GET',null,owner)).status,200);
+  assert.deepEqual((await db.pool.query('SELECT id,credit_units FROM users ORDER BY id')).rows,before);await quiet();
+ });
  await t.test('Owner image switch blocks only new USER photos; nameless retries stay idempotent and never alter wallet or pricing',async()=>{
   assert.deepEqual((await request('/shared/options','GET',null,user2)).data,{images_enabled:true});
   const before=(await db.pool.query(`SELECT jsonb_build_object('wallets',(SELECT jsonb_agg(jsonb_build_array(id,credit_units) ORDER BY id) FROM users),'personal',(SELECT to_jsonb(s) FROM billing_settings s),'shared',(SELECT to_jsonb(s) FROM shared_settings s),'hours',(SELECT jsonb_agg(p ORDER BY hour) FROM shared_hour_prices p),'charges',(SELECT count(*) FROM message_charges),'ledger',(SELECT count(*) FROM credit_ledger)) value`)).rows[0].value;
