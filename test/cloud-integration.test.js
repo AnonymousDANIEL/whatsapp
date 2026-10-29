@@ -8,6 +8,7 @@ test('PostgreSQL: official Cloud onboarding, signed chat receipts and protected 
  const ownerId=(await db.pool.query("SELECT id FROM users WHERE role='owner'")).rows[0].id,userId=crypto.randomUUID(),qr=crypto.randomUUID();
  await db.pool.query("INSERT INTO users(id,username,password_hash,role,permissions,credit_units) SELECT $1,'cloud-user',password_hash,'user','{}',1234567 FROM users WHERE id=$2",[userId,ownerId]);
  await db.pool.query("INSERT INTO accounts(id,label,worker_group,phone,status) VALUES($1,'retained QR','fixture','60123456788','ready')",[qr]);
+ await db.pool.query("INSERT INTO accounts(id,label,worker_group,registration_phone,shared_pool) VALUES($1,'retained shared QR','fixture','+60123456787',true)",[crypto.randomUUID()]);
  const session=async id=>{const token=crypto.randomBytes(32).toString('hex'),csrf=crypto.randomUUID();await db.pool.query("INSERT INTO sessions(token_hash,user_id,csrf,expires_at) VALUES($1,$2,$3,now()+interval '1 hour')",[hash(token),id,csrf]);return{cookie:'wa_session='+token,csrf};};const owner=await session(ownerId),user=await session(userId);
  const cfg={app_id:'123456789',config_id:'234567890',app_secret:'synthetic-secret-never-return',verify_token:'synthetic-webhook-verify-token-123',enabled:true};
  const pid='345678901',waba='456789012',apiToken='synthetic-access-token-1234567890',calls=[];let registered=false,verified=true,failSend=null,nameApproved=false,providerName='Synthetic Shop',statusOverride=null,sequence=0;
@@ -39,6 +40,7 @@ test('PostgreSQL: official Cloud onboarding, signed chat receipts and protected 
  });
  await t.test('New number drafts protect the QR identity; OTP is never fabricated',async()=>{
   assert.equal((await api('/accounts','POST',{phone:'+60123456788',business_name:'Conflict',category:'OTHER'})).status,409);
+  assert.equal((await api('/accounts','POST',{phone:'+60123456787',business_name:'Reserved shared conflict',category:'OTHER'})).status,409);
   const r=await api('/accounts','POST',{phone:'+60123456789',business_name:'Synthetic Shop',category:'RETAIL'});assert.equal(r.status,201);a=r.data;assert.equal(a.status,'unregistered');assert.equal(a.phone_number_id,null);assert.equal(calls.length,0);
   assert.equal((await api('/accounts/'+a.id+'/signup','POST',{},user)).status,403);
   const r2=await api('/accounts/'+a.id+'/signup','POST',{});assert.equal(r2.status,200);sid=r2.data;
