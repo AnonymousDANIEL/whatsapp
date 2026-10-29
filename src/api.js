@@ -27,6 +27,7 @@ const security = require('./http-security');
 const requestBody = require('./request-body');
 const loginHistory = require('./login-history');
 const noticeFormat = require('../public/notice-format');
+const cloudBusiness = require('./cloud-business');
 
 const SESSION_HOURS = 168;
 const {routes,sharedGroups}=require('./shared-routing').routingConfiguration(process.env);
@@ -134,7 +135,9 @@ async function ensureLoginActivity() {
       WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
   });
 }
-async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000}={}) {
+async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000,cloudOptions={}}={}) {
+  await cloudBusiness.ensure(pool);
+  const cloud=cloudBusiness.create(pool,cloudOptions);
   await ensureLoginActivity();
   await loginHistory.ensure(pool);
   await scanDemand.ensure(pool);
@@ -149,6 +152,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   app.use((req,res,next)=>{res.set('Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()');next();});
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use(security.requireCanonicalHost(publicURL));
+  cloud.publicRoutes(app,route,getSession);
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
   const dummyHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
@@ -193,6 +197,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     await audit(req.user.id, 'password.change', req.user.id); res.json({ ok: true });
   }));
   automaticRefunds.routes(app,route,uuid);
+  cloud.routes(app,route);
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
   banks.routes(app,route);

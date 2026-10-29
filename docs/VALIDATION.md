@@ -1,3 +1,10 @@
+# Official Business Cloud module (2026-10-29 MY)
+
+- Adds an independent Owner-only ten-number Cloud API inbox, official Embedded Signup v4/code exchange, server-side asset checks, SMS/voice verification recovery, register + two-step PIN, profile/photo/name controls and signed webhooks. It starts disabled/unconfigured. See docs/CLOUD_API.md for exact prerequisites and unsupported fields/media.
+- Preserves all QR worker sources, original phone Sessions, money, grants, existing tables and volumes. Only the API receives the new modules and four additive isolated tables.
+- Local JavaScript syntax and ten focused transport/security/worker-watch/navigation tests passed. New disposable PostgreSQL and real Chromium Owner/USER zh/en + isolated SDK regressions are included in full CI. Full CI/publication evidence is recorded on the PR after actual completion.
+- Real Meta authorization, SMS/voice OTP, number allowance, account registration and customer delivery remain unverified until Owner configures the real Meta app/permissions/webhook and controls the new phone number. No secret values, production logins, phone pairing, live OTP or messages are tests.
+
 ## Live shared-send eligibility recovery — 2026-10-25
 
 USER shared sending already uses the Owner's separate global shared pool without personal account grants. Preserve that boundary, Owner-only account/QR management, configured rates, balance checks, real phone/worker freshness, control leases and per-USER results. Do not grant USER access to another customer's account or expose shared phone identities.
