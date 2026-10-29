@@ -18,10 +18,11 @@ function profile(body){
 function signature(raw,header,secret){if(!Buffer.isBuffer(raw)||!/^sha256=[a-f0-9]{64}$/.test(header||'')||!secret)return false;return crypto.timingSafeEqual(Buffer.from(header.slice(7),'hex'),crypto.createHmac('sha256',secret).update(raw).digest());}
 function equal(a,b){const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&x.length>0&&crypto.timingSafeEqual(x,y);}
 async function jsonBody(response){const parts=[];let size=0;for await(const b of response.body||[]){size+=b.length;if(size>1024*1024){await response.body.cancel?.().catch(()=>{});throw fail('CLOUD_META_RESPONSE_INVALID',502);}parts.push(Buffer.from(b));}try{return JSON.parse(Buffer.concat(parts).toString());}catch{throw fail('CLOUD_META_RESPONSE_INVALID',502);}}
+function uploadPath(value){return typeof value==='string'&&value.length<=8192&&/^upload:[A-Za-z0-9_:=+\/-]+(?:\?sig=[A-Za-z0-9_%=+:-]+)?$/.test(value);}
 function client(settings,{fetcher=globalThis.fetch}={}){
  const version=settings.graph_version||'v26.0';check(/^v\d{2}\.0$/.test(version),'CLOUD_CONFIG_INVALID',503);
  async function request(path,{method='GET',token,params={},body,bytes,headers={},proof=true}={}){
-  check(typeof path==='string'&&/^(?:\d{5,30}(?:\/[a-z_]+)?|oauth\/access_token|debug_token|upload:[A-Za-z0-9_:-]+)$/.test(path),'CLOUD_INVALID_PATH');
+  check(typeof path==='string'&&(/^(?:\d{5,30}(?:\/[a-z_]+)?|oauth\/access_token|debug_token)$/.test(path)||uploadPath(path)),'CLOUD_INVALID_PATH');
   const url=new URL('https://graph.facebook.com/'+version+'/'+path);for(const[k,v]of Object.entries(params))url.searchParams.set(k,String(v));
   if(token&&proof)url.searchParams.set('appsecret_proof',crypto.createHmac('sha256',settings.app_secret).update(token).digest('hex'));
   let r;try{r=await fetcher(url,{method,redirect:'error',signal:AbortSignal.timeout(15000),headers:{...token?{Authorization:'Bearer '+token}:{},...body?{'Content-Type':'application/json'}:{},...headers},body:bytes??(body?JSON.stringify(body):undefined)});}catch{throw fail('CLOUD_META_UNCERTAIN',502);}
@@ -33,4 +34,4 @@ function client(settings,{fetcher=globalThis.fetch}={}){
   async member(token,waba,pid){let after;for(let page=0;page<20;page++){const r=await request(id(waba)+'/phone_numbers',{token,params:{fields:PHONE_FIELDS,limit:100,...after?{after}:{}}});check(Array.isArray(r.data),'CLOUD_META_RESPONSE_INVALID',502);const match=r.data.find(p=>p.id===pid);if(match)return match;after=r.paging?.cursors?.after;if(!r.paging?.next||!after)break;}throw fail('CLOUD_META_ASSET_MISMATCH',403);}
  };
 }
-module.exports={CATEGORIES,PHONE_FIELDS,fail,check,id,phone,text,profile,signature,equal,client};
+module.exports={CATEGORIES,PHONE_FIELDS,fail,check,id,phone,text,profile,signature,equal,uploadPath,client};

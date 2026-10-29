@@ -29,3 +29,12 @@ test('WABA membership follows only bounded cursors, never an upstream next URL',
  const urls=[],m=meta.client(cfg,{fetcher:async u=>{urls.push(u.href);return new Response(JSON.stringify(urls.length===1?{data:[],paging:{next:'https://evil.invalid/steal',cursors:{after:'safe-cursor'}}}:{data:[{id:'345678901',display_phone_number:'+60123456789'}]}));}});
  assert.equal((await m.member('token','234567890','345678901')).id,'345678901');assert.ok(urls.every(u=>u.startsWith('https://graph.facebook.com/')));assert.match(urls[1],/after=safe-cursor/);
 });
+
+test('Opaque Meta upload sessions retain signed IDs on the fixed Graph host',async()=>{
+ const calls=[],m=meta.client(cfg,{fetcher:async(url,options)=>{calls.push({url,options});return new Response('{"h":"synthetic-photo-handle"}');}});
+ const session='upload:MTpzeW50aGV0aWM=?sig=synthetic_sig-123';assert.equal(meta.uploadPath(session),true);
+ await m.request(session,{method:'POST',token:'fixture',bytes:Buffer.from('fixture'),headers:{Authorization:'OAuth fixture',file_offset:'0'}});
+ assert.equal(calls[0].url.origin,'https://graph.facebook.com');assert.equal(calls[0].url.pathname,'/v26.0/upload:MTpzeW50aGV0aWM=');assert.equal(calls[0].url.searchParams.get('sig'),'synthetic_sig-123');assert.ok(calls[0].url.searchParams.get('appsecret_proof'));
+ for(const path of ['upload:../secret','upload:x?access_token=evil','upload:x#fragment','upload:x?sig=ok&other=x']){assert.equal(meta.uploadPath(path),false);await assert.rejects(m.request(path));}
+ assert.equal(calls.length,1);
+});
