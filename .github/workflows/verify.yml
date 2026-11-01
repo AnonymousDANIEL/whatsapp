@@ -49,7 +49,7 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Check JavaScript
-        run: npm run check && node --check src/overview.js && node --check public/notice-marquee.js && node --check src/cloud-meta.js && node --check src/cloud-store.js && node --check src/cloud-business.js && node --check public/cloud-business.js && node --check public/cloud-signup.js && node --check test/cloud-ui.cjs
+        run: npm run check && node --check src/overview.js && node --check public/notice-marquee.js && node --check src/cloud-meta.js && node --check src/cloud-store.js && node --check src/cloud-business.js && node --check public/cloud-business.js && node --check public/cloud-signup.js && node --check test/cloud-ui.cjs && node --check src/auto-reply.js && node --check src/auto-reply-store.js && node --check src/auto-reply-inbox.js && node --check src/reply-providers.js && node --check public/auto-reply.js && node --check public/campaign-timing.js && node --check public/live-chat.js && node --check test/auto-reply-ui.cjs
       - name: Test permissions, schedules and sender results
         run: npm test
       - name: Install Chinese fonts for browser screenshots
@@ -74,6 +74,10 @@ jobs:
         env:
           UI_SCREENSHOT_DIR: test-output/workspace-header
         run: CHROME_PATH="$(command -v google-chrome)" node test/cloud-ui.cjs
+      - name: Auto reply, maintenance and Malaysia scheduling browser checks
+        env:
+          UI_SCREENSHOT_DIR: test-output/workspace-header
+        run: CHROME_PATH="$(command -v google-chrome)" node test/auto-reply-ui.cjs
       - name: Image and caption sending browser tests without live WhatsApp messages
         run: CHROME_PATH="$(command -v google-chrome)" node test/workspace-send-ui.cjs
       - name: Save synthetic workspace UI screenshots

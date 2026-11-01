@@ -14,6 +14,7 @@ const { promisify } = require('node:util');
 const execute = promisify(execFile);
 const { describeStartupError } = require('./startup');
 const { messageId,validAck,messageAck } = require('./messages');
+const autoReplyInbox=require('./auto-reply-inbox');
 const {readSnapshot,historyFailureCode}=require('./history-sync');
 const {sendFailureCode}=require('./workspace-send');
 const {purgeAccountData}=require('./account-deletion');
@@ -171,6 +172,7 @@ async function startAccount(account) {
     });
     // Real receipts remain valid across a reconnect; only connection-state callbacks are generation-bound.
     e.client.on('message_ack',(message,ack)=>{receiveAck(account.id,messageId(message),ack).catch(err=>console.error('receipt persistence:',err.code||err.name));});
+    e.client.on('message',message=>autoReplyInbox.enqueue(pool,account,e,message,()=>lifecycle.current(entries,e)&&!e.closing));
     e.client.on('message_create',message=>{recordMessage(account.id,message).catch(err=>console.error('message history:',err.code||err.name));});
     e.client.initialize().then(async()=>{
       if(!lifecycle.current(entries,e)){
@@ -327,7 +329,7 @@ async function send(entry, recipient, campaign, {timeoutMs=60000}={}) {
     const allowed=(await pool.query(`SELECT c.* FROM campaigns c JOIN users u ON u.id=c.created_by JOIN accounts a ON a.id=c.account_id
       WHERE c.id=$1 AND c.enabled AND c.deleted_at IS NULL AND NOT c.cancelled AND a.enabled AND ${eligible}
       AND NOT EXISTS(SELECT 1 FROM control_leases l WHERE l.account_id=a.id AND l.expires_at>now())`,[campaign.id])).rows[0];
-    return allowed&&canDispatch(allowed);
+    return allowed&&canDispatch(allowed)&&await autoReplyInbox.permitted(pool,allowed);
   };
   const operation = (async () => {
     try {
@@ -452,7 +454,8 @@ async function start() {
       res.json({ role: 'worker', group, status: a.status, code, screen_ready: Boolean(a.enabled && e?.desktopReady && healthy), connected: Boolean(a.enabled && e?.ready && healthy) });
     } catch { res.status(500).json({ error: 'Worker status unavailable' }); }
   });
-  app.get('/capacity',(_,res)=>res.json({role:'worker',group,running:entries.size,max_accounts:maxAccounts}));
+  app.get('/capacity',(_,res)=>res.json({role:'worker',group,running:entries.size,max_accounts:maxAccounts,auto_reply_version:1}));
+  const stopReplyHeartbeat=autoReplyInbox.heartbeat(pool,group);process.once('SIGTERM',stopReplyHeartbeat);
   app.post('/accounts/:id/handoff/:target',async(req,res)=>{
     try{assert(/^[\w-]{1,40}$/.test(req.params.target),'Invalid group');
       const moved=await allocation.moveUnstarted(req.params.id,group,req.params.target,dataPath,entries);if(moved)console.log('Account capacity handoff:',JSON.stringify({from:group,to:req.params.target,account:crypto.createHash('sha256').update(req.params.id).digest('hex').slice(0,12)}));res.json({ok:true,moved});

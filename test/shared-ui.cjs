@@ -503,27 +503,28 @@ async function verifySharedAvailability(page,fixture,role,language){
   assert.equal(await page.$('#shared-register'),null);
   for(const enabled of [false,true]){
    await page.click('#shared-availability');
+   await page.waitForSelector('#modal[open]');await page.$eval('#modal [name=enabled]',(n,v)=>n.checked=v,enabled);await page.click('#modal button[type=submit]');
    await page.waitForFunction(enabled=>document.querySelector('#shared-availability')?.getAttribute('aria-pressed')===String(enabled),{},enabled);
    assert.equal(fixture.enabled,enabled);assert.ok(await page.$('#shared-add'));
    assert.ok(await page.$('#nav [data-page=shared]'),'Owner keeps account/QR management when closed');
-   assert.deepEqual(fixture.requests.findLast(r=>r.path==='/shared/availability').body,{enabled});
+   assert.deepEqual(fixture.requests.findLast(r=>r.path==='/shared/availability').body,{enabled,maintenance_reason:''});
   }
  }else{
   assert.equal(await page.$('#shared-availability'),null);
   fixture.featuresFail=true;await page.evaluate(()=>loadPage(true));
   assert.ok(await page.$('#nav [data-page=shared]'),'A temporary policy read failure preserves the last confirmed state');fixture.featuresFail=false;
   await page.focus('#shared-send-form textarea[name=body]');fixture.enabled=false;
-  await page.waitForFunction(()=>page==='overview'&&!loading&&!document.querySelector('#nav [data-page=shared]'),{timeout:9000});
+  await page.waitForFunction(()=>page==='shared'&&!loading&&document.querySelector('.shared-maintenance'),{timeout:9000});
   assert.equal(await page.$('#shared-send-form'),null,'Closing removes a focused stale sending form');
   assert.equal(await page.$('#nav [data-page=shared-tasks],#nav [data-page=shared-records]'),null);
   await page.evaluate(()=>sessionStorage.setItem('wa_page','shared-tasks'));
   const start=fixture.requests.length;await page.reload({waitUntil:'networkidle0'});
-  await page.waitForFunction(()=>page==='overview'&&!loading&&lastRenderedPage==='overview');
+  await page.waitForFunction(()=>page==='shared'&&!loading&&lastRenderedPage==='shared');
   assert.equal(fixture.requests.slice(start).some(r=>['/shared/tasks','/shared/records','/shared/accounts'].includes(r.path)),false,'Closed saved routes never request shared data');
   fixture.enabled=true;await page.evaluate(()=>loadPage(true));
   await page.click('#nav [data-nav-toggle=shared]');await page.click('#nav [data-page=shared-tasks]');await waitReady(page,'shared-tasks');
   await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);fixture.enabled=false;
-  await page.waitForFunction(()=>page==='overview'&&!loading&&!document.querySelector('#modal').open&&!document.querySelector('#nav [data-page=shared]'),{timeout:9000});
+  await page.waitForFunction(()=>page==='shared'&&!loading&&!document.querySelector('#modal').open&&document.querySelector('.shared-maintenance'),{timeout:9000});
   fixture.enabled=true;await page.evaluate(()=>loadPage(true));
   await page.click('#nav [data-page=shared]');await waitReady(page);
   assert.equal(fixture.requests.filter(r=>r.method!=='GET').length,writes,'USER observes the switch without writing');

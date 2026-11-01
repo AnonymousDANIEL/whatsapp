@@ -34,5 +34,8 @@
   "/railway.worker.json",
   "/src/scan-demand.js",
   "/src/desktop-locks.js",
-  "/src/desktop-lock-preload.js"
+  "/src/desktop-lock-preload.js",
+  "/src/auto-reply-inbox.js",
+  "/src/auto-reply-store.js",
+  "/src/cloud-store.js"
 ]

@@ -56,14 +56,14 @@ test('PostgreSQL: shared fleet isolation, hourly rates, refunds and safe recover
  await t.test('Shared availability hides USER routes without changing prices, wallets, accounts or Sessions',async()=>{
   const snapshot=async()=>(await db.pool.query(`SELECT jsonb_build_object('wallets',(SELECT jsonb_agg(jsonb_build_array(id,credit_units) ORDER BY id) FROM users),'personal',(SELECT to_jsonb(b) FROM billing_settings b),'pricing',(SELECT to_jsonb(s)-'enabled'-'updated_at' FROM shared_settings s),'hours',(SELECT jsonb_agg(h ORDER BY hour) FROM shared_hour_prices h),'accounts',(SELECT jsonb_agg(a ORDER BY id) FROM accounts a),'sessions',(SELECT count(*) FROM sessions),'ledger',(SELECT count(*) FROM credit_ledger)) value`)).rows[0].value;
   assert.equal((await request('/workspace/features')).status,401);
-  assert.deepEqual((await request('/workspace/features','GET',null,user1)).data,{shared_enabled:true});
+  assert.deepEqual((await request('/workspace/features','GET',null,user1)).data,{shared_enabled:true,shared_maintenance_reason:''});
   const before=await snapshot();
   assert.equal((await request('/shared/availability','PATCH',{enabled:false},user1)).status,403);
   assert.equal((await request('/shared/availability','PATCH',{enabled:false},{...owner,csrf:'bad'})).status,403);
   assert.equal((await request('/shared/availability','PATCH',{enabled:'false'},owner)).status,400);
   try{
    assert.equal((await request('/shared/availability','PATCH',{enabled:false},owner)).status,200);
-   assert.deepEqual((await request('/workspace/features','GET',null,user2)).data,{shared_enabled:false});
+   assert.deepEqual((await request('/workspace/features','GET',null,user2)).data,{shared_enabled:false,shared_maintenance_reason:''});
    for(const [path,method,body]of [['/shared/tasks','GET',null],['/shared/records','GET',null],['/shared/send','POST',{...template,request_id:randomUUID()}]]){
     const r=await request(path,method,body,user1);assert.equal(r.status,503);assert.equal(r.data.code,'SHARED_DISABLED');
    }

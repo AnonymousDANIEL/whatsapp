@@ -28,6 +28,8 @@ const requestBody = require('./request-body');
 const loginHistory = require('./login-history');
 const noticeFormat = require('../public/notice-format');
 const cloudBusiness = require('./cloud-business');
+const campaignTiming = require('./campaign-timing');
+const autoReply = require('./auto-reply');
 
 const SESSION_HOURS = 168;
 const {routes,sharedGroups}=require('./shared-routing').routingConfiguration(process.env);
@@ -135,7 +137,9 @@ async function ensureLoginActivity() {
       WHERE u.id=l.actor_id AND (u.last_login_at IS NULL OR u.last_login_at<l.last_login_at)`);
   });
 }
-async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000,cloudOptions={}}={}) {
+async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5000,loginMonitorIntervalMs=15000,cloudOptions={},autoReplyOptions={}}={}) {
+  await autoReply.ensure(pool);
+  const replies=autoReply.create(pool,autoReplyOptions);
   await cloudBusiness.ensure(pool);
   const cloud=cloudBusiness.create(pool,cloudOptions);
   await ensureLoginActivity();
@@ -153,6 +157,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use(security.requireCanonicalHost(publicURL));
   cloud.publicRoutes(app,route,getSession);
+  replies.publicRoutes(app,route);
   app.get('/healthz', route(async (_, res) => { await pool.query('SELECT 1'); res.json({ ok: true, role: 'api' }); }));
   const limiter = rateLimit({ windowMs: 15 * 60000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: '登录过于频繁，请稍后重试' } });
   const dummyHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
@@ -198,6 +203,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   }));
   automaticRefunds.routes(app,route,uuid);
   cloud.routes(app,route);
+  replies.routes(app,route);
   billing.routes(app,route,uuid);
   payments.routes(app,route,uuid);
   banks.routes(app,route);
@@ -408,12 +414,13 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     assert(typeof b.body === 'string' && (b.body.trim().length||media) && b.body.length <= 4000, '请输入消息或上传照片');
     assert(b.opt_in_confirmed === true, '请确认这些联系人同意接收消息');
     assert(b.send_now === undefined || typeof b.send_now === 'boolean', 'send_now 无效');
+    const timing=campaignTiming.parse(b);
     const pacing=b.pacing===true?validatePacing(b):null;
-    const schedule = validateSchedule(pacing?{...b,timezone:'Asia/Kuala_Lumpur',window_start:'00:00',window_end:'00:00',weekdays:[1,2,3,4,5,6,7],scheduled_at:null,expires_at:null}:b), parsed = parseRecipients(b.recipients);
+    const schedule = validateSchedule(pacing?{...b,timezone:'Asia/Kuala_Lumpur',window_start:'00:00',window_end:'00:00',weekdays:[1,2,3,4,5,6,7],scheduled_at:timing?.scheduled_at||null,expires_at:null}:b), parsed = parseRecipients(b.recipients);
     const id = crypto.randomUUID();
     await transaction(async c => {
       await c.query(`INSERT INTO campaigns(id,account_id,created_by,title,body,timezone,window_start,window_end,weekdays,scheduled_at,expires_at,interval_ms,opt_in_confirmed,duplicate_count,send_now,media,batch_size)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, pacing?true:b.send_now === true,media,pacing?.batch_size||1]);
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14,$15,$16)`, [id, a.id, req.user.id, b.title.trim(), b.body, schedule.timezone, schedule.window_start, schedule.window_end, schedule.weekdays, schedule.scheduled_at, schedule.expires_at, schedule.interval_ms, parsed.duplicates, (timing?timing.send_now:pacing?true:b.send_now === true),media,pacing?.batch_size||1]);
       await c.query(`INSERT INTO recipients(campaign_id,raw_phone,phone,status,error_code)
         SELECT $1,r.raw,r.phone,r.status,r.error FROM jsonb_to_recordset($2::jsonb) AS r(raw text,phone text,status text,error text)`, [id, JSON.stringify(parsed.recipients)]);
     });
@@ -639,6 +646,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
   const cleanup = setInterval(() => pool.query('DELETE FROM sessions WHERE expires_at<now()').catch(() => {}), 3600000); cleanup.unref();
   await new Promise(resolve => server.listen(Number(process.env.PORT || 3000), '::', resolve));
   console.log('Management service ready');
+  const stopReplies=replies.monitor();server.on('close',stopReplies);
   const stopRefundMonitor=refundMonitorIntervalMs>0?automaticRefunds.monitor(refundMonitorIntervalMs):()=>{};
   server.on('close',stopRefundMonitor);
   const stopLoginMonitor=loginMonitorIntervalMs>0?loginHistory.monitor(pool,loginMonitorIntervalMs):()=>{};

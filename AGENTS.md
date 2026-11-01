@@ -1,3 +1,13 @@
+## Auto reply, shared maintenance and scheduled sending (2026-11-01)
+
+- Auto reply is opt-in: all five channel policies start disabled, connections start disabled, and enabling requires current WhatsApp readiness or verified official provider credentials. Owner can pause each channel globally or for one USER. Never bypass active/locked/grant checks or replay old incoming messages after resume.
+- Personal QR accounts reuse the existing worker/browser/profile. Inbound hooks accept current-session private text messages only, resolve LIDs through the pinned client, and enqueue ordinary campaigns using existing billing/receipt rules. Keep bounded inbound work, duplicate detection, per-peer cooldown and the five-minute response deadline. Shared QR workers are outside this feature's rollout.
+- Telegram means Bot API; WeChat means an Official Account using encrypted callbacks; Messenger means a Facebook Page with its required official permissions. Store credentials encrypted and never return them to the browser. Do not replace another Telegram webhook. No real external channel or customer send is verified by synthetic CI.
+- Web live chat uses independent expiring visitor tokens, no application login cookies, tenant-scoped inboxes and idempotent message IDs. Keep untrusted messages as escaped text.
+- When shared sending is disabled, USER retains its sidebar entry and sees Maintenance with the escaped Owner reason, without send controls. This supersedes earlier hide/Coming soon wording for shared WhatsApp only. Closing shared sending must not reset or stop QR accounts.
+- New personal send tasks offer Right now or Later at in Asia/Kuala_Lumpur, validated server-side to at most five days ahead. Preserve existing pacing, photo, permission and billing controls. A later task must have send_now=false even if a caller also supplies true.
+- Additive API schema first; then an isolated empty personal worker canary before any necessary personal worker rollout. Report the brief reconnect risk before changing occupied worker deployments. Preserve all private /data mounts, Session profiles, quotas and shared-worker deployments. Record actual build/test/production evidence separately.
+
 # Simplified header, USER guide and reference login (2026-10-22 MY, current)
 
 - The user's latest direct-update authorization cancels the previous deployment hold. Prepare, validate and publish the requested API/public-asset changes to the existing project. Older instructions retaining both header dropdowns/shared guides or waiting for Resolved no longer apply to this request.

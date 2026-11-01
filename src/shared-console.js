@@ -19,15 +19,17 @@ function taskTitle(value,id,shared=false){
 }
 function routes(app,route,workerRoutes){
  app.get('/api/workspace/features',route(async(req,res)=>{
-  const row=(await pool.query('SELECT enabled FROM shared_settings WHERE id=1')).rows[0];
-  res.json({shared_enabled:row?.enabled===true});
+  const row=(await pool.query('SELECT s.enabled,o.maintenance_reason FROM shared_settings s CROSS JOIN shared_console_options o WHERE s.id=1 AND o.id=1')).rows[0];
+  res.json({shared_enabled:row?.enabled===true,shared_maintenance_reason:row?.maintenance_reason||''});
  }));
  app.patch('/api/shared/availability',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以管理共享 WhatsApp',403);
   assert(typeof req.body.enabled==='boolean','共享服务开关无效');
+  assert(req.body.maintenance_reason===undefined||(typeof req.body.maintenance_reason==='string'&&req.body.maintenance_reason.length<=1000),'维护原因最多 1000 个字符');
   const value=await transaction(async db=>{
    const row=(await db.query('UPDATE shared_settings SET enabled=$1,updated_at=now() WHERE id=1 RETURNING enabled',[req.body.enabled])).rows[0];
-   await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'shared.availability',$2)",[req.user.id,{enabled:row.enabled}]);
+   if(req.body.maintenance_reason!==undefined)await db.query('UPDATE shared_console_options SET maintenance_reason=$1,updated_at=now() WHERE id=1',[req.body.maintenance_reason.trim()]);
+   await db.query("INSERT INTO audit(actor_id,action,details) VALUES($1,'shared.availability',$2)",[req.user.id,{enabled:row.enabled,maintenance_reason:req.body.maintenance_reason}]);
    return row;
   });
   if(value.enabled)await require('./billing').recoverCreditTasks();
@@ -37,7 +39,7 @@ function routes(app,route,workerRoutes){
  // Owner account/QR management remains available without restarting any worker.
  app.use(['/api/shared/send','/api/shared/tasks','/api/shared/records'],(req,res,next)=>{
   if(req.user.role==='owner')return next();
-  pool.query('SELECT enabled FROM shared_settings WHERE id=1').then(({rows})=>{
+  pool.query('SELECT s.enabled,o.maintenance_reason FROM shared_settings s CROSS JOIN shared_console_options o WHERE s.id=1 AND o.id=1').then(({rows})=>{
    if(rows[0]?.enabled!==true)throw Object.assign(new Error('共享 WhatsApp 服务已关闭'),{status:503,code:'SHARED_DISABLED',publicMessage:true});
    next();
   }).catch(next);
@@ -51,9 +53,9 @@ function routes(app,route,workerRoutes){
    count(*) FILTER(WHERE enabled AND shared_state='unknown')::integer unknown
    FROM accounts a WHERE shared_pool AND deleted_at IS NULL`,[groups])).rows[0];
   summary.offline=summary.total-summary.connected-summary.waiting-summary.unknown;
-  const options=(await pool.query('SELECT images_enabled FROM shared_console_options WHERE id=1')).rows[0];
+  const options=(await pool.query('SELECT images_enabled,maintenance_reason FROM shared_console_options WHERE id=1')).rows[0];
   const visibleSummary=req.user.role==='owner'?summary:{available:s.enabled&&summary.available>0?1:0};
-  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary:visibleSummary,images_enabled:options.images_enabled,pacing:{interval_ms:s.interval_ms,batch_size:s.batch_size},timezone:'Asia/Kuala_Lumpur'};
+  const data={enabled:s.enabled,configured:s.current_price_units!=null,summary:visibleSummary,images_enabled:options.images_enabled,maintenance_reason:options.maintenance_reason,pacing:{interval_ms:s.interval_ms,batch_size:s.batch_size},timezone:'Asia/Kuala_Lumpur'};
   if(req.query.layout!=='2')data.balance_units=(await pool.query('SELECT credit_units FROM users WHERE id=$1',[req.user.id])).rows[0].credit_units;
   if(req.user.role==='owner'){
    data.settings=s;data.hours=(await pool.query('SELECT hour,price_units FROM shared_hour_prices ORDER BY hour')).rows;
@@ -61,7 +63,7 @@ function routes(app,route,workerRoutes){
   }
   res.json(data);
  }));
- app.get('/api/shared/options',route(async(req,res)=>res.json((await pool.query('SELECT images_enabled FROM shared_console_options WHERE id=1')).rows[0])));
+ app.get('/api/shared/options',route(async(req,res)=>res.json((await pool.query('SELECT images_enabled,maintenance_reason FROM shared_console_options WHERE id=1')).rows[0])));
  app.put('/api/shared/options',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以设置共享图片发送',403);
   assert(typeof req.body.images_enabled==='boolean','请选择图片发送开关');
@@ -77,7 +79,7 @@ function routes(app,route,workerRoutes){
   try{
    req.body.title=taskTitle(req.body.title,String(req.body.request_id||''),true);
    if(req.user.role!=='owner'&&req.body.media){
-    const row=(await pool.query('SELECT images_enabled FROM shared_console_options WHERE id=1')).rows[0];
+    const row=(await pool.query('SELECT images_enabled,maintenance_reason FROM shared_console_options WHERE id=1')).rows[0];
     if(!row?.images_enabled){
      assert(/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(req.body.request_id||''),'请求 ID 无效');
      // An identical retry may still retrieve its existing result. The original
