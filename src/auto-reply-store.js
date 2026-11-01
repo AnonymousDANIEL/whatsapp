@@ -14,8 +14,10 @@ async function ensure(pool){
    CREATE INDEX IF NOT EXISTS reply_events_connection_time_idx ON reply_events(connection_id,created_at DESC);
    CREATE INDEX IF NOT EXISTS reply_events_campaign_idx ON reply_events(campaign_id) WHERE campaign_id IS NOT NULL;
    CREATE TABLE IF NOT EXISTS reply_visitors(id uuid PRIMARY KEY,connection_id uuid NOT NULL REFERENCES reply_connections(id),token_hash text NOT NULL,expires_at timestamptz NOT NULL);
+   CREATE UNIQUE INDEX IF NOT EXISTS reply_visitors_token_idx ON reply_visitors(token_hash);
    CREATE TABLE IF NOT EXISTS reply_web_messages(id uuid PRIMARY KEY,connection_id uuid NOT NULL REFERENCES reply_connections(id),visitor_id uuid NOT NULL REFERENCES reply_visitors(id),request_id uuid NOT NULL,direction text NOT NULL,body text NOT NULL,actor_id uuid,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(visitor_id,request_id,direction));
    CREATE INDEX IF NOT EXISTS reply_web_messages_chat_idx ON reply_web_messages(visitor_id,created_at);
+   CREATE INDEX IF NOT EXISTS reply_web_messages_connection_idx ON reply_web_messages(connection_id,created_at DESC);
    CREATE TABLE IF NOT EXISTS reply_workers(worker_group text PRIMARY KEY,version integer NOT NULL DEFAULT 1,heartbeat_at timestamptz NOT NULL DEFAULT now());`);
   for(const channel of CHANNELS)await c.query('INSERT INTO reply_policy(channel) VALUES($1) ON CONFLICT DO NOTHING',[channel]);
   // This table is also used by older API builds and is additive only.

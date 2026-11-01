@@ -12,7 +12,11 @@ function create(pool,{fetcher=fetch,monitorIntervalMs=2000}={}){
  async function own(user,id,c=pool){const r=(await c.query('SELECT * FROM reply_connections WHERE id=$1',[uuid(id)])).rows[0];assert(r&&(r.user_id===user.id||user.role==='owner'),'Connection unavailable',404);return r;}
  async function policy(user,channel,c=pool){assert(CHANNELS.includes(channel),'Invalid channel');if(user.role==='owner')return;const r=(await c.query('SELECT p.enabled AND COALESCE(up.enabled,true) AS allowed FROM reply_policy p LEFT JOIN reply_user_policy up ON up.channel=p.channel AND up.user_id=$1 WHERE p.channel=$2',[user.id,channel])).rows[0];assert(r?.allowed,'Auto reply access is paused',403);}
  function visible(r){return {id:r.id,user_id:r.user_id,channel:r.channel,label:r.label,account_id:r.account_id,remote_id:r.remote_id,enabled:r.enabled,mode:r.mode,keywords:r.keywords,reply_text:r.reply_text,cooldown_seconds:r.cooldown_seconds,verified_at:r.verified_at,last_webhook_at:r.last_webhook_at,configured:!!r.credentials_cipher||['webchat','whatsapp'].includes(r.channel),webhook:!['webchat','whatsapp'].includes(r.channel)?webhook(r):undefined,chat_url:r.channel==='webchat'?origin+'/live-chat.html?channel='+r.id:undefined};}
- async function pauseCampaigns(c,where,args){await c.query(`UPDATE campaigns SET enabled=false,pause_reason=NULL,operation_at=now() WHERE id IN(SELECT e.campaign_id FROM reply_events e JOIN reply_connections r ON r.id=e.connection_id WHERE e.campaign_id IS NOT NULL AND ${where}) AND enabled`,args);}
+ async function pauseCampaigns(c,where,args){
+   const ids=(await c.query(`UPDATE campaigns SET enabled=false,pause_reason=NULL,operation_at=now() WHERE id IN(SELECT e.campaign_id FROM reply_events e JOIN reply_connections r ON r.id=e.connection_id WHERE e.campaign_id IS NOT NULL AND ${where}) RETURNING id`,args)).rows.map(r=>r.id);
+   if(ids.length)await c.query("UPDATE recipients SET status='cancelled',error_code='AUTO_REPLY_PAUSED',updated_at=now() WHERE campaign_id=ANY($1::uuid[]) AND status='pending'",[ids]);
+   await c.query(`UPDATE reply_events e SET status='paused',updated_at=now() FROM reply_connections r WHERE r.id=e.connection_id AND ${where} AND (e.status='received' OR (e.status='queued' AND EXISTS(SELECT 1 FROM recipients rec WHERE rec.campaign_id=e.campaign_id AND rec.status='cancelled')))`,args);
+  }
  function routes(app,route){
   app.get('/api/auto-reply',route(async(req,res)=>{
    const owner=req.user.role==='owner',rows=(await pool.query('SELECT r.*,u.username,u.active AS user_active,u.locked AS user_locked FROM reply_connections r JOIN users u ON u.id=r.user_id WHERE $1 OR r.user_id=$2 ORDER BY r.created_at DESC LIMIT 200',[owner,req.user.id])).rows;
@@ -26,6 +30,7 @@ function create(pool,{fetcher=fetch,monitorIntervalMs=2000}={}){
    await tx(pool,async c=>{if(b.user_id){uuid(b.user_id);assert((await c.query("SELECT 1 FROM users WHERE id=$1 AND role='user'",[b.user_id])).rowCount,'USER unavailable');await c.query('INSERT INTO reply_user_policy(user_id,channel,enabled,reason) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,channel) DO UPDATE SET enabled=excluded.enabled,reason=excluded.reason',[b.user_id,b.channel,b.enabled,reason]);}
     else await c.query('UPDATE reply_policy SET enabled=$1,reason=$2 WHERE channel=$3',[b.enabled,reason,b.channel]);
     if(!b.enabled)await pauseCampaigns(c,'r.channel=$1'+(b.user_id?' AND r.user_id=$2':''),b.user_id?[b.channel,b.user_id]:[b.channel]);
+    else await c.query('UPDATE reply_connections SET activated_at=now() WHERE channel=$1'+(b.user_id?' AND user_id=$2':''),b.user_id?[b.channel,b.user_id]:[b.channel]);
     await c.query("INSERT INTO audit(actor_id,action,entity_id,details) VALUES($1,'autoreply.policy',$2,$3)",[req.user.id,b.user_id||null,{channel:b.channel,enabled:b.enabled,reason}]);
    });res.json({ok:true});
   }));
@@ -134,7 +139,15 @@ function create(pool,{fetcher=fetch,monitorIntervalMs=2000}={}){
    const id=await provider.send(r.channel,credentials(r),event.peer,event.reply_text);await pool.query("UPDATE reply_events SET status='submitted',provider_reply_id=$1,updated_at=now() WHERE id=$2 AND status='sending'",[id,event.id]);
   }catch(e){await pool.query("UPDATE reply_events SET status=$1,error_code=$2,updated_at=now() WHERE id=$3 AND status='sending'",[e.code==='REPLY_REJECTED'?'failed':'unknown',e.code==='REPLY_REJECTED'?'REPLY_REJECTED':'REPLY_UNKNOWN',event.id]);}
  }
- function monitor(){if(monitorIntervalMs<=0)return()=>{};let busy=false;const tick=async()=>{if(busy)return;busy=true;try{await pool.query("UPDATE reply_events SET status='unknown',error_code='REPLY_INTERRUPTED',updated_at=now() WHERE status='sending' AND updated_at<now()-interval '1 minute'");for(let i=0;i<8;i++)await processOne();}catch(e){console.error('Auto reply queue:',e.code||e.name);}finally{busy=false;}};const timer=setInterval(tick,monitorIntervalMs);timer.unref();return()=>clearInterval(timer);}
- return {routes,publicRoutes,monitor,processOne};
+ async function expireQueued(){
+  await tx(pool,async c=>{
+   const ids=(await c.query("UPDATE campaigns c SET enabled=false,pause_reason=NULL,operation_at=now() FROM reply_events e WHERE e.campaign_id=c.id AND e.status='queued' AND c.expires_at<now() AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=c.id AND r.status='pending') RETURNING c.id")).rows.map(r=>r.id);
+   if(!ids.length)return;
+   await c.query("UPDATE recipients SET status='cancelled',error_code='AUTO_REPLY_EXPIRED',updated_at=now() WHERE campaign_id=ANY($1::uuid[]) AND status='pending'",[ids]);
+   await c.query("UPDATE reply_events SET status='paused',error_code='AUTO_REPLY_EXPIRED',updated_at=now() WHERE campaign_id=ANY($1::uuid[]) AND status='queued' AND EXISTS(SELECT 1 FROM recipients r WHERE r.campaign_id=reply_events.campaign_id AND r.status='cancelled')",[ids]);
+  });
+ }
+ function monitor(){if(monitorIntervalMs<=0)return()=>{};let busy=false;const tick=async()=>{if(busy)return;busy=true;try{await expireQueued();await pool.query("UPDATE reply_events SET status='unknown',error_code='REPLY_INTERRUPTED',updated_at=now() WHERE status='sending' AND updated_at<now()-interval '1 minute'");for(let i=0;i<8;i++)await processOne();}catch(e){console.error('Auto reply queue:',e.code||e.name);}finally{busy=false;}};const timer=setInterval(tick,monitorIntervalMs);timer.unref();return()=>clearInterval(timer);}
+ return {routes,publicRoutes,monitor,processOne,expireQueued};
 }
 module.exports={create,ensure:store.ensure};
