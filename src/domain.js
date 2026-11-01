@@ -78,4 +78,4 @@ function manageUser(actor, target) {
 }
 function csvCell(value) { return '"' + String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""') + '"'; }
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
-module.exports = { PERMISSIONS, assert, parseRecipients, validateSchedule, validatePacing, inWindow, canDispatch, ackStatus, permission, manageUser, csvCell, hash };
+module.exports = { PERMISSIONS, assert, normalizePhone, parseRecipients, validateSchedule, validatePacing, inWindow, canDispatch, ackStatus, permission, manageUser, csvCell, hash };

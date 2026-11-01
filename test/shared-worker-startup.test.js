@@ -19,7 +19,7 @@ test('PostgreSQL: a dedicated shared worker can serve and heartbeat while retain
  const ready=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Worker failed to start with its configured connection budget: '+output)),15000);child.once('message',value=>{clearTimeout(timer);resolve(value);});child.once('error',e=>{clearTimeout(timer);reject(e);});child.once('exit',code=>{clearTimeout(timer);reject(Error('Worker exited before ready: '+code+' '+output));});});
  const base='http://127.0.0.1:'+ready.port,health=await fetch(base+'/healthz');assert.equal(health.status,200);assert.deepEqual(await health.json(),{ok:true,role:'worker',group});
  assert.equal((await fetch(base+'/capacity')).status,401);
- const capacity=await fetch(base+'/capacity',{headers:{Authorization:'Bearer '+secret}});assert.equal(capacity.status,200);assert.deepEqual(await capacity.json(),{role:'worker',group,running:0,max_accounts:plan.slots_per_worker});
+ const capacity=await fetch(base+'/capacity',{headers:{Authorization:'Bearer '+secret}});assert.equal(capacity.status,200);assert.deepEqual(await capacity.json(),{role:'worker',group,running:0,max_accounts:plan.slots_per_worker,auto_reply_version:1});
  let heartbeat;for(let i=0;i<40;i++){heartbeat=(await db.query('SELECT * FROM worker_health WHERE worker_group=$1',[group])).rows[0];if(heartbeat)break;await new Promise(r=>setTimeout(r,100));}
  assert.ok(heartbeat,'Worker must run database work after acquiring its ownership lock');assert.equal(heartbeat.accounts_running,0);assert.equal(heartbeat.max_accounts,plan.slots_per_worker);assert.ok(Date.now()-+heartbeat.heartbeat_at<15000);
  assert.equal((await db.query('SELECT count(*)::int n FROM accounts')).rows[0].n,0);

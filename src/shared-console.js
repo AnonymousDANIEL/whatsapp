@@ -63,7 +63,7 @@ function routes(app,route,workerRoutes){
   }
   res.json(data);
  }));
- app.get('/api/shared/options',route(async(req,res)=>res.json((await pool.query('SELECT images_enabled,maintenance_reason FROM shared_console_options WHERE id=1')).rows[0])));
+ app.get('/api/shared/options',route(async(req,res)=>res.json((await pool.query('SELECT images_enabled FROM shared_console_options WHERE id=1')).rows[0])));
  app.put('/api/shared/options',route(async(req,res)=>{
   assert(req.user.role==='owner','只有 Owner 可以设置共享图片发送',403);
   assert(typeof req.body.images_enabled==='boolean','请选择图片发送开关');
