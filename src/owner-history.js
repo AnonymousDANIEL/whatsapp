@@ -3,6 +3,7 @@
 // by today's account grants, and retain the legacy Owner view of USER deletes.
 const {pool}=require('./db');
 const {assert}=require('./domain');
+const progress=require('./campaign-progress');
 const taskSQL=`SELECT c.id,c.account_id,c.created_by AS actor_id,c.created_by,c.title,c.body,c.enabled,c.pause_reason,c.cancelled,c.send_now,
  c.timezone,c.window_start,c.window_end,c.weekdays,c.scheduled_at,c.expires_at,c.interval_ms,c.batch_size,c.deleted_at,c.created_at,
  COALESCE(c.operation_at,c.created_at) AS operation_at,(c.media IS NOT NULL) AS has_image,a.label AS account_label,u.username AS creator,
@@ -39,7 +40,7 @@ function routes(app,route){
   const rows=(await pool.query(`WITH records AS (${sql}) SELECT * FROM records WHERE ${where} ORDER BY ${order} LIMIT 100 OFFSET $2`,[id,(page-1)*100])).rows;
   // Separate counts allow an empty page after deletions without losing navigation.
   const total=(await pool.query(`WITH records AS (${sql}) SELECT count(*)::integer total FROM records WHERE ${where}`,[id])).rows[0].total;
-  res.json({kind:type,actor_id:actor,rows,total,page,size:100});
+  res.json({kind:type,actor_id:actor,rows:type==='tasks'?await progress.decorate(pool,rows):rows,total,page,size:100});
  }));
 }
 module.exports={routes};

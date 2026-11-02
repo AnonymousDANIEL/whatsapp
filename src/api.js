@@ -29,6 +29,7 @@ const loginHistory = require('./login-history');
 const noticeFormat = require('../public/notice-format');
 const cloudBusiness = require('./cloud-business');
 const campaignTiming = require('./campaign-timing');
+const campaignProgress = require('./campaign-progress');
 const autoReply = require('./auto-reply');
 
 const SESSION_HOURS = 168;
@@ -397,7 +398,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
       (SELECT jsonb_object_agg(t.status,t.n) FROM (SELECT status,count(*)::integer n FROM recipients WHERE campaign_id=c.id GROUP BY status) t) AS counts
       FROM campaigns c JOIN accounts a ON a.id=c.account_id JOIN users u ON u.id=c.created_by
       WHERE c.account_id=ANY($1::uuid[]) AND (c.deleted_at IS NULL OR $2='owner') ORDER BY c.created_at DESC LIMIT 200`, [ids,req.user.role]);
-    res.json(rows);
+    res.json(await campaignProgress.decorate(pool,rows));
   }));
   app.get('/api/campaigns/:id/image',route(async(req,res)=>{
     const c=await campaignAccess(req.user,req.params.id);assert(c.media,'Image not found',404);
@@ -456,8 +457,7 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     if(req.body.enabled===true)await (c.shared_pool?shared:billing).canPay(c.created_by);
     if(req.body.pacing===true){
       const pace=validatePacing(req.body);
-      await pool.query('UPDATE campaigns SET interval_ms=$1,batch_size=$2,send_now=true,operation_at=now() WHERE id=$3',[pace.interval_ms,pace.batch_size,c.id]);
-      await audit(req.user.id,'campaign.schedule',c.id,pace);
+      await transaction(db=>campaignProgress.editPacing(db,c,pace,req.user.id));
     }else if(req.body.window_start!==undefined){
       const schedule=validateSchedule({...c,scheduled_at:c.scheduled_at.toISOString(),expires_at:c.expires_at?.toISOString(),...req.body});
       assert(req.body.send_now===undefined||typeof req.body.send_now==='boolean','send_now 无效');
@@ -483,7 +483,8 @@ async function start({connectionMonitorIntervalMs=5000,refundMonitorIntervalMs=5
     const status = req.query.status || null;
     const rows = (await pool.query('SELECT r.*,c.created_at FROM recipients r JOIN campaigns c ON c.id=r.campaign_id WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2) ORDER BY r.id LIMIT 100 OFFSET $3', [c.id, status, (page - 1) * 100])).rows;
     const total = (await pool.query('SELECT count(*)::integer total FROM recipients WHERE campaign_id=$1 AND ($2::text IS NULL OR status=$2)', [c.id, status])).rows[0].total;
-    res.json({ rows:c.shared_pool&&req.user.role!=='owner'?rows.map(({send_account_id,...r})=>r):rows, total, page });
+    const summary=c.shared_pool?null:(await campaignProgress.decorate(pool,[{id:c.id,scheduled_at:c.scheduled_at,send_now:c.send_now,interval_ms:c.interval_ms,batch_size:c.batch_size}]))[0];
+    res.json({ rows:c.shared_pool&&req.user.role!=='owner'?rows.map(({send_account_id,...r})=>r):rows, total, page, summary });
   }));
   app.get('/api/campaigns/:id/export', route(async (req, res) => {
     assert(permission(req.user, 'reports.export'), '没有导出权限', 403);

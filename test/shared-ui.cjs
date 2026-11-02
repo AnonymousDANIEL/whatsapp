@@ -565,7 +565,7 @@ async function verifyPersonalPages(page,fixture,role,language){
    else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$('[data-pause]'),null);assert.equal(await page.$$eval('.actions button',nodes=>nodes.length),1);}
    assert.match(text,language==='en'?/Last action/:/最近操作/);assert.match(text,/11:10:00/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
-   await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+   await page.click('[data-results]');await page.waitForSelector('#results-table tbody tr');
    assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Unconfirmed/:/结果未确认/);
    assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');
    await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
@@ -1170,7 +1170,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script').length),0);
  if(role==='user')assert.equal(await page.$('[data-pause],[data-schedule],[data-delete-task]'),null);
  await page.click('[data-results]');
- await page.waitForFunction(()=>document.querySelector('#modal').open);
+ await page.waitForSelector('#results-table tbody tr');
  assert.match(await page.$eval('#modal',n=>n.textContent),/\+60123456789/);
  await page.click('#close-modal');
  await page.click('#nav [data-page=shared-records]');

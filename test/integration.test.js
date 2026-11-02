@@ -343,6 +343,7 @@ test('PostgreSQL: USER migration, isolation, schedules, receipts, retained delet
    assert.deepEqual(await snapshot(),before);
   }
   assert.equal((await request('/campaigns/'+id,'PATCH',{pacing:true,interval_ms:120000,batch_size:3},user2)).status,403);
+  assert.equal((await request('/campaigns/'+id,'PATCH',{enabled:false},owner)).status,200); // edit at a safe pause, not during dispatch
   assert.equal((await request('/campaigns/'+id,'PATCH',{pacing:true,interval_ms:120000,batch_size:3},owner)).status,200);
   const edited=await snapshot();assert.equal(edited.campaign.interval_ms,120000);assert.equal(edited.campaign.batch_size,3);
   assert.deepEqual(edited.recipients,before.recipients);
