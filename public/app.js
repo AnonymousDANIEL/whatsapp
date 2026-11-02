@@ -380,7 +380,7 @@ function taskTiming(c){
 }
 function bindPace(f){
  const preview=f.querySelector('[data-pace-preview]');const sync=()=>{const value=Number(f.elements.interval_value.value),unit=Number(f.elements.interval_unit.value),count=Number(f.elements.batch_size.value),ms=value*unit;f.elements.interval_value.min=String(Math.ceil(5000/unit));f.elements.interval_value.max=String(3600000/unit);f.elements.interval_value.step='1';preview.textContent=ms>=5000&&ms<=3600000&&count>=1&&count<=100?T(`首次发送按上方时间执行；每批 ${count} 条，完成一批后等待 ${ms/1000} 秒再发下一批。`,`The first batch uses the time above. Send ${count} per batch, then wait ${ms/1000} seconds after each batch.`):T('请填写有效的间隔和每批数量。','Enter a valid interval and batch size.');};
- f.querySelectorAll('[name=interval_value],[name=interval_unit],[name=batch_size]').forEach(n=>n.addEventListener('input',sync));sync();
+ f.querySelectorAll('[name=interval_value],[name=interval_unit],[name=batch_size]').forEach(n=>{n.addEventListener('input',sync);n.addEventListener('change',sync);});sync();
 }
 function validResultView(v){return resultView===v&&v.generation===modalGeneration&&me?.id===v.identity&&$('#modal').open&&!!$('#results-table');}
 async function refreshResults(){

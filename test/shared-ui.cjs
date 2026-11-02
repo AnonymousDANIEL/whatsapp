@@ -490,7 +490,7 @@ async function verifyPersonalNewTask(page,fixture,role,language){
  assert.doesNotMatch(await page.$eval('#modal',n=>n.textContent),/导入号码文件|Import phone numbers|每批按号码顺序|Each batch sends sequentially/);
  assert.ok(await page.$('#photo-file'));assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal select[name=interval_unit]'));assert.ok(await page.$('#modal input[name=batch_size]'));
  await uiScreenshot(page,'personal-new-task',role,language);
- await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Consented synthetic task';f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('batch_size').value='2';f.elements.namedItem('opt_in').checked=true;});
+ await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Consented synthetic task';f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('interval_unit').dispatchEvent(new Event('input',{bubbles:true}));f.elements.namedItem('batch_size').value='2';f.elements.namedItem('opt_in').checked=true;});
  await page.click('#modal button[type=submit]');await page.waitForFunction(()=>!document.querySelector('#modal').open&&!loading);
  const sent=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(sent.body.interval_ms,60000);assert.equal(sent.body.batch_size,2);assert.equal(sent.body.send_now,true);assert.equal(sent.body.require_connected,true);assert.equal(sent.body.opt_in_confirmed,true);
  await page.click('#nav [data-page=shared]');await waitReady(page);
