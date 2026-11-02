@@ -490,7 +490,7 @@ async function verifyPersonalNewTask(page,fixture,role,language){
  assert.doesNotMatch(await page.$eval('#modal',n=>n.textContent),/导入号码文件|Import phone numbers|每批按号码顺序|Each batch sends sequentially/);
  assert.ok(await page.$('#photo-file'));assert.ok(await page.$('#modal input[name=interval_value]'));assert.ok(await page.$('#modal select[name=interval_unit]'));assert.ok(await page.$('#modal input[name=batch_size]'));
  await uiScreenshot(page,'personal-new-task',role,language);
- await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Consented synthetic task';f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('batch_size').value='2';f.elements.namedItem('opt_in').checked=true;});
+ await page.$eval('#modal form',f=>{f.elements.namedItem('body').value='Consented synthetic task';f.elements.namedItem('recipients').value='+60123456789';f.elements.namedItem('interval_value').value='1';f.elements.namedItem('interval_unit').value='60000';f.elements.namedItem('interval_unit').dispatchEvent(new Event('input',{bubbles:true}));f.elements.namedItem('batch_size').value='2';f.elements.namedItem('opt_in').checked=true;});
  await page.click('#modal button[type=submit]');await page.waitForFunction(()=>!document.querySelector('#modal').open&&!loading);
  const sent=fixture.requests.findLast(r=>r.path==='/campaigns'&&r.method==='POST');assert.equal(sent.body.interval_ms,60000);assert.equal(sent.body.batch_size,2);assert.equal(sent.body.send_now,true);assert.equal(sent.body.require_connected,true);assert.equal(sent.body.opt_in_confirmed,true);
  await page.click('#nav [data-page=shared]');await waitReady(page);
@@ -565,7 +565,7 @@ async function verifyPersonalPages(page,fixture,role,language){
    else{assert.equal(await page.$$eval('[data-delete-task]',nodes=>nodes.length),0);assert.equal(await page.$('[data-pause]'),null);assert.equal(await page.$$eval('.actions button',nodes=>nodes.length),1);}
    assert.match(text,language==='en'?/Last action/:/最近操作/);assert.match(text,/11:10:00/);
    const posts=fixture.requests.filter(r=>r.path.endsWith('/send-now')).length;
-   await page.click('[data-results]');await page.waitForFunction(()=>document.querySelector('#modal').open);
+   await page.click('[data-results]');await page.waitForSelector('#results-table tbody tr');
    assert.match(await page.$eval('#modal-content',n=>n.textContent),language==='en'?/Unconfirmed/:/结果未确认/);
    assert.equal(fixture.requests.filter(r=>r.path.endsWith('/send-now')).length,posts);await page.click('#close-modal');
    await page.click('#add-task');await page.waitForFunction(()=>document.querySelector('#modal').open);
@@ -1170,7 +1170,7 @@ async function runCase(browser,base,role,language){
  assert.equal(await page.$eval('#content',n=>n.querySelectorAll('script').length),0);
  if(role==='user')assert.equal(await page.$('[data-pause],[data-schedule],[data-delete-task]'),null);
  await page.click('[data-results]');
- await page.waitForFunction(()=>document.querySelector('#modal').open);
+ await page.waitForSelector('#results-table tbody tr');
  assert.match(await page.$eval('#modal',n=>n.textContent),/\+60123456789/);
  await page.click('#close-modal');
  await page.click('#nav [data-page=shared-records]');

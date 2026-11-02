@@ -5,6 +5,8 @@ window.translateError=(message)=>{
  if(WA_LANG==='zh'&&message==='Image must be JPEG, PNG or WebP, up to 5 MB')return '照片须为 JPEG、PNG 或 WebP，最大 5 MB';
  if(WA_LANG==='zh'&&message==='Invalid image data')return '照片数据无效，请重新选择';
  const map={
+  '当前批次正在处理，请在批次间隔或暂停后修改':'The current batch is processing. Edit during the interval or after pausing.',
+  '任务已取消或删除':'The task was cancelled or deleted.',
   '只有 Owner 可以查看登录记录':'Only the Owner can view sign-in history.',
   '登录记录页码无效':'Invalid sign-in history cursor.',
   'USER ID 不存在':'USER ID does not exist.',

@@ -1,3 +1,9 @@
+## 2026-11-02: batch timing and live task results
+- API/UI-only update. Keep all 50 QR worker source pins, deployments and private `/data` unchanged; no browser restart is needed. Preserve all existing database rows, balances and Sessions.
+- Personal task results refresh while the dialog is open. Pending is never marked successful or failed merely because its scheduled time passed. Explain interval, queue, connection, control-window, receipt, credit and permission waits with scoped read-only diagnostics.
+- Pacing edits preserve the original first scheduled time, `send_now`, pause/review and recipient state. Serialize with the worker claim locks; reject edits during an active batch. Rebase a future cooldown only when it belongs to this task. Never shorten another task's cooldown or repeat an unknown send.
+- Test with disposable PostgreSQL and synthetic browser/provider fixtures. Do not sign into production users or send real messages to verify this change.
+
 ## Auto reply, shared maintenance and scheduled sending (2026-11-01)
 
 - Auto reply is opt-in: all five channel policies start disabled, connections start disabled, and enabling requires current WhatsApp readiness or verified official provider credentials. Owner can pause each channel globally or for one USER. Never bypass active/locked/grant checks or replay old incoming messages after resume.
